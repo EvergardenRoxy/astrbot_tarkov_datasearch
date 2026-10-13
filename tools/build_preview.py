@@ -1,0 +1,43 @@
+"""Rebuild docs/preview.jpg and print the README text example from an invented profile.
+
+    python tools/build_preview.py
+
+Every value comes from tests/fixtures.py plus the invented skills and achievements below: no real player's name, account
+id or numbers may appear in the documentation.
+"""
+import sys
+import types
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path[:0] = [str(ROOT/'tests'), str(ROOT)]
+# transport.py imports AstrBot's logger; nothing here logs.
+api = types.ModuleType('astrbot.api')
+api.logger = types.SimpleNamespace(warning=print, info=print, debug=print)
+sys.modules.setdefault('astrbot', types.ModuleType('astrbot'))
+sys.modules.setdefault('astrbot.api', api)
+
+from fixtures import profile  # noqa: E402
+from tarkov_core.card import build_card  # noqa: E402
+from tarkov_core.image import render_image  # noqa: E402
+from tarkov_core.modes import page_url  # noqa: E402
+from tarkov_core.output import render_text  # noqa: E402
+from tarkov_core.profile import summarize  # noqa: E402
+
+SKILLS = {'Endurance': 5100, 'Strength': 5100, 'Metabolism': 5100, 'Attention': 5100, 'Charisma': 4000,
+          'Perception': 3500, 'Search': 3000, 'Surgery': 2600, 'Vitality': 2500, 'Throwing': 2000, 'MagDrills': 1800,
+          'Health': 1500, 'StressResistance': 1200, 'Assault': 1000}
+
+
+def demo():
+    raw = profile()
+    raw['skills']['Common'] = [{'Id': key, 'Progress': value, 'LastAccess': 1790000000} for key, value in SKILLS.items()]
+    raw['achievements'] = {f'a{i}': 1760000000+i for i in range(30)}
+    summary = summarize(raw)
+    return build_card(summary, 'PVE', now=summary['updated']+3600, refresh_url=page_url('pve', summary['aid']))
+
+
+if __name__ == '__main__':
+    card = demo()
+    (ROOT/'docs'/'preview.jpg').write_bytes(render_image(card))
+    print(render_text(card))

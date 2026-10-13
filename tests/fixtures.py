@@ -1,4 +1,5 @@
-"""Synthetic profiles shaped like players.tarkov.dev's (fields as of 2026-10-13); no real player's data."""
+"""Synthetic profiles shaped like players.tarkov.dev's (fields as of 2026-10-13). Every value is invented: the numbers
+are round on purpose, so they cannot be mistaken for (or come from) a real profile."""
 import copy
 
 BASE = {

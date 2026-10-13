@@ -125,8 +125,9 @@ tests were added or bounded for each, and one survivor was a no-op mutation (it 
 4. K/D = all kills / deaths (the counters `Kills`/`Deaths`, as in the game's overall stats); PMC kills shown separately.
    tarkov.dev's page shows the raw counters only.
 5. Nickname input limited to `[A-Za-z0-9_-]{3,24}`: the game's character set; 24 leaves room above the longest generated name seen (`TarkovCitizen…`, 21). Was 3-15 until §13.
-6. The maintainer's profile JSON is not committed (it also holds other players' nicknames from dog tags); fixtures
-   are synthetic but shaped like it.
+6. The maintainer's profile JSON is not committed (it also holds other players' nicknames from dog tags). Fixtures,
+   the README example and `docs/preview.jpg` use invented values only (§18; before §18 the fixture numbers had been
+   copied from the maintainer's PVE profile).
 7. `report.md` is not committed; §2 restates what this code depends on.
 
 ## 7. Invariants for future changes
@@ -408,11 +409,12 @@ for the new characters (character list 1167 bytes, 185 KB). Tests: `test_exit_st
 
 ### 16.1 Evidence: why veteran players had no profile
 
-The maintainer asked for PVE profiles of two long-time players, Player_One and Player_Two. Both names were absent from all three
-2026-10-13 indexes; Player_One's account id (7654321, from a dog tag in the maintainer's profile) returned 404 in all three
-modes. The maintainer then searched Player_One on tarkov.dev in PVE (no visible captcha): `pve/7654321.json` appeared with
+The maintainer asked for PVE profiles of two long-time players (real players; names and account ids are deliberately not
+recorded in this repository, called A and B here). Both names were absent from all three 2026-10-13 indexes; A's account
+id (taken from a dog tag in the maintainer's profile) returned 404 in all three modes. The maintainer then searched A on
+tarkov.dev in PVE (no visible captcha): `pve/<A's id>.json` appeared with
 `Last-Modified` 17:02:58 UTC and `updated` 17:02:56.894 UTC, a minute after the search; `profile/` and `pvp-season/` stayed
-404. Player_Two's PVE profile likewise appeared after the maintainer's search (id 2345678, updated 01:05 Beijing time).
+404. B's PVE profile likewise appeared after the maintainer's search (updated 01:05 Beijing time).
 Conclusions: players.tarkov.dev holds only profiles fetched by tarkov.dev's live search (per mode, at search time), not
 every player; play time is irrelevant. The live search needs a Turnstile token; tarkov.dev uses
 `appearance: "interaction-only"`, so browsers pass it silently, which is why no captcha was seen, while a request
@@ -442,9 +444,9 @@ shared by everyone; `/tarkov` without arguments queries the caller's own binding
 | Config | `name_index_enabled` (bool, default false, schema = code fallback); `name_index_refresh_hours` and the timeout hint now say they apply only with the index. |
 | Fonts | Subset rebuilt for the new text (character list 1242 bytes, 196 KB). |
 
-Live run (real network, SDK stubbed, data dir fresh, not uploaded): unbound `/tarkov` -> guidance; bind by Player_Two's
-link; `/tarkov pve` -> image + link line; `/tarkov` (PVP, no profile) -> guidance with the PVP search link; Player_One by
-name -> unknown + steps; by link -> image; then `player_one` by name -> image (learned); unbind. The data dir held only
+Live run (real network, SDK stubbed, data dir fresh, not uploaded): unbound `/tarkov` -> guidance; bind by B's
+link; `/tarkov pve` -> image + link line; `/tarkov` (PVP, no profile) -> guidance with the PVP search link; A by
+name -> unknown + steps; by link -> image; then A's name in lower case -> image (learned); unbind. The data dir held only
 `accounts.sqlite3` (no index download).
 
 Mutation check (12, full suite): binding key per platform, name learning, index off by default, link-mode conflict,
@@ -472,9 +474,9 @@ record failure tolerated, link host check. All killed. 115 -> 131 tests.
   131 -> 137. Mutation check (9): explicit mode kept, fallback, explicit flag, main-mode error, "also has" note,
   bind in any mode, not-found TTL, not-found cached, rename note. All killed.
 - Fonts: subset rebuilt for the new messages (character list 1248 bytes, 196 KB).
-- Live run after the push: `/tarkov pvp 7654321` (PVE profile only) answered "no profile, unknown name": an id of 5+
+- Live run after the push: `/tarkov pvp <A's id>` (PVE profile only) answered "no profile, unknown name": an id of 5+
   digits is also a valid nickname, so the name lookup ran and its "unknown" text replaced the id's. Now, when no name
-  matches, the id's own answer is given ("PVP 模式下还没有…但 PVE 模式（/tarkov pve 7654321）下有档案").
+  matches, the id's own answer is given ("PVP 模式下还没有…但 PVE 模式（/tarkov pve <id>）下有档案").
   `test_digits_with_a_profile_in_another_mode`; 137 -> 138; reverting the fix fails 2 tests.
 
 ## 17. Second independent review (after §16.4) and fixes
@@ -509,3 +511,20 @@ original hang).
 Found while fixing: the "N characters" figures for the font subset in §15, §16.3 and §16.4 were the byte size of
 `NotoSansSC-Subset.chars.txt` (UTF-8; `wc -m` under the C locale counts bytes). Reworded as "character list N bytes".
 The subset now holds 484 characters (character list 1263 bytes, font 197,760 bytes). Tests 138 -> 153.
+
+## 18. Real player data removed from the tree (maintainer: "你怎么在插件说明文档里写了真实用户名")
+
+- README command examples, CHANGELOG, handoff §16 and tests used the real nicknames and account ids of the two players
+  probed in §16.1, and the maintainer's own account id. Replaced: nicknames -> `Player_One` / `Player_Two`, ids ->
+  `7654321` / `2345678` / `3456789`; handoff narrative -> "player A / B" with no name or id.
+- `tests/fixtures.py` was labelled "no real player's data", but every number in it (experience, all 18 counters, play
+  time, `updated`, skill progress and access times, achievement times) equalled the maintainer's PVE profile
+  (checked against the local copy: 18/18 counters equal). The README text example and `docs/preview.jpg` were drawn
+  from the same numbers. Replaced with round invented values (1000 raids, 5000 kills, experience 12,000,000 -> level
+  53, `updated` 1791000000000); expectations in test_profile/test_output/test_image/test_plugin updated.
+- `tools/build_preview.py` (new) builds the README text example and `docs/preview.jpg` from the fixture plus invented
+  skills and achievements, so the documentation never needs real data again.
+- §2.4: exact times of the maintainer's page view and PvP snapshot date generalised.
+- `git grep -i -E` for the real names and ids returns nothing. They remain in the pushed history of
+  `claude/amazing-clarke-eu3xue` and `v0.3.0` (first in `b6031c1`; the copied numbers since the first commit). Removing
+  them needs a history rewrite and force push of both branches: left to the maintainer.
