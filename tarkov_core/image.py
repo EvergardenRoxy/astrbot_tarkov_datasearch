@@ -11,6 +11,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
+from . import LICENSE, NAME, REPO, VERSION
 from .card import EXITS, SURVIVED, refresh_note, stale_note
 
 FONTS = Path(__file__).with_name('fonts')
@@ -191,7 +192,7 @@ def render_image(card):
     skill_rows = (len(card['skills'])+1)//2
     notes = (([stale_note(card['stale_days'])] if card['stale_days'] else [])+card['notes']
              +([refresh_note(card['refresh_url'])] if card['refresh_url'] else []))
-    height = 1300+skill_rows*34+sum(26*(1+len(note)//34) for note in notes)
+    height = 1340+skill_rows*34+sum(26*(1+len(note)//34) for note in notes)
     img = paper(height)
     d = ImageDraw.Draw(img)
     mode_en = MODE_EN.get(card['mode'], safe(card['mode'], latin=True))
@@ -277,6 +278,10 @@ def render_image(card):
     d.line([40, y, W-40, y], fill=INK)
     updated = f"档案更新于 {card['updated']}（北京时间）" if card['updated'] else '时间为北京时间'
     d.text((40, y+10), f'数据来自 tarkov.dev 公开快照（非实时） · {updated}', font=font('sc', 14, 400), fill=FADED)
+    # Plugin name, repository and licence in small print at the very foot (maintainer, after the closed test).
+    small = font('sc', 13, 400)
+    d.text((40, y+34), f"{NAME} v{VERSION} · {REPO.removeprefix('https://')}", font=small, fill=FADED)
+    d.text((40, y+54), f'开源插件，{LICENSE} 许可；与 tarkov.dev 和 Battlestate Games 无关', font=small, fill=FADED)
     out = io.BytesIO()
-    img.crop((0, 0, W, y+44)).save(out, 'JPEG', quality=JPEG_QUALITY, subsampling=0, optimize=True)
+    img.crop((0, 0, W, y+84)).save(out, 'JPEG', quality=JPEG_QUALITY, subsampling=0, optimize=True)
     return out.getvalue()

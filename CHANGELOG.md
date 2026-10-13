@@ -7,6 +7,14 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## 未发布
+
+> 维护者小范围封闭测试后的修改，由 **Claude Opus 5.5**（通过 **Claude Code**）实现。依据与验证见 [handoff.md](handoff.md) §19。
+
+### 新增
+
+- 图片回复最下方加上小字：插件名称和版本、GitHub 仓库地址、开源许可（GPL-3.0-or-later），并注明与 tarkov.dev 和 Battlestate Games 无关。
+
 ## 0.3.0 - 2026-10-13
 
 > 由 **Claude Opus 5.5**（通过 **Claude Code**）依据维护者确认的方案实现：插件回归“绑定身份 + 查询”。尚未在聊天平台实测。原因、依据与验证见 [handoff.md](handoff.md) §16。

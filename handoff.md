@@ -14,7 +14,7 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
 | Version | 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 153, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Tests | 155, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -92,12 +92,12 @@ pve ~1 s / 4.3 MB; pvp-season ~0.6 s / 1.4 MB; an unchanged index refresh (304) 
 |---|---|
 | `test_profile.py` (20) | player-page link parsing (modes, old /player/ form, arena, foreign hosts), page and search links, level boundaries against the bundled table, hand-checked level 53, table shape, counter selection, side stats, `Left` fallback, malformed counters, summary fields, skill filter/sort/elite, control characters, odd shapes in every field (>1000 combinations), huge integers, non-profiles, missing fields, mode aliases, `profile` path. |
 | `test_output.py` (9) | exit-status wording, full rendering (account-wide play time label), text unchanged through the card model (exact string), Markdown (escaping, empty side, skills hidden), no deaths / no raids, skill limit, stale flag, out-of-range timestamps, prestige and notes. |
-| `test_image.py` (14) | exit legend wording, JPEG of the right width and size, byte-stable (also after clearing the grain cache), height follows skills and notes, odd cards (missing values, empty sides, long/foreign names, huge numbers, every mode), long text shrunk to fit, empty sides say so, `safe()`, every non-ASCII character of the code and skill table is in the subset font, listed characters have glyphs, licences shipped and Share Tech Mono unmodified. |
+| `test_image.py` (15) | exit legend wording, JPEG of the right width and size, byte-stable (also after clearing the grain cache), height follows skills and notes, odd cards (missing values, empty sides, long/foreign names, huge numbers, every mode), long text shrunk to fit, empty sides say so, `safe()`, every non-ASCII character of the code and skill table is in the subset font, listed characters have glyphs, licences shipped and Share Tech Mono unmodified. |
 | `test_names.py` (22) | entry parsing (escapes, whitespace, empty, over-long, control characters), HTML rejected, empty index keeps old db, nickname rule (3-24), build-then-reuse, ETag + 304, replacement, failed refresh keeps serving + retry delay, first-download failure backed off, one download under concurrency, match cap, exact case first + total, corrupt db rebuilt, damaged names table rebuilt, URI characters in the data dir, old leftovers only removed at start, reload during a download, two instances never share a download file, failed build removes its temp file, refresh interval, weekly default. |
 | `test_transport.py` (18) | local aiohttp server with `HOST` patched: gzip + agent header, plain body, 404 (Chinese default text), 403/429/500 messages, no redirects, HTML/non-object/invalid JSON, compressed/decoded limits (gzip and plain), wrong content type, truncated and garbage gzip, other encodings, profile parsed off the loop, index limits, index download + 304, connection error text, environment proxy ignored, proxy validation (explicit port). |
 | `test_plugin.py` (59) | (§16) bind then query yourself (same platform, other group, other platform, default mode without a profile), bind by id/name and its failures, unbind, query by player-page link (mode conflict, arena, missing profile), names learned from queries with the index off, renamed player found by an old name, refresh link in text/Markdown/image replies, a failed name record does not fail the query; SDK stubbed like the spark tests: help, id, name, default mode, refresh notices (download vs check, size only for a first PvP download), texts follow the interval, not found, digits missing as id and name, ambiguity (incl. two exact-case hits, "等，共 N 个"), exact case wins, rename note, missing id, digit-name fallback, long generated names, bad input, full-width digits, error messages, index 404 and timeouts in chat, cache on/off and bound, one query per sender (bounded wait), access modes incl. unknown value and list types, empty list rows, infinite settings, proxy with empty address fails closed, proxy/timeout reach transport, default output is a JPEG image (also for an unknown setting), Markdown and text outputs, image failure falls back to text with a note, image drawn off the loop. |
 | `test_accounts.py` (7) | owner key per platform and keyed (HMAC, §17), secret file created once with mode 0600, bind/rebind/unbind, names case-insensitive, old names kept after a rename, exact-case then most recent order, record bounded. |
-| `test_release.py` (4) | version consistency, schema defaults equal code fallbacks, direct imports declared (aiohttp, yarl, pillow), package contents (fonts and licences included, zip under 1 MiB). |
+| `test_release.py` (5) | version consistency, schema defaults equal code fallbacks, direct imports declared (aiohttp, yarl, pillow), package contents (fonts and licences included, zip under 1 MiB). |
 
 Mutation check (scratch copy, one change at a time, full suite, 120 s limit each): 24 mutations of the guards
 above (no-redirect, trust_env, both size limits, gzip-only header, ETag, content type, lock, retry delay and check,
@@ -534,3 +534,53 @@ The subset now holds 484 characters (character list 1263 bytes, font 197,760 byt
   are the new ones). A bundle of the old history was kept only in the session scratchpad, outside the repository.
   Copies cloned or forked before the rewrite, and GitHub's cache of the old commits, are outside this repository's
   control.
+
+## 19. After the maintainer's closed test (unreleased)
+
+Feedback: the maintainer wants the plugin name, the GitHub repository and the open-source licence in small print at
+the foot of the generated content; testers liked the image but asked for Tarkov Arena.
+
+### 19.1 Image footer
+
+- `tarkov_core/__init__.py`: `NAME`, `REPO`, `LICENSE` beside `VERSION`. `image.render_image` draws two 13 px lines
+  under the data-source line: `astrbot_tarkov_datasearch v<VERSION> · github.com/EvergardenRoxy/astrbot_tarkov_datasearch`
+  and `开源插件，GPL-3.0-or-later 许可；与 tarkov.dev 和 Battlestate Games 无关` (README already states the
+  non-affiliation). Canvas budget +40 px, crop `y+84`. Text and Markdown replies unchanged (the request named the
+  image; a footer in every chat text reply would be noise) -- maintainer may extend it.
+- Tests: `test_footer_names_the_plugin_source_and_licence` (exact lines, drawn last, inside the picture, also with long
+  notes), `test_footer_facts_match_the_repository` (`metadata.yaml` `repo` == `REPO`, LICENSE is the GPL, README names
+  the licence). 153 -> 155. Font subset rebuilt (character list 1272 bytes, font 199,048 bytes). `docs/preview.jpg`
+  regenerated with `tools/build_preview.py`. Version left at 0.3.0 with an "未发布" CHANGELOG section, so the
+  `v0.3.0` branch the maintainer tested stays as tested; only the work branch was pushed.
+
+### 19.2 Arena: feasibility (research only, not implemented)
+
+Sources: tarkov-dev `src/pages/player/index.jsx` and `src/modules/player-stats.mjs` (main, read 2026-10-13); probes of
+players.tarkov.dev with the plugin's own User-Agent (static files only; no player.tarkov.dev, no Turnstile).
+
+- **Same mechanism as the other modes.** The website loads every mode, Arena included, from the live API
+  `player.tarkov.dev/account/<aid>?gameMode=arena` behind Turnstile, which also writes a static snapshot. Probed:
+  `players.tarkov.dev/arena/index.json` 200 (53,944 names, ~606 KB gzip); `arena/<aid>.json` 200 for 9 of 9 ids taken
+  from that index; `arena/1234567.json` 404. So an Arena profile exists only after someone opened the player in Arena
+  mode on tarkov.dev, exactly like the other modes; website link `/players/arena/<aid>` (currently refused by
+  `parse_player_url` callers).
+- **Same account id and nickname.** Of the arena index ids also present in the PvP (50,355), PVE (29,413) and season
+  (16,724) indexes, 100% carry the same name in both. Bindings and the learned name record need no change.
+- **Different document.** Top keys `aid, info, presetCustomization, profileCustomization, achievements, stat,
+  equipment, updated`; no `pmcStats`/`scavStats`, `skills` absent. `info` has `nickname, side, experience,
+  battlePassesLevels, memberCategory, selectedMemberCategory, registrationDate`. `stat` = `totalInGameTime` +
+  `arenaOverAllCounters`: a dict of modes, each `{"Counters": {name: int}}` (plain dict, not the Key/Value list).
+  Mode keys seen: `UnrankedOverall`, `UnrankedTeamFight`, `UnrankedLastHero`, `UnrankedCheckPoint`,
+  `UnrankedBlastGang`, `UnrankedShootOutDuo`, and on one profile ranked-looking `Overall`, `TeamFight`, `ShootOutDuo`.
+  Overall counters: `GamesCount, Kills, Deaths, KillsWithoutDeaths, MaxKillsWithoutDeaths, LongestWinStreak,
+  LoseStreak, LongestLoseStreak, BestArp`. Per-mode counters add e.g. `ArenaWins` (`ArenaLoses` in ranked),
+  `Assists, Headshots, DoubleKills, KnifeKills, DamageDealt, RoundMvpCount, MatchMvpCount, MoneyCollected`.
+- **What the website shows**: an overall table (killstreak, max killstreak, max win streak, best ARP, loss streak,
+  max loss streak) and a per-mode table (kills, deaths, K/D, max killstreak, round MVP, match MVP, max win streak) for
+  Team Fight, Last Hero, Checkpoint, Blast Gang. Level is computed from `info.experience` with the main game's
+  `playerLevels` table, which may not be the level the Arena client shows.
+- **Work if approved**: `MODES['arena'] = ('arena', '竞技场', 'arena')` but kept out of the automatic three-mode lookup;
+  `profile.summarize_arena()` with the same hostile-input rules (non-negative ints, unknown modes ignored, bounded);
+  an arena card (text, Markdown, image without exit bars and skills); link parsing accepts arena; tests and fixture
+  with invented values; optional index unchanged (arena index exists, 606 KB). Open decisions are listed in
+  checklist.md (scope, official Chinese mode names, ranked vs unranked, image design, level).

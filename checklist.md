@@ -12,7 +12,7 @@
 
 - 当前版本 **0.3.0**，改为“绑定身份 + 查询”，尚未在聊天平台实测。
 - 已用真实网络把插件的查询流程完整跑过一遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID 和昵称各查了 PVE、PVP、赛季模式。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
-- 自动测试共 153 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
+- 自动测试共 155 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
 
 修改由 Claude Opus 5.5（通过 Claude Code）完成，经项目维护者审阅。做法与 spark 项目相同：先写测试，再改代码，最后跑完全部测试。另外用“故意改坏代码”的方式检查测试：把关键保护逐一从代码里去掉，确认每一项都会被测试发现（每一轮修改都做，数量见下文各节）。
 
@@ -20,7 +20,7 @@
 
 ```bash
 pip install -r requirements.txt
-python -m unittest discover -s tests   # 应显示 Ran 153 tests ... OK
+python -m unittest discover -s tests   # 应显示 Ran 155 tests ... OK
 python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.3.0.zip
 ```
 
@@ -260,6 +260,12 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
 3. **改写了提交历史**（维护者决定）：所有 17 个提交里的这些信息都换成了同样的虚构数据，旧的示例图片也全部替换，然后强制推送了两个分支。改写后每个提交的测试都能通过，最新代码与改写前完全相同，整个历史里已搜不到真实玩家名、账号 ID 和真实战绩。所有提交的编号（哈希）都变了。改写前别人已经克隆或 fork 的副本，以及 GitHub 对旧提交的缓存，不在仓库能控制的范围内。
 4. **怎么核对**：`git log --all -p | grep -i -E "<真实玩家名>|<真实账号ID>"` 应没有结果；全部测试通过。
 
+### 封闭测试后的修改与竞技场调研（未发布）
+
+1. **图片页脚**（维护者意见）：图片最下方加两行小字，写明插件名称和版本、GitHub 仓库地址、开源许可（GPL-3.0-or-later），并注明与 tarkov.dev 和 Battlestate Games 无关。
+   - 怎么核对：看 `docs/preview.jpg` 的最下方；测试 `test_footer_names_the_plugin_source_and_licence`（页脚是图上最后画的内容，而且在图片范围内）、`test_footer_facts_match_the_repository`（仓库地址与 metadata.yaml 一致）。
+2. **竞技场能不能查**（测试者意见）：能，数据来源和现在一样，但要单独设计展示方式。调研结果见 handoff.md §19.2，需要维护者决定的事见下方“需要维护者决定或确认的事”。
+
 ## 需要维护者决定或确认的事
 
 这些是 AI 在没有维护者确认的情况下做的选择，详见 handoff.md §6。
@@ -268,3 +274,9 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
 2. 时间按北京时间显示。
 3. 档案超过 30 天未更新时注明。
 4. 维护者提供的个人档案只用于本地比对，没有放进仓库。档案里有别的玩家的昵称（狗牌）。测试、README 示例和示例图片里的数据全部是虚构的（此前测试数据里的数字是从维护者的 PVE 档案抄来的，只换了名字和 ID，见下方“去掉真实玩家信息”）。
+- **竞技场查询（待定，未实现）**：调研确认可以做（handoff.md §19.2），开工前需要维护者决定：
+  1. 竞技场是否只在写明“竞技场”或用竞技场网址时才查（建议如此：它是另一个游戏，不参与“三种模式一起看”，也不增加每次查询的请求数）；
+  2. 各模式的官方中文名（TeamFight、LastHero、CheckPoint、BlastGang、ShootOutDuo），AI 不应猜译名；
+  3. 是否区分排位和非排位；
+  4. 图片样式：沿用情报档案风格、换掉撤离状态条和技能，还是另做一套；
+  5. 等级是否显示：tarkov.dev 网站用塔科夫本体的等级表换算竞技场经验，未必是游戏里显示的竞技场等级。

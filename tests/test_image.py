@@ -72,6 +72,26 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(legend, ['撤离 800/30', '匆匆逃离 30/5', '转移 40/0', 'KIA 120/15', '行动中失踪 10/0'])
         self.assertIn('撤离', drawn)  # the combat-table header
 
+    def test_footer_names_the_plugin_source_and_licence(self):
+        # Maintainer: small print at the foot with the plugin name, the GitHub repository and the open-source licence.
+        drawn = []
+        real = ImageDraw.ImageDraw.text
+        def record(self, xy, text, *args, **kwargs):
+            drawn.append((xy, text))
+            return real(self, xy, text, *args, **kwargs)
+        for notes in ((), ('很长的备注'*40,)*3):
+            with self.subTest(notes=len(notes)):
+                drawn.clear()
+                with patch.object(ImageDraw.ImageDraw, 'text', record):
+                    _, picture = draw(summarize(profile()), notes=notes)
+                (_, y1), plugin = drawn[-2]
+                (_, y2), licence = drawn[-1]
+                self.assertEqual(plugin, 'astrbot_tarkov_datasearch v0.3.0 · github.com/EvergardenRoxy/astrbot_tarkov_datasearch')
+                self.assertEqual(licence, '开源插件，GPL-3.0-or-later 许可；与 tarkov.dev 和 Battlestate Games 无关')
+                # Last on the page and inside it.
+                self.assertGreater(y1, max(xy[1] for xy, _ in drawn[:-2]))
+                self.assertLess(y2+20, picture.height)
+
     def test_height_follows_skills_and_notes(self):
         s = summarize(profile())
         none = draw(s, skill_limit=0)[1].height
