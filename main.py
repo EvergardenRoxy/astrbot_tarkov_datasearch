@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import hmac
 import re
 import sqlite3
 import time
@@ -10,7 +11,7 @@ from astrbot.api.message_components import Image, Plain
 from astrbot.api.star import Context, Star, StarTools, register
 
 from .tarkov_core import transport
-from .tarkov_core.accounts import Accounts, owner_key
+from .tarkov_core.accounts import Accounts, load_secret, owner_key
 from .tarkov_core.modes import MODES, label_of, page_url, parse_mode, parse_player_url, path_of, search_url
 from .tarkov_core.names import NAME, NameIndex
 from .tarkov_core.card import build_card
@@ -26,6 +27,10 @@ ACCOUNT_ID = re.compile(r'[0-9]{1,12}')
 CACHE_ENTRIES = 128
 # How long "no profile in this mode" is remembered (seconds).
 NOT_FOUND_SECONDS = 60
+# A cached profile older than this is labelled with its age in the reply (seconds).
+CACHE_NOTE_SECONDS = 60
+# Profile requests in flight at once, for all users together (one query asks for three modes).
+FETCHES_AT_ONCE = 6
 LABEL_OF_PATH = {path: label for path, label, _ in MODES.values()}
 OUTPUT_MODES = ('image', 'text', 'markdown')
 HELP_WORDS = ('help', '帮助')
@@ -55,8 +60,14 @@ class TarkovPlugin(Star):
         # The downloaded name index is optional (off by default): names are mainly learned from the users (accounts.py).
         self.names = NameIndex(self.root, self.download_index, self.int_setting('name_index_refresh_hours', 168, 1, 720))
         self.accounts = Accounts(self.root/'accounts.sqlite3')
+        self.root.mkdir(parents=True, exist_ok=True)
+        # Keys the binding keys and the log trace ids, so neither can be turned back into a user id (review R-11).
+        self.secret = load_secret(self.root/'binding.key')
         # (mode, account id) -> (monotonic time, profile summary)
         self.cache = {}
+        # (mode, account id) -> the request in flight, shared by every query that needs it (review R-08).
+        self.pending = {}
+        self.fetches = asyncio.Semaphore(FETCHES_AT_ONCE)
         self.active = set()
 
     def int_setting(self, key, default, low, high):
@@ -75,7 +86,7 @@ class TarkovPlugin(Star):
         return url
 
     def owner(self, event):
-        return hashlib.sha256((event.unified_msg_origin+'\0'+event.get_sender_id()).encode()).hexdigest()
+        return hmac.new(self.secret, (event.unified_msg_origin+'\0'+event.get_sender_id()).encode(), hashlib.sha256).hexdigest()
 
     def config_list(self, key):
         """A list setting as strings. A string counts as one item (`in` on a string would be a substring test);
@@ -110,7 +121,7 @@ class TarkovPlugin(Star):
 
     def binding_key(self, event):
         # unified_msg_origin is "<platform id>:<message type>:<session>"; a binding holds in every chat of a platform.
-        return owner_key(event.unified_msg_origin.split(':', 1)[0], event.get_sender_id())
+        return owner_key(self.secret, event.unified_msg_origin.split(':', 1)[0], event.get_sender_id())
 
     def help_text(self):
         index = f'；另外会查 tarkov.dev 的昵称名单（{every(self.names.refresh_seconds)}更新一次）' if self.index_enabled() else ''
@@ -208,22 +219,33 @@ class TarkovPlugin(Star):
     def first_time(self, mode, who='这名玩家', command='/tarkov', explicit=True):
         return self.search_hint(mode, who, explicit) + f'，再把跳转后的网址发给我（例如 {command} {page_url(mode, 1234567)}）。'
 
-    async def profiles(self, aid, first, trace):
-        """{mode: summary} for every mode in which account `aid` has a profile, `first` first. The modes are fetched
-        together; an error other than "no profile" fails the call only for `first` (the others are extra)."""
+    async def profiles(self, aid, first, trace, fresh=False):
+        """({mode: summary}, {mode: error}) for account `aid`, `first` first. The modes are fetched together; "no
+        profile" is in neither. A failed request is kept apart from "no profile", so a 429 is never reported as
+        "this player has no profile" (review R-01). `fresh` skips the cache (the user just came from the website)."""
         order = [first]+[mode for mode in MODES if mode != first]
-        results = await asyncio.gather(*(self.profile(mode, aid) for mode in order), return_exceptions=True)
-        found = {}
+        results = await asyncio.gather(*(self.profile(mode, aid, fresh) for mode in order), return_exceptions=True)
+        found, failed = {}, {}
         for mode, result in zip(order, results):
             if isinstance(result, NotFound):
                 continue
+            if isinstance(result, asyncio.CancelledError):
+                raise result
             if isinstance(result, BaseException):
-                if mode == first:
-                    raise result
-                logger.warning('Tarkov [%s] %s profile skipped: %s', trace, mode, type(result).__name__)
+                logger.warning('Tarkov [%s] %s profile failed: %s', trace, mode, type(result).__name__)
+                failed[mode] = result
                 continue
             found[mode] = result
-        return found
+        return found, failed
+
+    @staticmethod
+    def failure_text(failed):
+        """Why the requests of these modes failed, in one sentence."""
+        def why(exc):
+            if isinstance(exc, QueryError):
+                return str(exc)
+            return '连接超时' if isinstance(exc, TimeoutError) else type(exc).__name__
+        return '；'.join(f'{label_of(mode)} 模式这次没有查到（{why(exc)}）' for mode, exc in failed.items())
 
     @staticmethod
     def modes_text(modes):
@@ -233,32 +255,48 @@ class TarkovPlugin(Star):
     def mode_word(mode):
         return {'pvp': 'pvp', 'pve': 'pve', 'season': '赛季'}[mode]
 
-    async def show(self, event, aid, mode, explicit, trace, who='这名玩家', asked=None, where='记录'):
+    async def show(self, event, aid, mode, explicit, trace, who='这名玩家', asked=None, where='记录', fresh=False):
         """(reply, None) for account `aid`: the profile in `mode`, or (mode not chosen by the user) in the first other
         mode that has one; the reply also names the other modes with a profile. (None, why) when nothing can be shown.
+        A failed request is raised when nothing else can be shown, so the user reads the error, not "no profile".
         `asked`: the name the account was looked up by, to note a rename."""
-        found = await self.profiles(aid, mode, trace)
+        found, failed = await self.profiles(aid, mode, trace, fresh)
         notes = []
         if mode in found:
             shown = mode
         elif found and not explicit:
             shown = next(iter(found))
-            notes.insert(0, f'{label_of(mode)} 模式下没有这个账号的档案，下面是 {label_of(shown)} 模式的档案。')
+            if mode in failed:
+                notes.append(f'{self.failure_text({mode: failed.pop(mode)})}，下面是 {label_of(shown)} 模式的档案。')
+            else:
+                notes.append(f'tarkov.dev 上还没有这个账号的 {label_of(mode)} 档案（要有的话，请在 tarkov.dev 用 '
+                             f'{label_of(mode)} 模式搜索一次：{search_url(mode)}），下面是 {label_of(shown)} 模式的档案。')
+        elif mode in failed or (failed and not found):
+            raise failed.get(mode) or next(iter(failed.values()))
         else:
+            unknown = f'；{self.failure_text(failed)}，请稍后再试' if failed else ''
             if found:
                 others = '、'.join(f'{label_of(m)} 模式（/tarkov {self.mode_word(m)} {aid}）' for m in found)
-                return None, (f'{label_of(mode)} 模式下还没有账号 ID {aid} 的档案，但 {others}下有档案。'
+                return None, (f'{label_of(mode)} 模式下还没有账号 ID {aid} 的档案，但 {others}下有档案{unknown}。'
                               f'要看 {label_of(mode)} 模式，' + self.search_hint(mode, who) + '，几分钟后再查。')
             return None, (f'tarkov.dev 上还没有账号 ID {aid} 的档案（PVP、PVE、赛季都没有）。'
                           'tarkov.dev 只保存在网站上被搜索过的玩家，' + self.search_hint(mode, who, explicit) + '，几分钟后再查。')
-        nickname = found[shown]['nickname']
+        summary = found[shown]
+        nickname = summary['nickname']
         if asked and nickname.lower() != asked.lower():
             notes.append(f'注意：{where}中的 {asked} 对应账号 ID {aid}，档案里现在的昵称是 {nickname}，可能改过名。')
         others = [m for m in found if m != shown]
         if others:
             notes.append(f'这个账号在 {self.modes_text(others)} 模式下也有档案，查询时写上模式即可'
                          f'（例如 /tarkov {self.mode_word(others[0])} {aid}）。')
-        return await self.reply(event, found[shown], shown, aid, notes, trace), None
+        if failed:
+            notes.append(self.failure_text(failed)+'，请稍后再试。')
+        age = time.time()-summary.get('fetched', time.time())
+        if age >= CACHE_NOTE_SECONDS:
+            # Review R-02: the website refresh the reply asks for is not seen while the profile is cached.
+            notes.append(f'这是插件 {max(1, round(age/60))} 分钟前从 tarkov.dev 取得的数据。刚在网站上刷新过的话，'
+                         '发送这名玩家的页面网址查询，即可立即看到新数据。')
+        return await self.reply(event, summary, shown, aid, notes, trace), None
 
     async def unbind(self, event):
         removed = await asyncio.to_thread(self.accounts.unbind, self.binding_key(event))
@@ -277,15 +315,22 @@ class TarkovPlugin(Star):
                                           + self.first_time(mode, '自己', '/tarkov 绑定', explicit=False))
             aid = (exact or rows)[0][0]
         # A binding is for the account, whatever the mode: a profile in any mode confirms the account exists.
-        found = await self.profiles(aid, mode, trace)
+        found, failed = await self.profiles(aid, mode, trace, fresh=True)
+        if not found and failed:
+            raise next(iter(failed.values()))
         if not found:
             return event.plain_result(f'tarkov.dev 上还没有账号 ID {aid} 的档案（PVP、PVE、赛季都没有）。'
                                       + self.first_time(mode, '自己', '/tarkov 绑定', explicit=False))
         nickname = (found.get(mode) or next(iter(found.values())))['nickname']
         await asyncio.to_thread(self.accounts.bind, self.binding_key(event), aid, nickname)
+        missing = [m for m in MODES if m not in found]
+        later = (f'{self.modes_text(missing)} 模式的档案要在 tarkov.dev 用该模式搜索一次自己才会出现。' if missing else '')
+        unknown = f'{self.failure_text(failed)}。' if failed else ''
         return event.plain_result(f'已绑定：{nickname}（账号 ID {aid}），目前在 {self.modes_text(found)} 模式下有档案。'
+                                  f'{unknown}{later}'
                                   f'之后发送 /tarkov 即可查询自己（先看 {label_of(self.default_mode())}，没有时自动换成有档案的模式），'
-                                  '也可以写模式，例如 /tarkov pve、/tarkov 赛季。')
+                                  '也可以写模式，例如 /tarkov pve、/tarkov 赛季。'
+                                  '档案不会自动更新：要看最新数据，请先在 tarkov.dev 上重新搜索或打开自己的页面。')
 
     async def query(self, event, mode, explicit, target, url, trace):
         if target is None:
@@ -300,7 +345,8 @@ class TarkovPlugin(Star):
             return
         if url or ACCOUNT_ID.fullmatch(target):
             aid = url[1] if url else int(target)
-            reply, missing = await self.show(event, aid, mode, explicit, trace)
+            # A link usually means the user just opened the page (which refreshes the snapshot): skip the cache.
+            reply, missing = await self.show(event, aid, mode, explicit, trace, fresh=bool(url))
             if reply:
                 yield reply
                 return
@@ -317,7 +363,8 @@ class TarkovPlugin(Star):
         label = label_of(mode)
         matches, total = await asyncio.to_thread(self.accounts.lookup, target)
         where = '记录'
-        if not matches and self.index_enabled():
+        # An account id tried as a name uses only the record: no index download for it (review R-03).
+        if not matches and self.index_enabled() and id_missing is None:
             # The downloaded index is per mode; the default (or chosen) mode's index is used.
             where = '名单'
             if self.names.needs_refresh(path_of(mode)):
@@ -334,7 +381,9 @@ class TarkovPlugin(Star):
             yield event.plain_result(id_missing)
             return
         if not matches:
-            unknown = (f'记录和 tarkov.dev 的昵称名单（{every(self.names.refresh_seconds)}更新一次）里都没有 {target}。'
+            # The index is per mode and only the chosen (or default) mode's was searched (review R-04).
+            other = '' if explicit else f'其他模式的名单要写上模式查询，例如 /tarkov pve {target}。'
+            unknown = (f'记录和 tarkov.dev 的 {label} 昵称名单（{every(self.names.refresh_seconds)}更新一次）里都没有 {target}。{other}'
                        if self.index_enabled() else f'还不知道 {target} 的账号 ID。')
             yield event.plain_result(unknown+self.first_time(mode, explicit=explicit)+'查到一次后，之后就能直接用名字查询。')
             return
@@ -357,6 +406,10 @@ class TarkovPlugin(Star):
         Every reply says the data is a snapshot and links the player's page, where it can be refreshed."""
         refresh = page_url(game_mode, aid)
         card = build_card(summary, label_of(game_mode), self.skill_count(), notes, refresh_url=refresh)
+        # The account asked for, not the document's own "aid" field, so the id and the link always agree (review R-06).
+        if card['aid'] != aid:
+            logger.warning('Tarkov [%s] profile %s names account %s', trace, aid, card['aid'])
+            card['aid'] = aid
         mode = self.output_mode()
         if mode == 'image':
             try:
@@ -374,23 +427,38 @@ class TarkovPlugin(Star):
     def skill_count(self):
         return self.int_setting('skill_count', 10, 0, 49)
 
-    async def profile(self, mode, aid):
-        """Summary of one profile, from the in-memory cache when it is recent enough. A missing profile is cached too,
-        but for at most NOT_FOUND_SECONDS: every query looks at all modes, and a player searched on the website a
-        moment ago should show up soon."""
+    async def profile(self, mode, aid, fresh=False):
+        """Summary of one profile, from the in-memory cache when it is recent enough (`fresh` skips it). A missing
+        profile is cached too, but for at most NOT_FOUND_SECONDS: every query looks at all modes, and a player
+        searched on the website a moment ago should show up soon. Queries needing the same profile at the same time
+        share one request."""
         key = (mode, aid)
         ttl = self.int_setting('profile_cache_minutes', 10, 0, 1440)*60
         cached = self.cache.get(key)
-        if cached and time.monotonic()-cached[0] < (ttl if cached[1] is not None else min(ttl, NOT_FOUND_SECONDS)):
+        if (not fresh and cached
+                and time.monotonic()-cached[0] < (ttl if cached[1] is not None else min(ttl, NOT_FOUND_SECONDS))):
             if cached[1] is None:
                 raise NotFound()
             return cached[1]
+        task = self.pending.get(key)
+        if task is None:
+            task = asyncio.ensure_future(self.fetch(mode, aid, ttl))
+            self.pending[key] = task
+            task.add_done_callback(lambda done: (self.pending.pop(key, None),
+                                                 done.cancelled() or done.exception()))
+        # Shielded: one user giving up must not cancel the request the others wait for.
+        return await asyncio.shield(task)
+
+    async def fetch(self, mode, aid, ttl):
+        key = (mode, aid)
         try:
-            raw = await transport.fetch_profile(path_of(mode), aid, timeout_seconds=min(60, self.timeout()), proxy=self.proxy())
+            async with self.fetches:
+                raw = await transport.fetch_profile(path_of(mode), aid, timeout_seconds=min(60, self.timeout()), proxy=self.proxy())
         except NotFound:
             self.remember_profile(key, None, ttl)
             raise
         summary = summarize(raw)
+        summary['fetched'] = time.time()
         # Every profile fetched teaches the shared name record (maintainer: names come from the users).
         try:
             await asyncio.to_thread(self.accounts.remember, aid, summary['nickname'])
@@ -420,4 +488,6 @@ class TarkovPlugin(Star):
 
     async def terminate(self):
         self.cache.clear()
+        for task in list(self.pending.values()):
+            task.cancel()
 

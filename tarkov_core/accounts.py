@@ -5,6 +5,9 @@ name index lags behind (handoff §16), so the plugin learns names from its users
 successful query by account id or player-page link records the nickname the profile shows.
 """
 import hashlib
+import hmac
+import os
+import secrets
 import sqlite3
 import time
 
@@ -13,10 +16,33 @@ MAX_NAMES = 200000
 MAX_MATCHES = 6
 
 
-def owner_key(platform, sender):
-    """The binding key of a chat user: one per platform, the same in every group (maintainer's choice). Hashed so
-    the database holds no platform user ids."""
-    return hashlib.sha256(f'{platform}\0{sender}'.encode()).hexdigest()
+SECRET_BYTES = 32
+
+
+def load_secret(path):
+    """This installation's random key for owner keys, created on first use (readable by the owner only).
+
+    A plain hash of a QQ number can be reversed by trying every number (review R-11: 0.6 s for one); with a key kept
+    outside the database, the database alone does not give the user ids away."""
+    try:
+        data = path.read_bytes()
+        if len(data) >= SECRET_BYTES:
+            return data
+    except FileNotFoundError:
+        pass
+    data = secrets.token_bytes(SECRET_BYTES)
+    temporary = path.with_name(path.name+'.tmp')
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'wb') as file:
+        file.write(data)
+    os.replace(temporary, path)
+    return data
+
+
+def owner_key(secret, platform, sender):
+    """The binding key of a chat user: one per platform, the same in every group (maintainer's choice). A keyed hash,
+    so the database holds no platform user ids and they cannot be recovered from it alone."""
+    return hmac.new(secret, f'{platform}\0{sender}'.encode(), hashlib.sha256).hexdigest()
 
 
 class Accounts:
