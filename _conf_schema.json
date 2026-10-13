@@ -68,13 +68,13 @@
     "name_index_refresh_hours": {
         "type": "int",
         "description": "昵称名单更新间隔（小时）",
-        "default": 24,
+        "default": 168,
         "slider": {
             "min": 1,
             "max": 720,
             "step": 1
         },
-        "hint": "按昵称查询需要 tarkov.dev 的玩家名单，插件在本地保存一份并按这个间隔检查更新（tarkov.dev 每天更新一次名单）。名单没有变化时只做一次很小的请求；有变化时重新下载，PVP 名单约 30 MB，下载和整理需要几十秒。"
+        "hint": "按昵称查询需要 tarkov.dev 的玩家名单，插件在本地保存一份并按这个间隔检查更新，默认 168 小时（每周一次；tarkov.dev 每天更新名单，间隔越短，新收录和改名的玩家越早能查到）。名单没有变化时只做一次很小的请求；有变化时重新下载，PVP 名单约 30 MB，下载和整理需要几十秒。"
     },
     "download_timeout_seconds": {
         "type": "int",

@@ -141,6 +141,9 @@ class IndexTests(unittest.IsolatedAsyncioTestCase):
         NameIndex(self.root, FakeDownload([]))
         self.assertFalse(list(self.root.iterdir()))
 
+    def test_default_check_is_weekly(self):
+        self.assertEqual(NameIndex(self.root, FakeDownload([])).refresh_seconds, 7*24*3600)
+
     async def test_refresh_interval(self):
         index = NameIndex(self.root, FakeDownload([document()]), refresh_hours=24)
         await index.lookup('pve', 'Buhaus')

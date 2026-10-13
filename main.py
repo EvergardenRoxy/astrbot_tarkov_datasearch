@@ -26,7 +26,7 @@ class TarkovPlugin(Star):
         super().__init__(context)
         self.config = config
         self.root = StarTools.get_data_dir('astrbot_tarkov_datasearch')
-        self.names = NameIndex(self.root, self.download_index, self.int_setting('name_index_refresh_hours', 24, 1, 720))
+        self.names = NameIndex(self.root, self.download_index, self.int_setting('name_index_refresh_hours', 168, 1, 720))
         # (mode, account id) -> (monotonic time, profile summary)
         self.cache = {}
         self.active = set()
@@ -64,7 +64,7 @@ class TarkovPlugin(Star):
                 '用法：/tarkov [模式] <昵称或账号ID>\n'
                 f'模式：pvp、pve、赛季（pvp-season）；不写时用 {label_of(self.default_mode())}\n'
                 '例：/tarkov pve Some_Player　/tarkov pvp 1234567\n'
-                '昵称名单每天更新一次，新改名的玩家可能查不到，用账号 ID 查询最准确。')
+                '昵称名单每周更新一次，新改名或新收录的玩家可能查不到，用账号 ID 查询最准确。')
 
     @filter.command('tarkov', alias={'塔科夫'})
     async def tarkov_command(self, event: AstrMessageEvent):
@@ -134,7 +134,7 @@ class TarkovPlugin(Star):
                 return
         if self.names.needs_refresh(path_of(mode)):
             size = '，约 30 MB' if mode == 'pvp' else ''
-            yield event.plain_result(f'正在更新 {label} 玩家名单（每天一次{size}，可能需要几十秒），请稍候。')
+            yield event.plain_result(f'正在更新 {label} 玩家名单（每周一次{size}，可能需要几十秒），请稍候。')
         matches = await self.names.lookup(path_of(mode), target)
         logger.info('Tarkov [%s] name matches=%s', trace, len(matches))
         if not matches:
@@ -142,7 +142,7 @@ class TarkovPlugin(Star):
                 yield event.plain_result(f'{label} 模式下没有账号 ID {target} 的档案，名单里也没有叫 {target} 的玩家。'
                                          'tarkov.dev 只有被查询过的玩家的档案，可以换一个模式试试。')
                 return
-            yield event.plain_result(f'{label} 名单里找不到 {target}。名单每天更新一次，只收录在 tarkov.dev 被查询过的玩家，'
+            yield event.plain_result(f'{label} 名单里找不到 {target}。名单每周更新一次，只收录在 tarkov.dev 被查询过的玩家，'
                                      '新改名的玩家也可能查不到；知道账号 ID 时请用 ID 查询。')
             return
         exact = [match for match in matches if match[1] == target]
