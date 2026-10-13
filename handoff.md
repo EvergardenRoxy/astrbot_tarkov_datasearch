@@ -13,8 +13,8 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Inputs | Maintainer's analysis `report.md` of the-hideout/tarkov-dev (not in the tree; key facts restated in §2). Maintainer's own profile JSON downloaded from tarkov.dev, used only for a local comparison (§2.4), not committed. |
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
-| Version | 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 115, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Version | 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
+| Tests | 131, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -81,6 +81,7 @@ not present in any profile seen; it is not used.
 | Output | `tarkov_core/output.py` | `render_text(card)` (unchanged text format; `render(summary, …)` wraps it) and `render_markdown(card)` (escapes Markdown in third-party text). |
 | Image | `tarkov_core/image.py`, `tarkov_core/fonts/` | `render_image(card)` -> JPEG bytes (q85, 4:4:4), 820 px wide, height from content. Bundled OFL fonts; characters outside `NotoSansSC-Subset.chars.txt`/ASCII drawn as `?`. Seeded paper grain, so output is byte-stable. |
 | Plugin | `main.py` | `/tarkov` (alias `/塔科夫`). Flow: access check → parse `[mode] target` → digits: fetch by id, on 404 fall back to the name index if the digits are a valid name → name: refresh notice if needed, lookup, disambiguate (one exact-case hit wins; otherwise >1 hit lists ids) → fetch → `reply()`: card, then image (`asyncio.to_thread`, `Image.fromBytes`, text on any failure), text or Markdown per `output_mode` (unknown value -> image). One in-flight query per sender (`self.active`, sha256 of origin + sender like spark). Profile summaries cached in memory (TTL `profile_cache_minutes`, at most `CACHE_ENTRIES` = 128, oldest-inserted evicted). |
+| Accounts | `tarkov_core/accounts.py` | Since §16 the main way to resolve names. One SQLite file: `bindings(owner, aid, nickname, bound_at)` with `owner` = sha256(platform id NUL sender id); `names(key, aid, name, seen_at)` shared by everyone, fed by every fetched profile (`TarkovPlugin.profile()`), lookups exact-case first then most recently seen, capped at `MAX_NAMES` = 200,000 (least recently seen dropped). |
 
 Measured (this container, 2026-10-13): PVP index download + build 23-26 s, db 97 MB, process max RSS ~106 MB;
 pve ~1 s / 4.3 MB; pvp-season ~0.6 s / 1.4 MB; an unchanged index refresh (304) 0.2 s; a profile fetch 0.2 s.
@@ -89,12 +90,13 @@ pve ~1 s / 4.3 MB; pvp-season ~0.6 s / 1.4 MB; an unchanged index refresh (304) 
 
 | File | Covers |
 |---|---|
-| `test_profile.py` (16) | level boundaries against the bundled table, hand-checked level 66, table shape, counter selection, side stats, `Left` fallback, malformed counters, summary fields, skill filter/sort/elite, control characters, odd shapes in every field (>1000 combinations), huge integers, non-profiles, missing fields, mode aliases, `profile` path. |
-| `test_output.py` (8) | full rendering (account-wide play time label), text unchanged through the card model (exact string), Markdown (escaping, empty side, skills hidden), no deaths / no raids, skill limit, stale flag, out-of-range timestamps, prestige and notes. |
-| `test_image.py` (11) | JPEG of the right width and size, byte-stable (also after clearing the grain cache), height follows skills and notes, odd cards (missing values, empty sides, long/foreign names, huge numbers, every mode), long text shrunk to fit, empty sides say so, `safe()`, every non-ASCII character of the code and skill table is in the subset font, listed characters have glyphs, licences shipped and Share Tech Mono unmodified. |
+| `test_profile.py` (18) | player-page link parsing (modes, old /player/ form, arena, foreign hosts), page and search links, level boundaries against the bundled table, hand-checked level 66, table shape, counter selection, side stats, `Left` fallback, malformed counters, summary fields, skill filter/sort/elite, control characters, odd shapes in every field (>1000 combinations), huge integers, non-profiles, missing fields, mode aliases, `profile` path. |
+| `test_output.py` (9) | exit-status wording, full rendering (account-wide play time label), text unchanged through the card model (exact string), Markdown (escaping, empty side, skills hidden), no deaths / no raids, skill limit, stale flag, out-of-range timestamps, prestige and notes. |
+| `test_image.py` (12) | exit legend wording, JPEG of the right width and size, byte-stable (also after clearing the grain cache), height follows skills and notes, odd cards (missing values, empty sides, long/foreign names, huge numbers, every mode), long text shrunk to fit, empty sides say so, `safe()`, every non-ASCII character of the code and skill table is in the subset font, listed characters have glyphs, licences shipped and Share Tech Mono unmodified. |
 | `test_names.py` (22) | entry parsing (escapes, whitespace, empty, over-long, control characters), HTML rejected, empty index keeps old db, nickname rule (3-24), build-then-reuse, ETag + 304, replacement, failed refresh keeps serving + retry delay, first-download failure backed off, one download under concurrency, match cap, exact case first + total, corrupt db rebuilt, damaged names table rebuilt, URI characters in the data dir, old leftovers only removed at start, reload during a download, two instances never share a download file, failed build removes its temp file, refresh interval, weekly default. |
 | `test_transport.py` (18) | local aiohttp server with `HOST` patched: gzip + agent header, plain body, 404 (Chinese default text), 403/429/500 messages, no redirects, HTML/non-object/invalid JSON, compressed/decoded limits (gzip and plain), wrong content type, truncated and garbage gzip, other encodings, profile parsed off the loop, index limits, index download + 304, connection error text, environment proxy ignored, proxy validation (explicit port). |
-| `test_plugin.py` (34) | SDK stubbed like the spark tests: help, id, name, default mode, refresh notices (download vs check, size only for a first PvP download), texts follow the interval, not found, digits missing as id and name, ambiguity (incl. two exact-case hits, "等，共 N 个"), exact case wins, rename note, missing id, digit-name fallback, long generated names, bad input, full-width digits, error messages, index 404 and timeouts in chat, cache on/off and bound, one query per sender (bounded wait), access modes incl. unknown value and list types, empty list rows, infinite settings, proxy with empty address fails closed, proxy/timeout reach transport, default output is a JPEG image (also for an unknown setting), Markdown and text outputs, image failure falls back to text with a note, image drawn off the loop. |
+| `test_plugin.py` (42) | (§16) bind then query yourself (same platform, other group, other platform, default mode without a profile), bind by id/name and its failures, unbind, query by player-page link (mode conflict, arena, missing profile), names learned from queries with the index off, renamed player found by an old name, refresh link in text/Markdown/image replies, a failed name record does not fail the query; SDK stubbed like the spark tests: help, id, name, default mode, refresh notices (download vs check, size only for a first PvP download), texts follow the interval, not found, digits missing as id and name, ambiguity (incl. two exact-case hits, "等，共 N 个"), exact case wins, rename note, missing id, digit-name fallback, long generated names, bad input, full-width digits, error messages, index 404 and timeouts in chat, cache on/off and bound, one query per sender (bounded wait), access modes incl. unknown value and list types, empty list rows, infinite settings, proxy with empty address fails closed, proxy/timeout reach transport, default output is a JPEG image (also for an unknown setting), Markdown and text outputs, image failure falls back to text with a note, image drawn off the loop. |
+| `test_accounts.py` (6) | owner key per platform and hashed, bind/rebind/unbind, names case-insensitive, old names kept after a rename, exact-case then most recent order, record bounded. |
 | `test_release.py` (4) | version consistency, schema defaults equal code fallbacks, direct imports declared (aiohttp, yarl, pillow), package contents (fonts and licences included, zip under 1 MiB). |
 
 Mutation check (scratch copy, one change at a time, full suite, 120 s limit each): 24 mutations of the guards
@@ -401,3 +403,50 @@ The game's Chinese wording and order: 撤离 (survived) / 匆匆逃离 (runner) 
 header, bar order, legend) all read from there. 存活率 (survived ÷ raids) keeps its name. The font subset was rebuilt
 for the new characters (1167 characters, 185 KB). Tests: `test_exit_statuses_use_the_game_wording`,
 `test_exit_legend_uses_the_game_wording`; 113 -> 115.
+
+## 16. Bind-and-query redesign (0.3.0)
+
+### 16.1 Evidence: why veteran players had no profile
+
+The maintainer asked for PVE profiles of two long-time players, Hirururu and nowaYuMi. Both names were absent from all three
+2026-10-13 indexes; Hirururu's account id (13871958, from a dog tag in the maintainer's profile) returned 404 in all three
+modes. The maintainer then searched Hirururu on tarkov.dev in PVE (no visible captcha): `pve/13871958.json` appeared with
+`Last-Modified` 17:02:58 UTC and `updated` 17:02:56.894 UTC, a minute after the search; `profile/` and `pvp-season/` stayed
+404. nowaYuMi's PVE profile likewise appeared after the maintainer's search (id 14858548, updated 01:05 Beijing time).
+Conclusions: players.tarkov.dev holds only profiles fetched by tarkov.dev's live search (per mode, at search time), not
+every player; play time is irrelevant. The live search needs a Turnstile token; tarkov.dev uses
+`appearance: "interaction-only"`, so browsers pass it silently, which is why no captcha was seen, while a request
+without a token gets 401 (probed). The website's search page takes only `?gameMode=`; `/players/<mode>/<name>` was
+reported by the maintainer not to work, so a link cannot pre-fill a name. Cloudflare also caches 404 responses for
+minutes (`age: 550` seen on a 404).
+
+Not verified: that opening `https://tarkov.dev/players/<mode>/<id>` (without searching) rewrites the snapshot. The page
+code calls the same live `/account/<aid>` lookup, so it is likely; the reminder text names searching first and the page
+second for that reason.
+
+### 16.2 Maintainer decisions
+
+Implement B (query by player-page link) and D (remember name -> id); remind users that data must be refreshed by hand;
+the plugin returns to "bind identity + query", with names supplied by the users. Then (AskUserQuestion): the downloaded
+index stays as an option, **off by default**; a binding holds across all chats of one platform; the name record is
+shared by everyone; `/tarkov` without arguments queries the caller's own binding (help moves to `/tarkov 帮助`).
+
+### 16.3 Changes
+
+| Piece | Change |
+|---|---|
+| `modes.py` | `MODES` gains the website mode segment (`regular`/`pve`/`pvp-season`); `parse_player_url()` accepts `tarkov.dev/players/<mode>/<id>` and `/player/<id>` (scheme and `www.` optional, case-insensitive, full match only, so no other host or query string); arena -> `(None, id)`; `page_url()`, `search_url()`. |
+| `accounts.py` (new) | See §3. |
+| `main.py` | `handle()` parses `帮助/help`, `绑定/bind`, `解绑/unbind`, an optional mode, then nothing (own binding), a link, an id or a name. A link's mode wins; a different explicit mode is refused; arena is refused. `bind()` resolves link/id/recorded name, fetches the profile to confirm it exists, stores the binding. `query()`: own binding, link/id, then `by_name()`: the shared record first, the downloaded index only when `name_index_enabled`; not found -> step-by-step guidance (search page link for that mode, example link command). `profile()` records every fetched nickname (`sqlite3.Error` is logged, never fails the query). `reply()` passes the player's page to the card and, for images, appends `Plain('刷新数据：…')` after the image. |
+| Card / outputs | `build_card(..., refresh_url=)`; text, Markdown (unescaped link built by the plugin) and image notes end with the "数据不会自动更新" reminder. |
+| Config | `name_index_enabled` (bool, default false, schema = code fallback); `name_index_refresh_hours` and the timeout hint now say they apply only with the index. |
+| Fonts | Subset rebuilt for the new text (1240 characters, 196 KB). |
+
+Live run (real network, SDK stubbed, data dir fresh, not uploaded): unbound `/tarkov` -> guidance; bind by nowaYuMi's
+link; `/tarkov pve` -> image + link line; `/tarkov` (PVP, no profile) -> guidance with the PVP search link; Hirururu by
+name -> unknown + steps; by link -> image; then `hirururu` by name -> image (learned); unbind. The data dir held only
+`accounts.sqlite3` (no index download).
+
+Mutation check (12, full suite): binding key per platform, name learning, index off by default, link-mode conflict,
+arena refusal, refresh note in the card, link line after the image, exact-case-first order, record bound, unbind reply,
+record failure tolerated, link host check. All killed. 115 -> 131 tests.

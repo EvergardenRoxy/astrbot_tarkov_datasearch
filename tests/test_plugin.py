@@ -2,6 +2,7 @@
 import asyncio
 import importlib.util
 import io
+import sqlite3
 import threading
 import sys
 import tempfile
@@ -37,6 +38,10 @@ class ImageStub:
 
     @staticmethod
     def fromBytes(data): return ImageStub(data)
+
+
+class PlainStub:
+    def __init__(self, text): self.text = text
 
 
 class FakeNames:
@@ -80,6 +85,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         star.register = decorator
         components = types.ModuleType('astrbot.api.message_components')
         components.Image = ImageStub
+        components.Plain = PlainStub
         self.modules = patch.dict(sys.modules, {'astrbot': types.ModuleType('astrbot'), 'astrbot.api': api,
                                                 'astrbot.api.event': event, 'astrbot.api.star': star,
                                                 'astrbot.api.message_components': components})
@@ -111,6 +117,9 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         config = dict(config or {})
         if output:
             config.setdefault('output_mode', output)
+        if names is not None:
+            # A fake server index only matters when the optional index is switched on.
+            config.setdefault('name_index_enabled', True)
         plugin = self.module.TarkovPlugin(types.SimpleNamespace(), config)
         plugin.names = names or FakeNames()
         return plugin
@@ -120,11 +129,13 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
             return [r async for r in plugin.tarkov_command(event)]
 
     async def test_help(self):
-        for text in ('/tarkov', 'tarkov help', '/塔科夫 帮助', '/tarkov pve'):
+        for text in ('tarkov help', '/塔科夫 帮助', '/tarkov pve a b'):
             with self.subTest(text=text):
                 event = Event(text)
                 result = await self.run_command(self.plugin(), event)
-                self.assertIn('用法：/tarkov [模式] <昵称或账号ID>', result[0])
+                self.assertIn('绑定自己：/tarkov 绑定', result[0])
+                self.assertIn('档案不会自动更新', result[0])
+                self.assertNotIn('昵称名单', result[0])
                 self.assertTrue(event.stopped)
 
     async def test_query_by_id(self):
@@ -159,15 +170,19 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('档案', result[1])
 
     async def test_name_not_found(self):
-        result = await self.run_command(self.plugin(), Event('/tarkov pve Nobody_Here'))
-        self.assertIn('名单里找不到 Nobody_Here', result[0])
-        self.assertIn('用 ID 查询', result[0])
+        # Index off (the default): the reply explains how to make the player known.
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text'})
+        with patch.object(self.transport, 'fetch_index', side_effect=AssertionError('index must not be used')):
+            result = await self.run_command(plugin, Event('/tarkov pve Nobody_Here'))
+        self.assertIn('还不知道 Nobody_Here 的账号 ID', result[0])
+        self.assertIn('https://tarkov.dev/players?gameMode=pve', result[0])
+        self.assertIn('/tarkov https://tarkov.dev/players/pve/1234567', result[0])
         self.assertEqual(self.fetched, [])
 
     async def test_ambiguous_names_are_listed(self):
         names = FakeNames({'pve': [(1, 'Same'), (2, 'SAME')]})
         result = await self.run_command(self.plugin(names=names), Event('/tarkov pve same'))
-        self.assertIn('多个名为 same', result[0])
+        self.assertIn('有多个名为 same 的玩家', result[0])
         self.assertIn('Same（ID 1）', result[0])
         self.assertEqual(self.fetched, [])
 
@@ -193,16 +208,17 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.profiles[('pve', 5)] = profile(aid=5, info_nickname='NewName')
         names = FakeNames({'pve': [(5, 'OldName')]})
         result = await self.run_command(self.plugin(names=names), Event('/tarkov pve OldName'))
-        self.assertIn('档案里的昵称是 NewName', result[0])
+        self.assertIn('名单中的 OldName 对应账号 ID 5，档案里现在的昵称是 NewName', result[0])
 
     async def test_missing_id_profile(self):
         result = await self.run_command(self.plugin(), Event('/tarkov 赛季 12'))
-        self.assertIn('PVP 赛季 模式下没有账号 ID 12 的档案', result[0])
+        self.assertIn('PVP 赛季 模式下还没有账号 ID 12 的档案', result[0])
+        self.assertIn('https://tarkov.dev/players?gameMode=pvp-season', result[0])
 
     async def test_digits_missing_as_id_and_as_name(self):
         result = await self.run_command(self.plugin(), Event('/tarkov 赛季 11505337'))
         self.assertEqual(len(result), 1)
-        self.assertIn('没有账号 ID 11505337 的档案，名单里也没有叫 11505337 的玩家', result[0])
+        self.assertIn('PVP 赛季 模式下没有账号 ID 11505337 的档案，还不知道 11505337 的账号 ID', result[0])
 
     async def test_refresh_notice_mentions_size_only_for_a_first_pvp_download(self):
         # Review F-20: the size note is only true when there is no index yet.
@@ -218,7 +234,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         for seconds, words in ((168*3600, '每周'), (24*3600, '每天'), (72*3600, '每 3 天'), (336*3600, '每 2 周'), (5*3600, '每 5 小时')):
             with self.subTest(words=words):
                 plugin = self.plugin(names=FakeNames(refresh=True, refresh_seconds=seconds))
-                self.assertIn(f'昵称名单{words}更新一次', plugin.help_text())
+                self.assertIn(f'昵称名单（{words}更新一次）', plugin.help_text())
                 result = await self.run_command(plugin, Event('/tarkov pve Nobody'))
                 self.assertIn(words, result[1])
 
@@ -230,10 +246,10 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('123456（账号 ID 77）', result[0])
 
     async def test_bad_input(self):
-        for text in ('/tarkov pve 名字', '/tarkov pve a', '/tarkov pve x/../y', '/tarkov pve a b'):
+        for text in ('/tarkov pve 名字', '/tarkov pve a', '/tarkov pve x/../y', '/tarkov pve http://example.com/players/pve/1'):
             with self.subTest(text=text):
                 result = await self.run_command(self.plugin(), Event(text))
-                self.assertTrue('昵称只能包含' in result[0] or '用法' in result[0])
+                self.assertIn('请发送昵称', result[0])
         self.assertEqual(self.fetched, [])
 
     async def test_errors_become_chat_messages(self):
@@ -344,7 +360,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.fetched, [])
 
     async def test_index_404_and_timeouts_in_chat(self):
-        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {})
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'name_index_enabled': True})
         async def missing(*a, **k):
             raise self.transport.NotFound('x')
         with patch.object(self.transport, 'fetch_index', missing):
@@ -354,7 +370,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         # Review F-17: only an index timeout suggests the download-timeout setting.
         async def slow_index(*a, **k):
             raise TimeoutError('阶段=读取响应体')
-        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {})
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'name_index_enabled': True})
         with patch.object(self.transport, 'fetch_index', slow_index):
             result = [r async for r in plugin.tarkov_command(Event('/tarkov season Somebody'))]
         self.assertIn('下载最长等待', result[-1])
@@ -380,7 +396,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_fullwidth_digits_are_not_an_account_id(self):
         result = await self.run_command(self.plugin(), Event('/tarkov pve １２３４５'))
-        self.assertIn('账号 ID 只能是数字', result[0])
+        self.assertIn('账号 ID（数字）', result[0])
         self.assertEqual(self.fetched, [])
 
     async def test_default_output_is_an_image(self):
@@ -391,8 +407,11 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                 result = await self.run_command(self.plugin(config, output=None), Event('/tarkov pve 1234567'))
                 self.assertEqual(len(result), 1)
                 self.assertIsInstance(result[0], list)
-                image = result[0][0]
+                image, link = result[0]
                 self.assertIsInstance(image, ImageStub)
+                # The image cannot carry a clickable link; a text line after it does.
+                self.assertIsInstance(link, PlainStub)
+                self.assertIn('https://tarkov.dev/players/pve/1234567', link.text)
                 self.assertEqual(image.data[:2], b'\xff\xd8')
                 self.assertEqual(PILImage.open(io.BytesIO(image.data)).width, 820)
 
@@ -425,6 +444,94 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
             await self.run_command(self.plugin(output=None), Event('/tarkov pve 1234567'))
         self.assertEqual(len(threads), 1)
         self.assertIsNot(threads[0], threading.main_thread())
+
+    async def test_bind_then_query_yourself(self):
+        self.profiles[('pve', 14858548)] = profile(aid=14858548, info_nickname='nowaYuMi')
+        plugin = self.plugin()
+        result = await self.run_command(plugin, Event('/tarkov 绑定 https://tarkov.dev/players/pve/14858548'))
+        self.assertIn('已绑定：nowaYuMi（账号 ID 14858548）', result[0])
+        # A binding holds in every chat of the platform, not on another platform.
+        other_group = Event('/tarkov pve')
+        other_group.unified_msg_origin = 'platform:group:2'
+        result = await self.run_command(plugin, other_group)
+        self.assertIn('【塔科夫 PVE 档案】nowaYuMi（账号 ID 14858548）', result[0])
+        elsewhere = Event('/tarkov pve')
+        elsewhere.unified_msg_origin = 'telegram:private:1'
+        self.assertIn('你还没有绑定账号', (await self.run_command(plugin, elsewhere))[0])
+        # No mode: the default mode (PVP), where this account has no profile yet.
+        result = await self.run_command(plugin, Event('/tarkov'))
+        self.assertIn('你绑定的账号 nowaYuMi（ID 14858548）在 PVP 模式下还没有档案', result[0])
+        self.assertIn('https://tarkov.dev/players?gameMode=regular', result[0])
+
+    async def test_bind_by_id_by_name_and_failures(self):
+        self.profiles[('pvp-season', 7)] = profile(aid=7, info_nickname='Seven')
+        plugin = self.plugin()
+        self.assertIn('用法：/tarkov 绑定', (await self.run_command(plugin, Event('/tarkov 绑定')))[0])
+        result = await self.run_command(plugin, Event('/tarkov 绑定 赛季 9'))
+        self.assertIn('PVP 赛季 模式下还没有账号 ID 9 的档案', result[0])
+        self.assertIn('/tarkov 绑定 https://tarkov.dev/players/pvp-season/1234567', result[0])
+        self.assertIn('不能确定 Seven 是哪个账号', (await self.run_command(plugin, Event('/tarkov 绑定 赛季 Seven')))[0])
+        self.assertIn('已绑定：Seven', (await self.run_command(plugin, Event('/tarkov bind season 7')))[0])
+        # The name is now known, so binding by name works too.
+        self.assertIn('已绑定：Seven', (await self.run_command(plugin, Event('/tarkov 绑定 赛季 seven')))[0])
+
+    async def test_unbind(self):
+        self.profiles[('pve', 1)] = profile(aid=1)
+        plugin = self.plugin()
+        self.assertIn('你还没有绑定账号', (await self.run_command(plugin, Event('/tarkov 解绑')))[0])
+        await self.run_command(plugin, Event('/tarkov 绑定 pve 1'))
+        self.assertIn('已解除绑定：Test_Player（账号 ID 1）', (await self.run_command(plugin, Event('/tarkov unbind')))[0])
+        self.assertIn('你还没有绑定账号', (await self.run_command(plugin, Event('/tarkov')))[0])
+
+    async def test_query_by_player_page_link(self):
+        self.profiles[('pve', 13871958)] = profile(aid=13871958, info_nickname='Hirururu')
+        plugin = self.plugin()
+        result = await self.run_command(plugin, Event('/tarkov https://tarkov.dev/players/pve/13871958'))
+        self.assertIn('【塔科夫 PVE 档案】Hirururu（账号 ID 13871958）', result[0])
+        self.assertEqual(self.fetched, [('pve', 13871958)])
+        self.assertIn('不一致', (await self.run_command(plugin, Event('/tarkov pvp https://tarkov.dev/players/pve/1')))[0])
+        self.assertIn('竞技场', (await self.run_command(plugin, Event('/tarkov https://tarkov.dev/players/arena/1')))[0])
+        result = await self.run_command(plugin, Event('/tarkov https://tarkov.dev/players/regular/13871958'))
+        self.assertIn('PVP 模式下还没有账号 ID 13871958 的档案', result[0])
+        self.assertIn('https://tarkov.dev/players?gameMode=regular', result[0])
+
+    async def test_names_are_learned_from_queries(self):
+        # Index off (the default); a query by id or link teaches the name to everyone.
+        self.profiles[('pve', 13871958)] = profile(aid=13871958, info_nickname='Hirururu')
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text'})
+        with patch.object(self.transport, 'fetch_index', side_effect=AssertionError('index must not be used')):
+            self.assertIn('还不知道 hirururu', (await self.run_command(plugin, Event('/tarkov pve hirururu')))[0])
+            await self.run_command(plugin, Event('/tarkov pve 13871958'))
+            someone_else = Event('/tarkov pve hirururu', sender='bob')
+            result = await self.run_command(plugin, someone_else)
+        self.assertIn('【塔科夫 PVE 档案】Hirururu', result[0])
+        self.assertNotIn('注意', result[0])
+
+    async def test_renamed_player_found_by_old_name(self):
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text'})
+        self.profiles[('pve', 5)] = profile(aid=5, info_nickname='OldName')
+        await self.run_command(plugin, Event('/tarkov pve 5'))
+        plugin.cache.clear()
+        self.profiles[('pve', 5)] = profile(aid=5, info_nickname='NewName')
+        result = await self.run_command(plugin, Event('/tarkov pve OldName'))
+        self.assertIn('记录中的 OldName 对应账号 ID 5，档案里现在的昵称是 NewName', result[0])
+
+    async def test_replies_say_the_data_needs_a_manual_refresh(self):
+        self.profiles[('pvp-season', 1)] = profile(aid=1)
+        for output, words in (('text', 'https://tarkov.dev/players/pvp-season/1'),
+                              ('markdown', '[这名玩家的页面](https://tarkov.dev/players/pvp-season/1)')):
+            with self.subTest(output=output):
+                result = await self.run_command(self.plugin(output=output), Event('/tarkov 赛季 1'))
+                self.assertIn('数据不会自动更新', result[0])
+                self.assertIn(words, result[0])
+
+    async def test_failed_name_record_does_not_fail_the_query(self):
+        self.profiles[('pve', 1)] = profile(aid=1)
+        plugin = self.plugin()
+        with patch.object(plugin.accounts, 'remember', side_effect=sqlite3.OperationalError('locked')):
+            result = await self.run_command(plugin, Event('/tarkov pve 1'))
+        self.assertIn('【塔科夫 PVE 档案】', result[0])
+        self.assertTrue(any('name record not saved' in str(entry[0]) for entry in self.logs))
 
     async def test_proxy_setting_reaches_transport(self):
         seen = {}

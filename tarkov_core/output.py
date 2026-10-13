@@ -1,7 +1,7 @@
 """Plain-text and Markdown replies, built from a card (card.py)."""
 import re
 
-from .card import EXITS, SURVIVED, build_card, stale_note
+from .card import EXITS, SURVIVED, build_card, refresh_note, stale_note
 
 
 def side_lines(card_side):
@@ -52,6 +52,8 @@ def render_text(card):
     if card['stale_days']:
         lines.append(stale_note(card['stale_days']))
     lines += card['notes']
+    if card['refresh_url']:
+        lines.append(refresh_note(card['refresh_url']))
     return '\n'.join(lines)
 
 
@@ -116,4 +118,7 @@ def render_markdown(card):
     if card['stale_days']:
         lines.append('> '+stale_note(card['stale_days']))
     lines += ['> '+md(note) for note in card['notes']]
+    if card['refresh_url']:
+        # The link is built by the plugin from a mode and a number, so it is not escaped.
+        lines.append(f"> 数据不会自动更新：在 tarkov.dev 用该模式搜索一次这名玩家，或打开[这名玩家的页面]({card['refresh_url']})，即可刷新档案，几分钟后再查。")
     return '\n'.join(lines)
