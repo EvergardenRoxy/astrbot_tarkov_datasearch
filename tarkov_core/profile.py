@@ -7,6 +7,7 @@ import json
 import math
 from pathlib import Path
 
+from .text import clean
 from .transport import QueryError
 
 STATIC = json.loads((Path(__file__).with_name('data')/'static.json').read_text(encoding='utf-8'))
@@ -111,11 +112,11 @@ def summarize(raw):
     play = number(pmc_eft.get('totalInGameTime')) if isinstance(pmc_eft, dict) else None
     achievements = raw.get('achievements')
     updated = number(raw.get('updated'))
-    side = str(info.get('side') or '')
+    side = clean(info.get('side') or '', 16)
     return {
         'aid': number(raw.get('aid')),
-        'nickname': info['nickname'][:32],
-        'side': SIDES.get(side.lower(), side[:16] or '未知'),
+        'nickname': clean(info['nickname'], 32) or '未知',
+        'side': SIDES.get(side.lower(), side or '未知'),
         'experience': experience,
         'level': level_of(experience) if experience is not None and experience >= 0 else None,
         'prestige': number(info.get('prestigeLevel')),

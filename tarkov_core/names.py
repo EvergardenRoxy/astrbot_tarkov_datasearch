@@ -12,6 +12,7 @@ import time
 
 from astrbot.api import logger
 
+from .text import clean
 from .transport import QueryError
 
 # Escape sequences inside a name are decoded; entries longer than 64 characters are junk and skipped.
@@ -21,6 +22,12 @@ NAME = re.compile(r'[A-Za-z0-9_-]{3,15}')
 MAX_MATCHES = 6
 # After a failed refresh, wait this long before trying again; an older index keeps serving meanwhile.
 RETRY_SECONDS = 600
+
+
+def read_only(path):
+    """A read-only SQLite connection. The URI is built with as_uri() so '#', '?' and '%' in the data directory's
+    path are escaped (an unescaped path was cut at '#', losing mode=ro and opening another file)."""
+    return sqlite3.connect(path.resolve().as_uri()+'?mode=ro', uri=True)
 
 
 def parse_entries(raw):
@@ -34,7 +41,7 @@ def parse_entries(raw):
                 text = json.loads('"'+text+'"')
             except ValueError:
                 continue
-        name = text.strip()
+        name = clean(text, 64)
         if name:
             yield name.lower(), int(match.group(1)), name
 
@@ -81,7 +88,7 @@ class NameIndex:
         if not path.exists():
             return None
         try:
-            db = sqlite3.connect(f'file:{path}?mode=ro', uri=True)
+            db = read_only(path)
             try:
                 return dict(db.execute('SELECT key, value FROM meta').fetchall())
             finally:
@@ -110,7 +117,7 @@ class NameIndex:
             return await asyncio.to_thread(self.query, mode_path, name)
 
     def query(self, mode_path, name):
-        db = sqlite3.connect(f'file:{self.db_path(mode_path)}?mode=ro', uri=True)
+        db = read_only(self.db_path(mode_path))
         try:
             return db.execute('SELECT aid, name FROM names WHERE key=? ORDER BY aid LIMIT ?',
                               (name.strip().lower(), MAX_MATCHES)).fetchall()

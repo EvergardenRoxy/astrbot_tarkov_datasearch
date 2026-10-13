@@ -12,7 +12,7 @@
 
 - 当前版本 **0.1.0**，是首个版本，尚未在聊天平台实测。
 - 已用真实网络把插件的查询流程完整跑过一遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID 和昵称各查了 PVE、PVP、赛季模式。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
-- 自动测试共 72 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
+- 自动测试共 83 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
 
 修改由 Claude Opus 5.5（通过 Claude Code）完成，经项目维护者审阅。做法与 spark 项目相同：先写测试，再改代码，最后跑完全部测试。另外用“故意改坏代码”的方式检查测试：把关键保护逐一从代码里去掉，确认每一项都会被测试发现（共 24 项）。
 
@@ -20,7 +20,7 @@
 
 ```bash
 pip install -r requirements.txt
-python -m unittest discover -s tests   # 应显示 Ran 72 tests ... OK
+python -m unittest discover -s tests   # 应显示 Ran 83 tests ... OK
 python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.1.0.zip
 ```
 
@@ -40,14 +40,14 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
   - 不使用需要人机验证的实时接口（`player.tarkov.dev`），也不尝试绕过人机验证或访问频率限制。
 - **大小和时间有上限**：
   - 单个档案压缩后最多 4 MiB、解压后最多 16 MiB；
-  - 昵称名单压缩后最多 128 MiB、解压后最多 384 MiB（实际约 30 MB 和 67 MB）；
+  - 昵称名单压缩后最多 64 MiB、解压后最多 192 MiB（实际约 30 MB 和 67 MB）；
   - 下载时间受“下载最长等待”限制，查询单个档案最多等 60 秒。
 - **不使用系统代理**：只使用插件配置里的代理，不读取 AstrBot 或系统的代理环境变量。代理连不上时不会改为直连。
 - **聊天里不泄露服务器信息**：出错时只显示插件自己写的原因或错误类型，不显示原始错误信息（其中可能有代理地址或文件路径）。
 - **数据保存范围**：
   - 只在磁盘上保存三个模式的昵称名单（tarkov.dev 已公开的数据）；
   - 玩家档案只在内存中缓存，默认 10 分钟；
-  - 不记录谁查询了谁。
+  - 插件自己不另存查询记录。AstrBot 的日志会记下每条消息的发送者和内容，插件日志里也有被查询的昵称或 ID。
 - **一个人一次只查一个**：上一次查询还没完成时，同一个人在同一会话里的新查询会被拒绝，不同的人互不影响。
 
 ## 各版本做了什么
@@ -101,7 +101,23 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
   - 插件数据目录的路径里有 `#`、`?` 或 `%` 时，昵称名单数据库打不开，每次查询都会重新下载名单；路径里有 `#` 时还会在数据目录外建一个空文件。这是真实的缺陷，建议优先修。
   - tarkov.dev 返回的更新时间异常大时，整份档案显示失败。
 
-建议的修复顺序见 handoff.md §10，等维护者决定后再改。
+维护者决定按建议的顺序全部修复，结果见下一节。
+
+### 安全审计修复（按维护者决定，全部 7 项）
+
+每一项都先写测试、确认旧代码确实出错，再改代码，最后跑完全部测试（83 项）。技术细节见 handoff.md §11。
+
+1. **数据目录路径含 `#`、`?`、`%` 时名单数据库打不开**：打开数据库时对路径正确转义。测试 `test_data_directory_with_uri_characters`，还会检查数据目录之外没有多出文件。
+2. **“限定聊天”和“指定用户”的类型**：写成字符串时按一项处理，必须完全相同才放行；写成其他类型时拒绝所有人，并在日志中警告。测试 `test_access_list_types`。
+3. **第三方文字中的控制字符**：昵称、阵营和名单里的名字，换行和控制字符一律换成空格，零宽字符、文字方向控制符直接去掉，连续空白合并成一个。去掉后昵称为空的显示“未知”。测试 `test_control_characters_are_removed`、`test_control_characters_in_names_are_removed`。
+4. **伪造的 gzip 数据**：提示“tarkov.dev 返回的数据无法解压”，不再显示“查询失败：error。”。测试 `test_garbage_gzip_body`。
+5. **异常的时间和配置值**：更新时间或活跃时间超出能表示的范围时，只省略这一行，档案照常显示；配置里写了 Infinity 等值时按默认值处理。测试 `test_out_of_range_timestamps_are_left_out`、`test_infinite_setting_falls_back`。
+6. **其他**：
+   - 账号 ID 只接受半角数字；
+   - `requirements.txt` 加上 `yarl`；
+   - README 改为说明日志中有查询记录。
+   - 测试 `test_fullwidth_digits_are_not_an_account_id`、`test_direct_imports_are_declared`。
+7. **资源**：名单的大小上限收紧到压缩后 64 MiB、解压后 192 MiB（约为实际大小的 2～3 倍）；档案解析放到后台线程，不占用聊天机器人的主循环。测试 `test_index_decoded_limit`、`test_profile_is_parsed_off_the_event_loop`。
 
 ## 需要维护者决定或确认的事
 
