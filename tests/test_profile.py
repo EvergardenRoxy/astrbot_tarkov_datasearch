@@ -2,7 +2,7 @@ import copy
 import unittest
 
 from fixtures import profile
-from tarkov_core.modes import parse_mode, path_of
+from tarkov_core.modes import page_url, parse_mode, parse_player_url, path_of, search_url
 from tarkov_core.output import render
 from tarkov_core.profile import STATIC, counter, level_of, side_stats, summarize
 from tarkov_core.transport import QueryError
@@ -127,6 +127,28 @@ class ModeTests(unittest.TestCase):
                 self.assertEqual(parse_mode(word), mode)
         self.assertIsNone(parse_mode('Some_Player'))
         self.assertIsNone(parse_mode(None))
+
+    def test_player_page_links(self):
+        cases = {
+            'https://tarkov.dev/players/pve/2345678': ('pve', 2345678),
+            'https://tarkov.dev/players/regular/7654321/': ('pvp', 7654321),
+            'tarkov.dev/players/pvp-season/1': ('season', 1),
+            'https://www.tarkov.dev/player/42': ('pvp', 42),
+            'HTTPS://TARKOV.DEV/PLAYERS/PVE/7': ('pve', 7),
+            'https://tarkov.dev/players/arena/9': (None, 9),
+        }
+        for url, expected in cases.items():
+            with self.subTest(url=url):
+                self.assertEqual(parse_player_url(url), expected)
+        for url in ('https://example.com/players/pve/1', 'https://tarkov.dev.evil.com/players/pve/1',
+                    'https://tarkov.dev/players/pve/abc', 'https://tarkov.dev/players/pve/1?x=1', 'Player_Two', '1234'):
+            with self.subTest(url=url):
+                self.assertIsNone(parse_player_url(url))
+
+    def test_page_and_search_links(self):
+        self.assertEqual(page_url('pvp', 1), 'https://tarkov.dev/players/regular/1')
+        self.assertEqual(page_url('season', 2), 'https://tarkov.dev/players/pvp-season/2')
+        self.assertEqual(search_url('pve'), 'https://tarkov.dev/players?gameMode=pve')
 
     def test_regular_mode_lives_under_profile(self):
         self.assertEqual(path_of('pvp'), 'profile')

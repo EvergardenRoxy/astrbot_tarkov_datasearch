@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-from .card import EXITS, SURVIVED, stale_note
+from .card import EXITS, SURVIVED, refresh_note, stale_note
 
 FONTS = Path(__file__).with_name('fonts')
 FONT_FILES = {'sc': 'NotoSansSC-Subset.ttf', 'osw': 'Oswald-Variable.ttf', 'mono': 'ShareTechMono-Regular.ttf'}
@@ -186,7 +186,8 @@ def exit_bars(d, sides, x, y, width):
 def render_image(card):
     """JPEG bytes of the card."""
     skill_rows = (len(card['skills'])+1)//2
-    notes = ([stale_note(card['stale_days'])] if card['stale_days'] else [])+card['notes']
+    notes = (([stale_note(card['stale_days'])] if card['stale_days'] else [])+card['notes']
+             +([refresh_note(card['refresh_url'])] if card['refresh_url'] else []))
     height = 1300+skill_rows*34+sum(26*(1+len(note)//34) for note in notes)
     img = paper(height)
     d = ImageDraw.Draw(img)

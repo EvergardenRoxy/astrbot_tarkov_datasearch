@@ -28,6 +28,12 @@ def stale_note(days):
     return f'这份档案已有 {days} 天没有更新：可能是该玩家很久没玩这个模式，也可能是 tarkov.dev 很久没有刷新过他的档案。'
 
 
+def refresh_note(url):
+    # Searching the player on the website was observed to rewrite the snapshot (handoff §16); opening the page by
+    # account id runs the same live lookup in the site's code.
+    return f'数据不会自动更新：在 tarkov.dev 用该模式搜索一次这名玩家，或打开 {url}，即可刷新档案，几分钟后再查。'
+
+
 def side(title, stats):
     return {
         'title': title,
@@ -38,7 +44,7 @@ def side(title, stats):
     }
 
 
-def build_card(summary, mode_label, skill_limit=10, notes=(), now=None):
+def build_card(summary, mode_label, skill_limit=10, notes=(), now=None, refresh_url=None):
     now = time.time() if now is None else now
     updated = when(summary['updated']) if summary['updated'] else None
     days = (now-summary['updated'])/86400 if updated else 0
@@ -62,4 +68,6 @@ def build_card(summary, mode_label, skill_limit=10, notes=(), now=None):
         # Elite skills are always listed in full; skill_limit caps the others; 0 hides skills.
         'skills': elite+rest,
         'notes': list(notes),
+        # The player's tarkov.dev page; the profile only changes when someone looks the player up there.
+        'refresh_url': refresh_url,
     }
