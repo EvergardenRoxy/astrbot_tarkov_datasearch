@@ -218,7 +218,16 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
     async def test_digits_missing_as_id_and_as_name(self):
         result = await self.run_command(self.plugin(), Event('/tarkov 赛季 3456789'))
         self.assertEqual(len(result), 1)
-        self.assertIn('tarkov.dev 上没有账号 ID 3456789 的档案，还不知道 3456789 的账号 ID', result[0])
+        self.assertIn('tarkov.dev 上还没有账号 ID 3456789 的档案（PVP、PVE、赛季都没有）', result[0])
+
+    async def test_digits_with_a_profile_in_another_mode(self):
+        # Live run: `/tarkov pvp 7654321` said the account had no profile at all, though it has a PVE one (an id this
+        # long is also a possible nickname, so the name lookup ran and its "unknown" text replaced the id's).
+        self.profiles[('pve', 7654321)] = profile(aid=7654321)
+        result = await self.run_command(self.plugin(), Event('/tarkov pvp 7654321'))
+        self.assertEqual(len(result), 1)
+        self.assertIn('PVP 模式下还没有账号 ID 7654321 的档案，但 PVE 模式（/tarkov pve 7654321）下有档案', result[0])
+        self.assertNotIn('还不知道', result[0])
 
     async def test_refresh_notice_mentions_size_only_for_a_first_pvp_download(self):
         # Review F-20: the size note is only true when there is no index yet.

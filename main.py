@@ -308,10 +308,12 @@ class TarkovPlugin(Star):
             if url or not NAME.fullmatch(target):
                 yield event.plain_result(missing)
                 return
-        async for result in self.by_name(event, mode, explicit, target, trace):
+        else:
+            missing = None
+        async for result in self.by_name(event, mode, explicit, target, trace, id_missing=missing):
             yield result
 
-    async def by_name(self, event, mode, explicit, target, trace):
+    async def by_name(self, event, mode, explicit, target, trace, id_missing=None):
         label = label_of(mode)
         matches, total = await asyncio.to_thread(self.accounts.lookup, target)
         where = '记录'
@@ -326,11 +328,15 @@ class TarkovPlugin(Star):
                     yield event.plain_result(f'正在下载 {label} 玩家名单（第一次按昵称查询这个模式时需要{size}，可能需要几十秒），请稍候。')
             matches, total = await self.names.lookup(path_of(mode), target)
         logger.info('Tarkov [%s] name matches=%s source=%s', trace, total, where)
+        if not matches and id_missing:
+            # Nobody recorded an all-digit name like this: what is known about the account id is the answer (it may
+            # have a profile in another mode).
+            yield event.plain_result(id_missing)
+            return
         if not matches:
-            digits = f'tarkov.dev 上没有账号 ID {target} 的档案，' if ACCOUNT_ID.fullmatch(target) else ''
             unknown = (f'记录和 tarkov.dev 的昵称名单（{every(self.names.refresh_seconds)}更新一次）里都没有 {target}。'
                        if self.index_enabled() else f'还不知道 {target} 的账号 ID。')
-            yield event.plain_result(digits+unknown+self.first_time(mode, explicit=explicit)+'查到一次后，之后就能直接用名字查询。')
+            yield event.plain_result(unknown+self.first_time(mode, explicit=explicit)+'查到一次后，之后就能直接用名字查询。')
             return
         exact = [match for match in matches if match[1] == target]
         if len(exact) != 1 and len(matches) > 1:

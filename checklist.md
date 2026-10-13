@@ -12,7 +12,7 @@
 
 - 当前版本 **0.3.0**，改为“绑定身份 + 查询”，尚未在聊天平台实测。
 - 已用真实网络把插件的查询流程完整跑过一遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID 和昵称各查了 PVE、PVP、赛季模式。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
-- 自动测试共 137 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
+- 自动测试共 138 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
 
 修改由 Claude Opus 5.5（通过 Claude Code）完成，经项目维护者审阅。做法与 spark 项目相同：先写测试，再改代码，最后跑完全部测试。另外用“故意改坏代码”的方式检查测试：把关键保护逐一从代码里去掉，确认每一项都会被测试发现（共 24 项）。
 
@@ -20,7 +20,7 @@
 
 ```bash
 pip install -r requirements.txt
-python -m unittest discover -s tests   # 应显示 Ran 137 tests ... OK
+python -m unittest discover -s tests   # 应显示 Ran 138 tests ... OK
 python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.3.0.zip
 ```
 
