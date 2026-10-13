@@ -440,7 +440,7 @@ shared by everyone; `/tarkov` without arguments queries the caller's own binding
 | `main.py` | `handle()` parses `帮助/help`, `绑定/bind`, `解绑/unbind`, an optional mode, then nothing (own binding), a link, an id or a name. A link's mode wins; a different explicit mode is refused; arena is refused. `bind()` resolves link/id/recorded name, fetches the profile to confirm it exists, stores the binding. `query()`: own binding, link/id, then `by_name()`: the shared record first, the downloaded index only when `name_index_enabled`; not found -> step-by-step guidance (search page link for that mode, example link command). `profile()` records every fetched nickname (`sqlite3.Error` is logged, never fails the query). `reply()` passes the player's page to the card and, for images, appends `Plain('刷新数据：…')` after the image. |
 | Card / outputs | `build_card(..., refresh_url=)`; text, Markdown (unescaped link built by the plugin) and image notes end with the "数据不会自动更新" reminder. |
 | Config | `name_index_enabled` (bool, default false, schema = code fallback); `name_index_refresh_hours` and the timeout hint now say they apply only with the index. |
-| Fonts | Subset rebuilt for the new text (1240 characters, 196 KB). |
+| Fonts | Subset rebuilt for the new text (1242 characters, 196 KB). |
 
 Live run (real network, SDK stubbed, data dir fresh, not uploaded): unbound `/tarkov` -> guidance; bind by Player_Two's
 link; `/tarkov pve` -> image + link line; `/tarkov` (PVP, no profile) -> guidance with the PVP search link; Player_One by
