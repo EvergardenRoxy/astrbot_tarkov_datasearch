@@ -1,7 +1,8 @@
 import unittest
 
 from fixtures import profile
-from tarkov_core.output import render
+from tarkov_core.card import build_card
+from tarkov_core.output import render, render_markdown
 from tarkov_core.profile import summarize
 
 NOW = 1791000000 + 3600
@@ -46,6 +47,28 @@ class OutputTests(unittest.TestCase):
                 self.assertIn('数据来自 tarkov.dev', text)
                 self.assertNotIn('档案更新于', text)
                 self.assertNotIn('天没有更新', text)
+
+    def test_markdown(self):
+        s = summarize(profile(info_nickname='A_b*c'))
+        s['scav'] = dict.fromkeys(s['scav'], 0)
+        text = render_markdown(build_card(s, 'PVE', notes=['注意：x_y'], now=NOW))
+        self.assertTrue(text.startswith('## 塔科夫 PVE 档案：A\\_b\\*c'))
+        self.assertIn('| PMC | 1000 | 800 | 80.0% | 5000 | 100 | 50.00 | 900 | 40 |', text)
+        self.assertIn('| Scav | 暂无记录 |', text)
+        self.assertNotIn('撤离状态（Scav）', text)
+        self.assertIn('**精英技能（2 项）**：耐力、力量', text)
+        self.assertIn('> 注意：x\\_y', text)
+        self.assertNotIn('技能', render_markdown(build_card(s, 'PVE', skill_limit=0, now=NOW)))
+
+    def test_text_is_unchanged_by_the_card_model(self):
+        # The text reply existed before the card model; it must read the same through it.
+        s = summarize(profile())
+        self.assertEqual(render(s, 'PVE', notes=['n'], now=NOW), '\n'.join([
+            '【塔科夫 PVE 档案】Test_Player（账号 ID 1234567）', '阵营 USEC｜等级 53', '账号总游戏时长 1000 小时｜成就 2 个',
+            '最近活跃 2026-09-28 20:53', '', 'PMC：战局 1000，存活 800，存活率 80.0%',
+            '　击杀 5000，死亡 100，K/D 50.00，击杀 PMC 900', '　阵亡 120，失踪 10，Run Through 30，转图 40，最长连续存活 40 局',
+            'Scav：战局 50，存活 30，存活率 60.0%', '　击杀 100，死亡 10，K/D 10.00，击杀 PMC 20', '　阵亡 15，Run Through 5，最长连续存活 5 局',
+            '精英技能（2 项）：耐力、力量', '其他技能（前 2 项）：魅力 40、活力 25', '', '数据来自 tarkov.dev，档案更新于 2026-10-03 12:00（北京时间）', 'n']))
 
     def test_prestige_and_notes(self):
         text = render(summarize(profile(info_prestigeLevel=2)), 'PVP', notes=['注意：测试'], now=NOW)

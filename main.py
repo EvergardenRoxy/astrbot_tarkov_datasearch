@@ -5,12 +5,15 @@ import time
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.message_components import Image
 from astrbot.api.star import Context, Star, StarTools, register
 
 from .tarkov_core import transport
 from .tarkov_core.modes import MODES, label_of, parse_mode, path_of
 from .tarkov_core.names import NAME, NameIndex
-from .tarkov_core.output import render
+from .tarkov_core.card import build_card
+from .tarkov_core.image import render_image
+from .tarkov_core.output import render_markdown, render_text
 from .tarkov_core.profile import summarize
 from .tarkov_core.transport import NotFound, QueryError
 
@@ -20,6 +23,7 @@ ACCOUNT_ID = re.compile(r'[0-9]{1,12}')
 # Profiles kept in memory at most, whatever the cache time.
 CACHE_ENTRIES = 128
 LABEL_OF_PATH = {path: label for path, label in MODES.values()}
+OUTPUT_MODES = ('image', 'text', 'markdown')
 
 
 class IndexTimeout(TimeoutError):
@@ -35,7 +39,7 @@ def every(seconds):
     return f'每 {hours} 小时'
 
 
-@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.1.0')
+@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.2.0')
 class TarkovPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -164,7 +168,7 @@ class TarkovPlugin(Star):
                     return
                 summary = None
             if summary:
-                yield event.plain_result(render(summary, label, self.skill_count(), notes))
+                yield await self.reply(event, summary, label, notes, trace)
                 return
         interval = every(self.names.refresh_seconds)
         if self.names.needs_refresh(path_of(mode)):
@@ -197,7 +201,27 @@ class TarkovPlugin(Star):
             return
         if summary['nickname'].lower() != target.lower():
             notes.append(f'注意：名单中的 {target} 对应账号 ID {aid}，但档案里的昵称是 {summary["nickname"]}，可能改过名或名单已过时。')
-        yield event.plain_result(render(summary, label, self.skill_count(), notes))
+        yield await self.reply(event, summary, label, notes, trace)
+
+    def output_mode(self):
+        mode = str(self.config.get('output_mode', 'image'))
+        return mode if mode in OUTPUT_MODES else 'image'
+
+    async def reply(self, event, summary, label, notes, trace):
+        """The profile in the configured output: an image (text if drawing fails), plain text or Markdown."""
+        card = build_card(summary, label, self.skill_count(), notes)
+        mode = self.output_mode()
+        if mode == 'image':
+            try:
+                data = await asyncio.to_thread(render_image, card)
+                return event.chain_result([Image.fromBytes(data)])
+            except Exception as exc:
+                logger.warning('Tarkov [%s] image rendering failed, sending text: %s', trace, type(exc).__name__)
+                card['notes'].append('（图片生成失败，已改为文字）')
+                return event.plain_result(render_text(card))
+        if mode == 'markdown':
+            return event.plain_result(render_markdown(card))
+        return event.plain_result(render_text(card))
 
     def skill_count(self):
         return self.int_setting('skill_count', 10, 0, 49)

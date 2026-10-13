@@ -1,6 +1,8 @@
 """SDK boundary doubles, not a claim of a running AstrBot installation."""
 import asyncio
 import importlib.util
+import io
+import threading
 import sys
 import tempfile
 import types
@@ -24,8 +26,17 @@ class Event:
 
     def get_sender_id(self): return self.sender
     def plain_result(self, text): return text
+    def chain_result(self, chain): return chain
     def is_admin(self): return self.admin
     def stop_event(self): self.stopped = True
+
+
+class ImageStub:
+    """Shape of astrbot.api.message_components.Image as main.py uses it."""
+    def __init__(self, data): self.data = data
+
+    @staticmethod
+    def fromBytes(data): return ImageStub(data)
 
 
 class FakeNames:
@@ -67,8 +78,11 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         star.Context = object
         star.StarTools = types.SimpleNamespace(get_data_dir=lambda name: Path(self.temp.name))
         star.register = decorator
+        components = types.ModuleType('astrbot.api.message_components')
+        components.Image = ImageStub
         self.modules = patch.dict(sys.modules, {'astrbot': types.ModuleType('astrbot'), 'astrbot.api': api,
-                                                'astrbot.api.event': event, 'astrbot.api.star': star})
+                                                'astrbot.api.event': event, 'astrbot.api.star': star,
+                                                'astrbot.api.message_components': components})
         self.modules.start()
         package = types.ModuleType('tarkov_test_plugin')
         package.__path__ = [str(ROOT)]
@@ -92,8 +106,12 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
             raise self.transport.NotFound('not found')
         return self.profiles[(mode_path, aid)]
 
-    def plugin(self, config=None, names=None):
-        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), config or {})
+    def plugin(self, config=None, names=None, output='text'):
+        # Most tests read the reply as text; the output tests below pass output=None for the real default (image).
+        config = dict(config or {})
+        if output:
+            config.setdefault('output_mode', output)
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), config)
         plugin.names = names or FakeNames()
         return plugin
 
@@ -364,6 +382,49 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         result = await self.run_command(self.plugin(), Event('/tarkov pve １２３４５'))
         self.assertIn('账号 ID 只能是数字', result[0])
         self.assertEqual(self.fetched, [])
+
+    async def test_default_output_is_an_image(self):
+        from PIL import Image as PILImage
+        self.profiles[('pve', 1234567)] = profile()
+        for config in ({}, {'output_mode': 'something else'}):
+            with self.subTest(config=config):
+                result = await self.run_command(self.plugin(config, output=None), Event('/tarkov pve 1234567'))
+                self.assertEqual(len(result), 1)
+                self.assertIsInstance(result[0], list)
+                image = result[0][0]
+                self.assertIsInstance(image, ImageStub)
+                self.assertEqual(image.data[:2], b'\xff\xd8')
+                self.assertEqual(PILImage.open(io.BytesIO(image.data)).width, 820)
+
+    async def test_markdown_and_text_outputs(self):
+        self.profiles[('pve', 1234567)] = profile()
+        result = await self.run_command(self.plugin({'output_mode': 'markdown'}, output=None), Event('/tarkov pve 1234567'))
+        self.assertTrue(result[0].startswith('## 塔科夫 PVE 档案：Test\\_Player'))
+        self.assertIn('| PMC | 1000 |', result[0])
+        result = await self.run_command(self.plugin({'output_mode': 'text'}, output=None), Event('/tarkov pve 1234567'))
+        self.assertTrue(result[0].startswith('【塔科夫 PVE 档案】Test_Player'))
+
+    async def test_image_failure_falls_back_to_text(self):
+        self.profiles[('pve', 1234567)] = profile()
+        def broken(card):
+            raise OSError('font missing')
+        with patch.object(self.module, 'render_image', broken):
+            result = await self.run_command(self.plugin(output=None), Event('/tarkov pve 1234567'))
+        self.assertTrue(result[0].startswith('【塔科夫 PVE 档案】'))
+        self.assertIn('图片生成失败，已改为文字', result[0])
+        self.assertTrue(any('image rendering failed' in str(entry[0]) for entry in self.logs))
+
+    async def test_image_is_drawn_off_the_event_loop(self):
+        self.profiles[('pve', 1234567)] = profile()
+        threads = []
+        real = self.module.render_image
+        def spy(card):
+            threads.append(threading.current_thread())
+            return real(card)
+        with patch.object(self.module, 'render_image', spy):
+            await self.run_command(self.plugin(output=None), Event('/tarkov pve 1234567'))
+        self.assertEqual(len(threads), 1)
+        self.assertIsNot(threads[0], threading.main_thread())
 
     async def test_proxy_setting_reaches_transport(self):
         seen = {}

@@ -1,11 +1,42 @@
 [![AI Co-created](https://img.shields.io/badge/AI-Claude%20Opus%205.5%20%2B%20Claude%20Code-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](README.md#ai-制作声明)
 
 > [!IMPORTANT]
-> **AI 共创声明：本更新日志所记录的修改与日志本身，由项目维护者与生成式 AI 共同完成。** **Claude Opus 5.5**（通过 **Claude Code**）参与 0.1.0 版本的数据源调研、方案制定、编码、测试，以及本日志与交接文档 `handoff.md` 的编写。AI 生成或修改的内容由项目维护者审阅、验证并承担最终维护责任。完整声明见 [README](README.md#ai-制作声明)。
+> **AI 共创声明：本更新日志所记录的修改与日志本身，由项目维护者与生成式 AI 共同完成。** **Claude Opus 5.5**（通过 **Claude Code**）参与 0.1.0 至 0.2.0 版本的数据源调研、方案制定、编码、测试、图片回复的设计与绘制，以及本日志与交接文档 `handoff.md` 的编写。AI 生成或修改的内容由项目维护者审阅、验证并承担最终维护责任。完整声明见 [README](README.md#ai-制作声明)。
 
 # 更新日志
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
+
+## 0.2.0 - 2026-10-13
+
+> 由 **Claude Opus 5.5**（通过 **Claude Code**）依据维护者确认的方案实现（方案 C、默认图片、三种输出方式、合成版样式），尚未在聊天平台实测。设计、依据与验证见 [handoff.md](handoff.md) §14–§15。
+
+### 新增
+
+- **图片回复**：情报档案风格。
+  - 狗牌显示昵称、阵营、等级和账号 ID；
+  - 作战记录表；
+  - PMC 与 Scav 的撤离状态色条；
+  - 10 格技能评估；
+  - 备注中显示过期和改名提示。
+  - 图片用 Pillow 在本地绘制，不经过任何在线渲染服务，不保存文件；画图失败时自动改发文字。
+- **Markdown 回复**：标题、表格和加粗，玩家名中的 Markdown 符号会被转义。
+- **新配置项“输出方式”**：图片（默认）/ 文字 / Markdown 文字。
+- **随插件附带三款 SIL OFL 字体**：
+  - 思源黑体（Noto Sans SC）裁剪版：只保留插件会用到的 1158 个字符，约 183 KB；
+  - Oswald；
+  - Share Tech Mono。
+  - 开发工具 `tools/build_fonts.py` 用于重新生成裁剪版。
+
+### 变更
+
+- 文字、Markdown 和图片三种回复都由同一份“卡片内容”生成，内容一致；文字回复的格式不变。
+- `requirements.txt` 增加 `pillow>=11.2.1`（AstrBot 本身已依赖）。
+- 版本号升至 0.2.0。
+
+### 测试
+
+- 单元测试 113 项（新增图片、Markdown、输出方式和字体覆盖的测试）。
 
 ## 0.1.0 - 2026-10-13
 
