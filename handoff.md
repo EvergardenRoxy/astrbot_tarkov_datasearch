@@ -14,7 +14,7 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
 | Version | 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 137, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Tests | 138, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -472,3 +472,7 @@ record failure tolerated, link host check. All killed. 115 -> 131 tests.
   131 -> 137. Mutation check (9): explicit mode kept, fallback, explicit flag, main-mode error, "also has" note,
   bind in any mode, not-found TTL, not-found cached, rename note. All killed.
 - Fonts: subset rebuilt for the new messages (1248 characters, 196 KB).
+- Live run after the push: `/tarkov pvp 13871958` (PVE profile only) answered "no profile, unknown name": an id of 5+
+  digits is also a valid nickname, so the name lookup ran and its "unknown" text replaced the id's. Now, when no name
+  matches, the id's own answer is given ("PVP 模式下还没有…但 PVE 模式（/tarkov pve 13871958）下有档案").
+  `test_digits_with_a_profile_in_another_mode`; 137 -> 138; reverting the fix fails 2 tests.
