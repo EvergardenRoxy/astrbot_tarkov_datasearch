@@ -12,7 +12,7 @@
 
 - 当前版本 **0.3.0**，改为“绑定身份 + 查询”，尚未在聊天平台实测。
 - 已用真实网络把插件的查询流程完整跑过一遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID 和昵称各查了 PVE、PVP、赛季模式。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
-- 自动测试共 131 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
+- 自动测试共 137 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
 
 修改由 Claude Opus 5.5（通过 Claude Code）完成，经项目维护者审阅。做法与 spark 项目相同：先写测试，再改代码，最后跑完全部测试。另外用“故意改坏代码”的方式检查测试：把关键保护逐一从代码里去掉，确认每一项都会被测试发现（共 24 项）。
 
@@ -20,7 +20,7 @@
 
 ```bash
 pip install -r requirements.txt
-python -m unittest discover -s tests   # 应显示 Ran 131 tests ... OK
+python -m unittest discover -s tests   # 应显示 Ran 137 tests ... OK
 python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.3.0.zip
 ```
 
@@ -67,10 +67,11 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
    - 记住查到过的“名字 → 账号 ID”（所有人共享），之后直接用名字就能查到。
    - 每次回复都提醒“数据不会自动更新”，并附上玩家页链接。
    - tarkov.dev 的昵称名单改为可选、默认关闭。
+   - 三种模式一起看（维护者要求“不要只局限于 PVE”）：不写模式时先看默认模式，没有档案就换成有档案的模式并注明；写了模式时只看该模式，没有档案时说明哪些模式有；每次回复注明其他有档案的模式；绑定时任一模式有档案即可。
 3. **怎么核对**
    - 在聊天中依次发送：`/tarkov`（应提示先绑定）→ `/tarkov 绑定 <你的玩家页网址>` → `/tarkov pve`（应收到图片和一行链接）。
    - 再用网址查一个别人，然后直接用他的名字查，应能查到。
-   - 测试 `tests/test_accounts.py` 和 `tests/test_plugin.py` 中的绑定、网址、名字记录、刷新提醒测试。把新增的保护逐一从代码里去掉，共 12 处，每一处都会被测试发现。
+   - 测试 `tests/test_accounts.py` 和 `tests/test_plugin.py` 中的绑定、网址、名字记录、刷新提醒测试。把新增的保护逐一从代码里去掉，共 21 处（其中多模式 9 处），每一处都会被测试发现。
 
 ### 0.2.0：图片和 Markdown 回复
 
