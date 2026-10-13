@@ -215,3 +215,45 @@ origin, other-type origin, Cf removal, Cc replacement, index cleaning, profile c
 OverflowError, ASCII digits, to_thread, index limit), all killed.
 
 Not changed: L-4 (not applicable), Info-1, Info-2, Info-3, Info-8, Info-9 (§10). Still not tested on Windows paths.
+
+## 12. Independent review after §11 (subagent, no shared context): verified, proposals only
+
+The maintainer asked for an independent review once the audit fixes were in. A fresh subagent got only a clone of
+`fc26b0a`, the maintainer's requirements and the documentation convention, and was told to reproduce every claim. Its
+report (Chinese, 20 findings: 0 high, 1 medium, 8 low, 11 info) and its 14 reproduction tests are kept outside the
+tree. I re-ran all 14 reproductions against `fc26b0a` (all reproduce) and checked the inferred premises myself. It
+confirmed the §11 fixes as correct, with two gaps (F-03, F-09). No code changed; the maintainer decides.
+
+| Id | Sev. | Finding | My verification |
+|---|---|---|---|
+| F-01 | medium | No back-off when the **first** index download fails (no db yet): `failed_at` is only set when an old db exists, so every name query (and the digits-to-name fallback) downloads the whole index again; after a 403/429 it hits the server on every query. | Reproduced (5 lookups, 5 downloads). |
+| F-02 | low | Config save hot-reloads the plugin; the new `NameIndex.__init__` deletes the `.download` the old instance is still writing (old query fails with `FileNotFoundError`); both instances may download/build to the same paths. Windows: `unlink` of an open file may fail plugin load (not tested). | Reproduced. Premise confirmed in the 4.16.0 wheel: `post_plugin_configs` calls `plugin_manager.reload`; `_terminate_plugin` only awaits `terminate()`. |
+| F-03 | low | `summarize()` still raises: a JSON integer beyond float range makes `math.isfinite` raise `OverflowError`; a list as skill `Id` raises `TypeError` (unhashable). Breaks §7; chat shows `查询失败：OverflowError。`. | Reproduced. |
+| F-04 | low | Proxy enabled with an empty address connects directly, silently, against the docs' "never falls back to direct". | Reproduced. |
+| F-05 | low | Help, refresh notice and not-found text say "每周" whatever `name_index_refresh_hours` is. | Reproduced. |
+| F-06 | low | A failed `build()` leaves `names-*.sqlite3.tmp` (up to ~100 MB) until the next start. | Reproduced. |
+| F-07 | low | A db whose `meta` reads but whose `names` table is damaged is never rebuilt before the next refresh; lookups fail with `OperationalError`. | Consequence reproduced (damage simulated with `DROP TABLE`). |
+| F-08 | low | §4 test counts are the pre-§11 ones (72). | Confirmed. |
+| F-09 | low | README says the only dependency is aiohttp; `requirements.txt` also has yarl. | Confirmed. |
+| F-10 | info | `URL('http://h').port` is 80, never None; the `'http://h'` test case passes only because DNS for `h` fails. | Reproduced. |
+| F-11 | info | `''`, `['']` or a trailing space in `allowed_origins` denies everyone. | Reproduced. |
+| F-12 | info | Index 404 reaches chat as `查询失败：not found`. | Reproduced. |
+| F-13 | info | Over 6 case-insensitive matches, the exact-case player can be cut by `LIMIT`; 6 found, 5 shown, no "more". | Reproduced (constructed lookup result). |
+| F-14 | info | The index is rebuilt daily, so with a weekly check the 304 path rarely helps; docs overstate the saving. | Plausible, not observed: this container's clock is still 2026-10-13, ETags equal the ones recorded today. |
+| F-15 | info | `[A-Za-z0-9_-]{3,15}` excludes auto-generated `TarkovCitizen<digits>` names. | Confirmed and larger than reported: the PvP index has 778 names over 15 characters (775 `TarkovCitizen…`), all `[A-Za-z0-9_-]`, at most 21 characters (2 junk entries over 64 are skipped). |
+| F-16 | info | "游戏时长" is account-wide, not per mode. | Confirmed: `pvp-season/712.json` has 7,141 h in both pmcStats and scavStats with 58 + 32 raids. |
+| F-17 | info | The profile-timeout hint says to raise the download timeout, but profile fetches are capped at 60 s. | Confirmed by code. |
+| F-18 | info | Windows UNC data dir: `as_uri()` gives `file://server/...`, which SQLite rejects. | Not tested on Windows; noted. |
+| F-19 | info | Cleaning stops line injection, not same-line text or `@everyone` in a tampered nickname. | Agreed; needs tampered upstream data. |
+| F-20 | info | Refresh notice always says "约 30 MB / 几十秒"; players named `help`/`pvp`/`season`… need an explicit mode; a mistyped PvP id can trigger the first 30 MB download. | Confirmed by code. |
+
+**Proposed fixes, in my order of priority:**
+1. F-01: record `failed_at` also without a db; inside `RETRY_SECONDS` raise a clear `QueryError` ("名单暂时无法下载… N 分钟后再试，可以先用账号 ID 查询") instead of downloading again.
+2. F-03: `number()` catches `OverflowError`; `skills()` requires a `str` id; one test feeding odd shapes into every field.
+3. F-04: proxy enabled with an empty address -> `QueryError` (fail closed).
+4. F-02 + F-06: per-refresh unique temp names (pid + random); `__init__` removes only leftovers older than an hour and ignores `OSError`; `build()` deletes its temp file on failure.
+5. F-07: on `sqlite3.DatabaseError` in a lookup, delete the db and rebuild once.
+6. F-15: nickname length 3-24. F-16: label "账号总游戏时长".
+7. Chat texts: F-05 (interval from the setting), F-17 (timeout hint only for the index), F-12 (Chinese text for an index 404), F-11 (strip and drop empty list items), F-13 ("等，共 N 个以上" when cut), F-20 (size note only when no db exists yet).
+8. Docs: F-08, F-09, F-14 wording, F-18 in §5, F-20 note on names equal to mode words; F-10: validate with `explicit_port` (the hint already asks for `主机:端口`) and fix the test.
+Not proposed: F-19 (cleaning is enough while the game restricts the character set; a display whitelist would hide legitimate names if that changes).
