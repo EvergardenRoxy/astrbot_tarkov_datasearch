@@ -19,6 +19,13 @@ class ReleaseTests(unittest.TestCase):
         released = re.search(r'^## ([0-9][^ ]*) - ', (ROOT/'CHANGELOG.md').read_text(encoding='utf-8'), re.M).group(1)
         self.assertEqual({metadata, registered, released, VERSION}, {VERSION})
 
+    def test_footer_facts_match_the_repository(self):
+        from tarkov_core import LICENSE, REPO
+        repo = re.search(r'^repo:\s*(\S+)', (ROOT/'metadata.yaml').read_text(encoding='utf-8'), re.M).group(1)
+        self.assertEqual(repo, REPO)
+        self.assertIn('GNU GENERAL PUBLIC LICENSE', (ROOT/'LICENSE').read_text(encoding='utf-8'))
+        self.assertIn(LICENSE, (ROOT/'README.md').read_text(encoding='utf-8'))
+
     def test_schema_defaults_match_code_fallbacks(self):
         # main.py reads each key with a fallback; a fresh install uses the schema default. Keep them equal.
         schema = json.loads((ROOT/'_conf_schema.json').read_text(encoding='utf-8'))
