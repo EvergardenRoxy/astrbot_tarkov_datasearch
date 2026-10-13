@@ -59,6 +59,18 @@ class ImageTests(unittest.TestCase):
         # once in the combat table, once on the exit-status bar
         self.assertEqual(drawn.count('暂无记录'), 2)
 
+    def test_exit_legend_uses_the_game_wording(self):
+        drawn = []
+        real = ImageDraw.ImageDraw.text
+        def record(self, xy, text, *args, **kwargs):
+            drawn.append(text)
+            return real(self, xy, text, *args, **kwargs)
+        with patch.object(ImageDraw.ImageDraw, 'text', record):
+            draw(summarize(profile()))
+        legend = [t for t in drawn if ' ' in t and t.split(' ')[0] in ('撤离', '匆匆逃离', '转移', 'KIA', '行动中失踪')]
+        self.assertEqual(legend, ['撤离 800/30', '匆匆逃离 30/5', '转移 40/0', 'KIA 120/15', '行动中失踪 10/0'])
+        self.assertIn('撤离', drawn)  # the combat-table header
+
     def test_height_follows_skills_and_notes(self):
         s = summarize(profile())
         none = draw(s, skill_limit=0)[1].height

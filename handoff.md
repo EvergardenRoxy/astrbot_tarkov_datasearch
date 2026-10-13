@@ -14,7 +14,7 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
 | Version | 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 113, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Tests | 115, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -393,3 +393,11 @@ survived the first run; `test_long_text_is_shrunk_to_fit`, `test_same_picture_in
 **Not verified:** how chat platforms display a ~400 KB JPEG (QQ/NapCat, Telegram, Discord); Markdown rendering per
 platform; Pillow versions other than 12.3.0 (AstrBot allows >= 11.2.1; `set_variation_by_axes` and variable fonts
 need FreeType with variation support, present in Pillow wheels).
+
+### 15.1 Exit-status wording (maintainer)
+
+The game's Chinese wording and order: 撤离 (survived) / 匆匆逃离 (runner) / 转移 (transit) / KIA (killed) /
+行动中失踪 (MIA). `card.SURVIVED` and `card.EXITS` hold them; text, Markdown (column and status line) and image (table
+header, bar order, legend) all read from there. 存活率 (survived ÷ raids) keeps its name. The font subset was rebuilt
+for the new characters (1167 characters, 185 KB). Tests: `test_exit_statuses_use_the_game_wording`,
+`test_exit_legend_uses_the_game_wording`; 113 -> 115.

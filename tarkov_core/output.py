@@ -1,7 +1,7 @@
 """Plain-text and Markdown replies, built from a card (card.py)."""
 import re
 
-from .card import EXITS, build_card, stale_note
+from .card import EXITS, SURVIVED, build_card, stale_note
 
 
 def side_lines(card_side):
@@ -10,7 +10,7 @@ def side_lines(card_side):
         return [f'{title}：暂无记录']
     kd = card_side['kd'] or '—（无死亡记录）'
     lines = [
-        f"{title}：战局 {stats['raids']}，存活 {stats['survived']}，存活率 {card_side['rate']}",
+        f"{title}：战局 {stats['raids']}，{SURVIVED} {stats['survived']}，存活率 {card_side['rate']}",
         f"　击杀 {stats['kills']}，死亡 {stats['deaths']}，K/D {kd}，击杀 PMC {stats['pmc_kills']}",
     ]
     detail = [f'{label} {stats[key]}' for key, label in EXITS if stats[key]]
@@ -84,7 +84,7 @@ def render_markdown(card):
     if card['last_active']:
         extra.append(f"最近活跃 {card['last_active']}")
     lines += [' · '.join(extra), '']
-    lines.append('| | 战局 | 存活 | 存活率 | 击杀 | 死亡 | K/D | 击杀 PMC | 最长连续存活 |')
+    lines.append(f'| | 战局 | {SURVIVED} | 存活率 | 击杀 | 死亡 | K/D | 击杀 PMC | 最长连续存活 |')
     lines.append('|---|---:|---:|---:|---:|---:|---:|---:|---:|')
     for card_side in card['sides']:
         stats = card_side['stats']
@@ -97,7 +97,7 @@ def render_markdown(card):
     for card_side in card['sides']:
         if not card_side['empty']:
             stats = card_side['stats']
-            exits = ' · '.join([f"存活 {stats['survived']}"]+[f'{label} {stats[key]}' for key, label in EXITS])
+            exits = ' · '.join([f"{SURVIVED} {stats['survived']}"]+[f'{label} {stats[key]}' for key, label in EXITS])
             # Two trailing spaces: a Markdown line break, so the two sides stay on separate lines.
             lines.append(f"**撤离状态（{card_side['title']}）**：{exits}  ")
     elite = [name for name, _, is_elite in card['skills'] if is_elite]

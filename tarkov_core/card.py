@@ -6,7 +6,10 @@ import time
 # Chat users of this plugin are mostly in China; times are shown in Beijing time and say so.
 TZ = datetime.timezone(datetime.timedelta(hours=8))
 STALE_DAYS = 30
-EXITS = (('killed', '阵亡'), ('mia', '失踪'), ('runner', 'Run Through'), ('transit', '转图'))
+# Exit statuses other than survived, in the game's Chinese wording and order (maintainer): 撤离 (survived),
+# 匆匆逃离, 转移, KIA, 行动中失踪.
+SURVIVED = '撤离'
+EXITS = (('runner', '匆匆逃离'), ('transit', '转移'), ('killed', 'KIA'), ('mia', '行动中失踪'))
 
 
 def when(seconds):

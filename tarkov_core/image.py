@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-from .card import stale_note
+from .card import EXITS, SURVIVED, stale_note
 
 FONTS = Path(__file__).with_name('fonts')
 FONT_FILES = {'sc': 'NotoSansSC-Subset.ttf', 'osw': 'Oswald-Variable.ttf', 'mono': 'ShareTechMono-Regular.ttf'}
@@ -24,7 +24,7 @@ PAPER, INK, FADED, RED, LINE = (204, 192, 160), (44, 40, 34), (110, 100, 82), (1
 TAG_METAL, TAG_EDGE, TAG_TEXT = (156, 156, 148), (186, 186, 178), (50, 52, 50)
 EXIT_COLORS = {'survived': (86, 122, 64), 'killed': (150, 46, 38), 'runner': (184, 134, 44),
                'transit': (62, 96, 128), 'mia': (112, 104, 88)}
-EXIT_LABELS = (('survived', '存活'), ('killed', '阵亡'), ('runner', 'Run Through'), ('transit', '转图'), ('mia', '失踪'))
+EXIT_LABELS = (('survived', SURVIVED),)+EXITS
 MODE_EN = {'PVP': 'PVP', 'PVE': 'PVE', 'PVP 赛季': 'PVP SEASON'}
 JPEG_QUALITY = 85
 
@@ -217,7 +217,7 @@ def render_image(card):
     y = 460
     d.text((40, y), f'{next(number)}、作战记录', font=font('sc', 22, 800), fill=INK)
     y += 40
-    head = ['', '战局', '存活', '存活率', '击杀', '死亡', 'K/D', '击杀 PMC']
+    head = ['', '战局', SURVIVED, '存活率', '击杀', '死亡', 'K/D', '击杀 PMC']
     xs = [40, 160, 245, 330, 445, 545, 620, 705, W-40]
     for x, h in zip(xs, head):
         d.text((x, y), h, font=font('sc', 16, 700), fill=INK)
