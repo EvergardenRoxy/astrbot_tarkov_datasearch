@@ -48,7 +48,8 @@ def render(summary, mode_label, skill_limit=10, notes=(), now=None):
     lines.append('｜'.join(basics))
     extra = []
     if summary['play_seconds']:
-        extra.append(f"游戏时长 {summary['play_seconds']/3600:.0f} 小时")
+        # Account-wide, not per mode: a pvp-season profile showed 7,141 h against 90 raids (review F-16).
+        extra.append(f"账号总游戏时长 {summary['play_seconds']/3600:.0f} 小时")
     extra.append(f"成就 {summary['achievements']} 个")
     lines.append('｜'.join(extra))
     active = when(summary['last_active']) if summary['last_active'] else None

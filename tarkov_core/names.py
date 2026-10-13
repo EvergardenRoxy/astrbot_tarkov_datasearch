@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import re
+import secrets
 import sqlite3
 import time
 
@@ -17,11 +18,20 @@ from .transport import QueryError
 
 # Escape sequences inside a name are decoded; entries longer than 64 characters are junk and skipped.
 ENTRY = re.compile(rb'"(\d{1,12})"\s*:\s*"((?:[^"\\]|\\.){0,64})"')
-# Nicknames the plugin searches for: the game allows letters, digits, '_' and '-'; tarkov.dev's search asks for 3-15.
-NAME = re.compile(r'[A-Za-z0-9_-]{3,15}')
+# Nicknames the plugin searches for: the game allows letters, digits, '_' and '-'. Chosen names are 3-15 characters,
+# but generated ones (TarkovCitizen1019349) are longer: up to 21 in the 2026-10-13 indexes.
+NAME = re.compile(r'[A-Za-z0-9_-]{3,24}')
 MAX_MATCHES = 6
-# After a failed refresh, wait this long before trying again; an older index keeps serving meanwhile.
+# After a failed refresh, wait this long before downloading again, with or without an older index to fall back on.
 RETRY_SECONDS = 600
+# Temporary files older than this at start-up are leftovers of a crash; younger ones may belong to an instance that
+# AstrBot is still running after a reload (a config save reloads the plugin without cancelling running queries).
+LEFTOVER_SECONDS = 3600
+
+
+def unique_suffix():
+    """Per-refresh file name part, so two plugin instances never write the same temporary file."""
+    return f'{os.getpid()}-{secrets.token_hex(4)}'
 
 
 def read_only(path):
@@ -48,8 +58,17 @@ def parse_entries(raw):
 
 def build(db_path, raw, etag):
     """Write a fresh database for one index document to db_path (replaced atomically). Returns the entry count."""
-    temp = db_path.with_name(db_path.name+'.tmp')
-    temp.unlink(missing_ok=True)
+    temp = db_path.with_name(f'{db_path.name}.{unique_suffix()}.tmp')
+    try:
+        count = write(temp, raw, etag)
+        os.replace(temp, db_path)
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
+    return count
+
+
+def write(temp, raw, etag):
     db = sqlite3.connect(temp)
     try:
         db.execute('PRAGMA journal_mode=OFF')
@@ -64,7 +83,6 @@ def build(db_path, raw, etag):
         db.commit()
     finally:
         db.close()
-    os.replace(temp, db_path)
     return count
 
 
@@ -75,9 +93,14 @@ class NameIndex:
         self.download = download
         self.refresh_seconds = max(1, min(720, float(refresh_hours)))*3600
         self.locks = {}
+        # mode path -> (time of the last failed refresh, reason shown to users)
         self.failed_at = {}
         for stale in list(root.glob('names-*.tmp'))+list(root.glob('names-*.download')):
-            stale.unlink(missing_ok=True)
+            try:
+                if time.time()-stale.stat().st_mtime > LEFTOVER_SECONDS:
+                    stale.unlink()
+            except OSError:
+                pass
 
     def db_path(self, mode_path):
         return self.root/f'names-{mode_path}.sqlite3'
@@ -96,37 +119,63 @@ class NameIndex:
         except sqlite3.Error:
             return None
 
+    def has_index(self, mode_path):
+        return self.meta(mode_path) is not None
+
+    def waiting(self, mode_path):
+        """Seconds left before a failed refresh may be retried, 0 when there is none."""
+        failed = self.failed_at.get(mode_path)
+        return max(0, RETRY_SECONDS-(time.time()-failed[0])) if failed else 0
+
     def needs_refresh(self, mode_path):
+        if self.waiting(mode_path):
+            return False
         meta = self.meta(mode_path)
         if meta is None:
             return True
-        if time.time()-self.failed_at.get(mode_path, 0) < RETRY_SECONDS:
-            return False
         try:
             return time.time()-float(meta.get('checked_at', 0)) >= self.refresh_seconds
         except ValueError:
             return True
 
     async def lookup(self, mode_path, name):
-        """[(account id, nickname)] whose nickname equals `name` ignoring case, at most MAX_MATCHES, by account id."""
+        """([(account id, nickname)], total) for nicknames equal to `name` ignoring case. At most MAX_MATCHES rows:
+        exact-case matches first, then by account id; total counts every case-insensitive match."""
         lock = self.locks.setdefault(mode_path, asyncio.Lock())
         # Lookups and refreshes share the lock, so the database is never replaced under an open reader.
         async with lock:
             if self.needs_refresh(mode_path):
                 await self.refresh(mode_path)
-            return await asyncio.to_thread(self.query, mode_path, name)
+            if not self.has_index(mode_path):
+                # Only reachable while a failed first download is waiting to be retried.
+                minutes = max(1, round(self.waiting(mode_path)/60))
+                raise QueryError(f'玩家名单暂时无法下载（{self.failed_at[mode_path][1]}），请约 {minutes} 分钟后再试；'
+                                 '知道账号 ID 时可以先用 ID 查询')
+            try:
+                return await asyncio.to_thread(self.query, mode_path, name)
+            except sqlite3.DatabaseError as exc:
+                # meta was readable but the rest is damaged: download and build again, once.
+                logger.warning('Tarkov name index %s unreadable, rebuilding: %s', mode_path, type(exc).__name__)
+                self.db_path(mode_path).unlink(missing_ok=True)
+                await self.refresh(mode_path)
+                return await asyncio.to_thread(self.query, mode_path, name)
 
     def query(self, mode_path, name):
+        key = name.strip().lower()
         db = read_only(self.db_path(mode_path))
         try:
-            return db.execute('SELECT aid, name FROM names WHERE key=? ORDER BY aid LIMIT ?',
-                              (name.strip().lower(), MAX_MATCHES)).fetchall()
+            exact = db.execute('SELECT aid, name FROM names WHERE key=? AND name=? ORDER BY aid LIMIT ?',
+                               (key, name.strip(), MAX_MATCHES)).fetchall()
+            rest = db.execute('SELECT aid, name FROM names WHERE key=? AND name<>? ORDER BY aid LIMIT ?',
+                              (key, name.strip(), MAX_MATCHES)).fetchall()
+            total = db.execute('SELECT COUNT(*) FROM names WHERE key=?', (key,)).fetchone()[0]
+            return (exact+rest)[:MAX_MATCHES], total
         finally:
             db.close()
 
     async def refresh(self, mode_path):
         meta = self.meta(mode_path)
-        target = self.root/f'names-{mode_path}.download'
+        target = self.root/f'names-{mode_path}.{unique_suffix()}.download'
         started = time.monotonic()
         try:
             result = await self.download(mode_path, target, (meta or {}).get('etag') or None)
@@ -140,10 +189,13 @@ class NameIndex:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            # Wait before the next download in both cases: with an older index it keeps serving; without one the
+            # lookups in the meantime are told to retry later instead of each downloading the whole index again.
+            reason = str(exc) if isinstance(exc, QueryError) else '下载超时' if isinstance(exc, TimeoutError) else type(exc).__name__
+            self.failed_at[mode_path] = (time.time(), reason)
             if meta is None:
+                logger.warning('Tarkov name index %s first download failed: %s', mode_path, type(exc).__name__)
                 raise
-            # An older index is still useful; retry later instead of failing every lookup.
-            self.failed_at[mode_path] = time.time()
             logger.warning('Tarkov name index %s refresh failed, using the previous one: %s', mode_path, type(exc).__name__)
         finally:
             target.unlink(missing_ok=True)

@@ -61,8 +61,10 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await transport.fetch_profile('profile', 1))['aid'], 1234567)
 
     async def test_missing_profile(self):
-        with self.assertRaises(NotFound):
+        with self.assertRaises(NotFound) as caught:
             await transport.fetch_profile('pvp-season', 1)
+        # Review F-12: the default text is Chinese in case it reaches chat.
+        self.assertIn('tarkov.dev 上没有', str(caught.exception))
 
     async def test_refusals_have_chat_messages(self):
         for status, words in ((403, 'Cloudflare'), (429, '429'), (500, 'HTTP 500')):
@@ -173,8 +175,10 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await transport.fetch_profile('pve', 1))['aid'], 1234567)
 
     async def test_proxy_must_be_valid(self):
-        for value in ('socks5://h:1', 'http://h', 'http://h:1/path', 'not a url'):
+        # Review F-10: 'http://h' must be refused by validation (port 80 is implied by yarl), not by a DNS failure.
+        for value in ('socks5://h:1', 'http://h', 'https://h', 'http://h:1/path', 'not a url'):
             with self.subTest(value=value):
-                with self.assertRaises(QueryError):
+                with self.assertRaises(QueryError) as caught:
                     await transport.get('/x', io.BytesIO(), limits=(1, 1), timeout_seconds=5, proxy=value)
+                self.assertIn('代理地址无效', str(caught.exception))
         self.assertFalse(self.requests)

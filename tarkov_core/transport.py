@@ -31,13 +31,14 @@ class QueryError(Exception):
 
 
 class NotFound(QueryError):
-    pass
+    def __init__(self, message='tarkov.dev 上没有这份数据'):
+        super().__init__(message)
 
 
 def validate_proxy(value):
     try:
         url = URL(value)
-        if url.scheme not in ('http', 'https') or not url.host or url.port is None or url.path not in ('', '/') or url.query_string or url.fragment:
+        if url.scheme not in ('http', 'https') or not url.host or url.explicit_port is None or url.path not in ('', '/') or url.query_string or url.fragment:
             raise ValueError()
     except (ValueError, TypeError):
         raise QueryError('代理地址无效；请填写 HTTP/HTTPS 代理地址，不支持 SOCKS 或路径参数') from None
@@ -64,7 +65,7 @@ async def get(path, sink, *, limits, timeout_seconds, proxy=None, etag=None):
                 if response.status == 304 and etag:
                     return {'status': 304, 'etag': etag}
                 if response.status == 404:
-                    raise NotFound('not found')
+                    raise NotFound()
                 if response.status == 403:
                     raise QueryError(BLOCKED)
                 if response.status == 429:

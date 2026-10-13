@@ -16,10 +16,14 @@ SIDES = {'bear': 'BEAR', 'usec': 'USEC', 'savage': 'Scav'}
 
 
 def number(value):
-    """A finite JSON number, or None (booleans are not numbers here)."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    """A finite JSON number, or None (booleans are not numbers here). JSON integers beyond float range also give
+    None: math.isfinite() raises OverflowError on them."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return value
+    try:
+        return value if math.isfinite(value) else None
+    except OverflowError:
+        return None
 
 
 def level_of(experience, levels=None):
@@ -77,7 +81,8 @@ def skills(raw):
     for skill in common if isinstance(common, list) else []:
         if not isinstance(skill, dict):
             continue
-        known = STATIC['skills'].get(skill.get('Id'))
+        skill_id = skill.get('Id')
+        known = STATIC['skills'].get(skill_id) if isinstance(skill_id, str) else None
         progress, access = number(skill.get('Progress')), number(skill.get('LastAccess'))
         # The same filter as tarkov.dev: untouched skills have no progress or a negative access time.
         if not known or not progress or progress <= 0 or not access or access <= 0:

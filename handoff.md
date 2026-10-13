@@ -14,7 +14,7 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
 | Version | 0.1.0 (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 83, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Tests | 96, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -87,12 +87,12 @@ pve ~1 s / 4.3 MB; pvp-season ~0.6 s / 1.4 MB; an unchanged index refresh (304) 
 
 | File | Covers |
 |---|---|
-| `test_profile.py` (13) | level boundaries against the bundled table, hand-checked level 53, table shape, counter selection, side stats, `Left` fallback, malformed counters, summary fields, skill filter/sort/elite, non-profiles, missing fields, mode aliases, `profile` path. |
-| `test_output.py` (5) | full rendering, no deaths / no raids, skill limit, stale flag, prestige and notes. |
-| `test_names.py` (15) | entry parsing (escapes, whitespace, empty, over-long), HTML rejected, empty index keeps old db, nickname rule, build-then-reuse, ETag + 304, replacement, failed refresh keeps serving + retry delay, failure without db, one download under concurrency, match cap, corrupt db rebuilt, leftovers removed, refresh interval, weekly default. |
-| `test_transport.py` (15) | local aiohttp server with `HOST` patched: gzip + agent header, plain body, 404, 403/429/500 messages, no redirects, HTML/non-object/invalid JSON, compressed/decoded limits (gzip and plain), wrong content type, truncated gzip, other encodings, index download + 304, connection error text, environment proxy ignored, proxy validation. |
-| `test_plugin.py` (21) | SDK stubbed like the spark tests: help, id, name, default mode, refresh notice (size only for PvP), not found, digits missing as id and name, ambiguity (incl. two exact-case hits), exact case wins, rename note, missing id, digit-name fallback, bad input, error messages, cache on/off and bound, one query per sender (bounded wait), access modes incl. unknown value, proxy/timeout reach transport. |
-| `test_release.py` (3) | version consistency, schema defaults equal code fallbacks, package contents. |
+| `test_profile.py` (16) | level boundaries against the bundled table, hand-checked level 53, table shape, counter selection, side stats, `Left` fallback, malformed counters, summary fields, skill filter/sort/elite, control characters, odd shapes in every field (>1000 combinations), huge integers, non-profiles, missing fields, mode aliases, `profile` path. |
+| `test_output.py` (6) | full rendering (account-wide play time label), no deaths / no raids, skill limit, stale flag, out-of-range timestamps, prestige and notes. |
+| `test_names.py` (22) | entry parsing (escapes, whitespace, empty, over-long, control characters), HTML rejected, empty index keeps old db, nickname rule (3-24), build-then-reuse, ETag + 304, replacement, failed refresh keeps serving + retry delay, first-download failure backed off, one download under concurrency, match cap, exact case first + total, corrupt db rebuilt, damaged names table rebuilt, URI characters in the data dir, old leftovers only removed at start, reload during a download, two instances never share a download file, failed build removes its temp file, refresh interval, weekly default. |
+| `test_transport.py` (18) | local aiohttp server with `HOST` patched: gzip + agent header, plain body, 404 (Chinese default text), 403/429/500 messages, no redirects, HTML/non-object/invalid JSON, compressed/decoded limits (gzip and plain), wrong content type, truncated and garbage gzip, other encodings, profile parsed off the loop, index limits, index download + 304, connection error text, environment proxy ignored, proxy validation (explicit port). |
+| `test_plugin.py` (30) | SDK stubbed like the spark tests: help, id, name, default mode, refresh notices (download vs check, size only for a first PvP download), texts follow the interval, not found, digits missing as id and name, ambiguity (incl. two exact-case hits, "等，共 N 个"), exact case wins, rename note, missing id, digit-name fallback, long generated names, bad input, full-width digits, error messages, index 404 and timeouts in chat, cache on/off and bound, one query per sender (bounded wait), access modes incl. unknown value and list types, empty list rows, infinite settings, proxy with empty address fails closed, proxy/timeout reach transport. |
+| `test_release.py` (4) | version consistency, schema defaults equal code fallbacks, direct imports declared, package contents. |
 
 Mutation check (scratch copy, one change at a time, full suite, 120 s limit each): 24 mutations of the guards
 above (no-redirect, trust_env, both size limits, gzip-only header, ETag, content type, lock, retry delay and check,
@@ -108,6 +108,8 @@ tests were added or bounded for each, and one survivor was a no-op mutation (it 
   and replacement share a lock; `needs_refresh()` opens the file outside the lock (read-only, brief).
 - Whether a tarkov.dev page view always refreshes the snapshot (§2.4) is inferred from one observation.
 - Cloudflare's agent-based rule (§2.2) is observed behaviour, not documented anywhere.
+- Windows UNC data directory (`\\server\share\…`): `as_uri()` gives `file://server/…`, which SQLite rejects
+  (`invalid uri authority`, checked on Linux with a constructed URI). Not handled; AstrBot's data dir is normally local.
 
 ## 6. Decisions made without the maintainer (revisit)
 
@@ -117,7 +119,7 @@ tests were added or bounded for each, and one survivor was a no-op mutation (it 
 3. Stale threshold 30 days (`output.STALE_DAYS`), not configurable.
 4. K/D = all kills / deaths (the counters `Kills`/`Deaths`, as in the game's overall stats); PMC kills shown separately.
    tarkov.dev's page shows the raw counters only.
-5. Nickname input limited to `[A-Za-z0-9_-]{3,15}` (tarkov.dev's search asks for 3-15; the game's character set).
+5. Nickname input limited to `[A-Za-z0-9_-]{3,24}`: the game's character set; 24 leaves room above the longest generated name seen (`TarkovCitizen…`, 21). Was 3-15 until §13.
 6. The maintainer's profile JSON is not committed (it also holds other players' nicknames from dog tags); fixtures
    are synthetic but shaped like it.
 7. `report.md` is not committed; §2 restates what this code depends on.
@@ -257,3 +259,28 @@ confirmed the §11 fixes as correct, with two gaps (F-03, F-09). No code changed
 7. Chat texts: F-05 (interval from the setting), F-17 (timeout hint only for the index), F-12 (Chinese text for an index 404), F-11 (strip and drop empty list items), F-13 ("等，共 N 个以上" when cut), F-20 (size note only when no db exists yet).
 8. Docs: F-08, F-09, F-14 wording, F-18 in §5, F-20 note on names equal to mode words; F-10: validate with `explicit_port` (the hint already asks for `主机:端口`) and fix the test.
 Not proposed: F-19 (cleaning is enough while the game restricts the character set; a display whitelist would hide legitimate names if that changes).
+
+## 13. Independent review fixes (maintainer: fix all, in the proposed order)
+
+Method as before: tests first; every new test failed on the code at `672594b` (the odd-shape test alone failed in
+106 combinations), then the fix, then the full suite. 83 -> 96 tests.
+
+| # | Review id | Change | Tests |
+|---|---|---|---|
+| 1 | F-01 | `NameIndex.failed_at[mode] = (time, reason)` on any failed refresh, with or without an older db. `needs_refresh()` is False while `waiting()` > 0. Without a db, `lookup()` then raises `QueryError('玩家名单暂时无法下载（<reason>），请约 N 分钟后再试；…')` instead of downloading again. The first failure still shows its own error. | `test_failure_without_any_index_is_reported_then_backed_off` |
+| 2 | F-03 | `number()` returns None when `math.isfinite` raises `OverflowError`; `skills()` only looks up `str` ids. | `test_odd_shapes_anywhere_never_raise` (every node of the fixture x 12 odd values, rendered), `test_huge_integers_count_as_missing` |
+| 3 | F-04 | `TarkovPlugin.proxy()` raises `QueryError` when the proxy is enabled and the address is empty or blank (fail closed). | `test_enabled_proxy_without_address_fails_closed` |
+| 4 | F-02, F-06 | Temporary files carry `pid-random` (`unique_suffix()`): `names-<mode>.<sfx>.download`, `names-<mode>.sqlite3.<sfx>.tmp`. `__init__` removes leftovers only when older than `LEFTOVER_SECONDS` (1 h) and ignores `OSError`. `build()` deletes its temp file on any exception. Two instances may still both download (per-instance locks); each builds its own file and `os.replace` is atomic. | `test_reload_during_a_download_does_not_break_it`, `test_two_instances_never_share_a_download_file`, `test_old_leftovers_are_removed_at_start`, `test_failed_build_removes_its_temp_file` |
+| 5 | F-07 | `lookup()` catches `sqlite3.DatabaseError` from the query, deletes the db, refreshes once and queries again. | `test_damaged_names_table_is_rebuilt` |
+| 6 | F-15, F-16 | `NAME` 3-24; the input message says 3～24. Output label "账号总游戏时长". | `test_name_rule`, `test_long_generated_names_are_accepted`, `test_full_profile` |
+| 7 | F-05, F-17, F-12, F-11, F-13, F-20 | `every(seconds)` renders the interval (每周 / 每 2 周 / 每天 / 每 3 天 / 每 N 小时) for help, notice and not-found text. Index downloads raise `IndexTimeout`; only that timeout suggests the timeout setting. An index 404 becomes `tarkov.dev 上没有 <模式> 模式的玩家名单`; `NotFound`'s default text is Chinese. `config_list` strips items and drops empty ones (`''`/`['']` mean no restriction). `lookup()` returns `(rows, total)` with exact-case rows first (separate query, so the cap cannot cut them); the candidate list adds `等，共 N 个` above 5. The notice says "正在下载 … 第一次…" (size only for PvP) without a db and "正在检查 … 的更新" with one. | `test_texts_follow_the_refresh_interval`, `test_index_404_and_timeouts_in_chat`, `test_missing_profile`, `test_empty_list_items_are_ignored`, `test_exact_case_first_and_total`, `test_long_candidate_lists_say_there_are_more`, `test_refresh_notice_mentions_size_only_for_a_first_pvp_download` |
+| 8 | F-08, F-09, F-14, F-18, F-20, F-10 | §4 counts and coverage; README dependency line (aiohttp and yarl); README/schema/CHANGELOG/checklist no longer promise a cheap unchanged check (the index is rebuilt daily, so a weekly check usually downloads it again); §5 notes UNC paths; README notes that players named like a mode word need the mode written; `validate_proxy` requires `explicit_port` (the hint already asks for `主机:端口`), and the test asserts the validation message instead of relying on a DNS failure. | `test_proxy_must_be_valid` |
+
+Mutation check (scratch copy, each change reverted alone, full suite, 180 s limit): 21 mutations (back-off record
+and check, overflow, skill id type, empty proxy, leftover age, unique download name, temp cleanup, damaged-db rebuild,
+exact-first order, name length, play-time label, interval text, empty rows, index 404 text, NotFound default text,
+"等" line, index timeout class and hint, notice wording, explicit port). The unique-download-name mutation survived
+the first run (the reload test passed through the leftover-age rule alone); `test_two_instances_never_share_a_download_file`
+was added and kills it. All 21 killed.
+
+Not changed: F-19 (cleaning is enough while the game restricts nicknames to `[A-Za-z0-9_-]`).

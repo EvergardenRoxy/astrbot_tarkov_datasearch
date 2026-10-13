@@ -1,7 +1,9 @@
+import copy
 import unittest
 
 from fixtures import profile
 from tarkov_core.modes import parse_mode, path_of
+from tarkov_core.output import render
 from tarkov_core.profile import STATIC, counter, level_of, side_stats, summarize
 from tarkov_core.transport import QueryError
 
@@ -74,6 +76,36 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(s['nickname'], 'X 【塔科夫 PVP 档案】Fake')
         self.assertEqual(s['side'], 'Usec line')
         self.assertEqual(summarize(profile(info_nickname='\u200b\n'))['nickname'], '未知')
+
+    def test_odd_shapes_anywhere_never_raise(self):
+        # Review F-03 and handoff §7: only a missing info.nickname may raise. Replace every node of the fixture,
+        # one at a time, with each odd value and render the result.
+        odd = [None, [], {}, 'x', 10**400, -10**400, -1, 1.5, True, float('nan'), [[1]], {'a': {}}]
+        def paths(node, prefix=()):
+            yield prefix
+            items = node.items() if isinstance(node, dict) else enumerate(node) if isinstance(node, list) else ()
+            for key, child in items:
+                yield from paths(child, prefix+(key,))
+        base = profile()
+        checked = 0
+        for path in list(paths(base))[1:]:
+            for value in odd:
+                raw = copy.deepcopy(base)
+                parent = raw
+                for key in path[:-1]:
+                    parent = parent[key]
+                parent[path[-1]] = value
+                # Without info.nickname a QueryError is the documented outcome.
+                if path == ('info',) or path == ('info', 'nickname') and not isinstance(value, str):
+                    continue
+                with self.subTest(path=path, value=repr(value)[:20]):
+                    render(summarize(raw), 'PVE')
+                    checked += 1
+        self.assertGreater(checked, 1000)
+
+    def test_huge_integers_count_as_missing(self):
+        s = summarize(profile(updated=10**400, info_experience=10**400, achievements={'a': 10**400}))
+        self.assertEqual((s['updated'], s['experience'], s['level'], s['last_active']), (None, None, None, 1790500000))
 
     def test_not_a_profile(self):
         for raw in ({}, {'info': None}, {'info': {'nickname': 3}}):
