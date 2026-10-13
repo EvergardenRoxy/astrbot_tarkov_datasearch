@@ -8,7 +8,7 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, StarTools, register
 
 from .tarkov_core import transport
-from .tarkov_core.modes import label_of, parse_mode, path_of
+from .tarkov_core.modes import MODES, label_of, parse_mode, path_of
 from .tarkov_core.names import NAME, NameIndex
 from .tarkov_core.output import render
 from .tarkov_core.profile import summarize
@@ -19,6 +19,20 @@ COMMAND = re.compile(r'^/?(?:tarkov|塔科夫)(?:\s+|$)', re.I)
 ACCOUNT_ID = re.compile(r'[0-9]{1,12}')
 # Profiles kept in memory at most, whatever the cache time.
 CACHE_ENTRIES = 128
+LABEL_OF_PATH = {path: label for path, label in MODES.values()}
+
+
+class IndexTimeout(TimeoutError):
+    """A name index download timed out (the one download the timeout setting can help with)."""
+
+
+def every(seconds):
+    """The refresh interval in words: 每周, 每 2 周, 每天, 每 3 天, 每 5 小时."""
+    hours = max(1, round(seconds/3600))
+    for size, unit, one in ((168, '周', '每周'), (24, '天', '每天')):
+        if hours % size == 0:
+            return one if hours == size else f'每 {hours//size} {unit}'
+    return f'每 {hours} 小时'
 
 
 @register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.1.0')
@@ -39,7 +53,13 @@ class TarkovPlugin(Star):
             return default
 
     def proxy(self):
-        return str(self.config.get('proxy_url', '')).strip() if self.config.get('proxy_enabled', False) else None
+        if not self.config.get('proxy_enabled', False):
+            return None
+        url = str(self.config.get('proxy_url', '')).strip()
+        if not url:
+            # Fail closed: an empty address must not turn into a direct connection.
+            raise QueryError('已开启“访问 tarkov.dev 时使用代理”，但没有填写代理地址，请在插件配置中填写或关闭代理')
+        return url
 
     def owner(self, event):
         return hashlib.sha256((event.unified_msg_origin+'\0'+event.get_sender_id()).encode()).hexdigest()
@@ -49,9 +69,10 @@ class TarkovPlugin(Star):
         any other type returns None, which denies access."""
         value = self.config.get(key, [])
         if isinstance(value, str):
-            return [value]
+            value = [value]
         if isinstance(value, (list, tuple, set)):
-            return [str(item) for item in value]
+            # Surrounding spaces and empty rows (an added but unfilled row on the config page) are ignored.
+            return [text for text in (str(item).strip() for item in value) if text]
         logger.warning('Tarkov setting %s is not a list (%s); access denied', key, type(value).__name__)
         return None
 
@@ -76,7 +97,7 @@ class TarkovPlugin(Star):
                 '用法：/tarkov [模式] <昵称或账号ID>\n'
                 f'模式：pvp、pve、赛季（pvp-season）；不写时用 {label_of(self.default_mode())}\n'
                 '例：/tarkov pve Some_Player　/tarkov pvp 1234567\n'
-                '昵称名单每周更新一次，新改名或新收录的玩家可能查不到，用账号 ID 查询最准确。')
+                f'昵称名单{every(self.names.refresh_seconds)}更新一次，新改名或新收录的玩家可能查不到，用账号 ID 查询最准确。')
 
     @filter.command('tarkov', alias={'塔科夫'})
     async def tarkov_command(self, event: AstrMessageEvent):
@@ -105,7 +126,7 @@ class TarkovPlugin(Star):
             return
         target = words[0]
         if not ACCOUNT_ID.fullmatch(target) and not NAME.fullmatch(target):
-            yield event.plain_result('昵称只能包含字母、数字、下划线和连字符，长度 3～15；账号 ID 只能是数字。')
+            yield event.plain_result('昵称只能包含字母、数字、下划线和连字符，长度 3～24；账号 ID 只能是数字。')
             return
         owner = self.owner(event)
         if owner in self.active:
@@ -122,7 +143,8 @@ class TarkovPlugin(Star):
         except QueryError as exc:
             yield event.plain_result(f'查询失败：{exc}')
         except TimeoutError as exc:
-            yield event.plain_result(f'查询失败：连接 tarkov.dev 超时（{exc}），请稍后再试，或在配置中调大“下载最长等待”。')
+            hint = '，或在配置中调大“下载最长等待”' if isinstance(exc, IndexTimeout) else ''
+            yield event.plain_result(f'查询失败：连接 tarkov.dev 超时（{exc}），请稍后再试{hint}。')
         except Exception as exc:
             logger.warning('Tarkov [%s] query failed: %s', trace, type(exc).__name__)
             yield event.plain_result(f'查询失败：{type(exc).__name__}。')
@@ -144,23 +166,28 @@ class TarkovPlugin(Star):
             if summary:
                 yield event.plain_result(render(summary, label, self.skill_count(), notes))
                 return
+        interval = every(self.names.refresh_seconds)
         if self.names.needs_refresh(path_of(mode)):
-            size = '，约 30 MB' if mode == 'pvp' else ''
-            yield event.plain_result(f'正在更新 {label} 玩家名单（每周一次{size}，可能需要几十秒），请稍候。')
-        matches = await self.names.lookup(path_of(mode), target)
-        logger.info('Tarkov [%s] name matches=%s', trace, len(matches))
+            if self.names.has_index(path_of(mode)):
+                yield event.plain_result(f'正在检查 {label} 玩家名单的更新（{interval}一次），请稍候。')
+            else:
+                size = '，约 30 MB' if mode == 'pvp' else ''
+                yield event.plain_result(f'正在下载 {label} 玩家名单（第一次按昵称查询这个模式时需要{size}，可能需要几十秒），请稍候。')
+        matches, total = await self.names.lookup(path_of(mode), target)
+        logger.info('Tarkov [%s] name matches=%s', trace, total)
         if not matches:
             if ACCOUNT_ID.fullmatch(target):
                 yield event.plain_result(f'{label} 模式下没有账号 ID {target} 的档案，名单里也没有叫 {target} 的玩家。'
                                          'tarkov.dev 只有被查询过的玩家的档案，可以换一个模式试试。')
                 return
-            yield event.plain_result(f'{label} 名单里找不到 {target}。名单每周更新一次，只收录在 tarkov.dev 被查询过的玩家，'
+            yield event.plain_result(f'{label} 名单里找不到 {target}。名单{interval}更新一次，只收录在 tarkov.dev 被查询过的玩家，'
                                      '新改名的玩家也可能查不到；知道账号 ID 时请用 ID 查询。')
             return
         exact = [match for match in matches if match[1] == target]
         if len(exact) != 1 and len(matches) > 1:
             listed = '\n'.join(f'{name}（ID {aid}）' for aid, name in matches[:5])
-            yield event.plain_result(f'{label} 名单里有多个名为 {target} 的玩家（不区分大小写），请用账号 ID 查询：\n{listed}')
+            more = f'\n等，共 {total} 个' if total > 5 else ''
+            yield event.plain_result(f'{label} 名单里有多个名为 {target} 的玩家（不区分大小写），请用账号 ID 查询：\n{listed}{more}')
             return
         aid = (exact or matches)[0][0]
         try:
@@ -195,7 +222,12 @@ class TarkovPlugin(Star):
         return self.int_setting('download_timeout_seconds', 120, 15, 900)
 
     async def download_index(self, mode_path, target, etag):
-        return await transport.fetch_index(mode_path, target, etag=etag, timeout_seconds=self.timeout(), proxy=self.proxy())
+        try:
+            return await transport.fetch_index(mode_path, target, etag=etag, timeout_seconds=self.timeout(), proxy=self.proxy())
+        except NotFound:
+            raise QueryError(f'tarkov.dev 上没有 {LABEL_OF_PATH.get(mode_path, mode_path)} 模式的玩家名单') from None
+        except TimeoutError as exc:
+            raise IndexTimeout(str(exc)) from exc
 
     async def terminate(self):
         self.cache.clear()

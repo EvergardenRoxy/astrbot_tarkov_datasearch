@@ -10,7 +10,7 @@ NOW = 1791903208.537 + 3600
 class OutputTests(unittest.TestCase):
     def test_full_profile(self):
         text = render(summarize(profile()), 'PVE', now=NOW)
-        for part in ('【塔科夫 PVE 档案】Test_Player（账号 ID 1234567）', '阵营 USEC｜等级 66', '游戏时长 1305 小时｜成就 2 个',
+        for part in ('【塔科夫 PVE 档案】Test_Player（账号 ID 1234567）', '阵营 USEC｜等级 66', '账号总游戏时长 1305 小时｜成就 2 个',
                      'PMC：战局 1472，存活 1234，存活率 83.8%', '击杀 12115，死亡 164，K/D 73.87，击杀 PMC 1894',
                      '阵亡 155，失踪 1，Run Through 27，转图 55，最长连续存活 60 局',
                      'Scav：战局 58，存活 42，存活率 72.4%', '精英技能（2 项）：耐力、力量', '其他技能（前 2 项）：魅力 48、活力 29',

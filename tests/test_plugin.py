@@ -30,16 +30,22 @@ class Event:
 
 class FakeNames:
     """Stands in for NameIndex: a fixed name table per mode path."""
-    def __init__(self, table=None, refresh=False):
+    def __init__(self, table=None, refresh=False, indexed=True, refresh_seconds=168*3600):
         self.table = table or {}
         self.refresh = refresh
+        self.indexed = indexed
+        self.refresh_seconds = refresh_seconds
         self.lookups = []
 
     def needs_refresh(self, mode_path): return self.refresh
 
+    def has_index(self, mode_path): return self.indexed
+
     async def lookup(self, mode_path, name):
         self.lookups.append((mode_path, name))
-        return [entry for entry in self.table.get(mode_path, []) if entry[1].lower() == name.lower()]
+        found = [entry for entry in self.table.get(mode_path, []) if entry[1].lower() == name.lower()]
+        found.sort(key=lambda entry: (entry[1] != name, entry[0]))
+        return found[:6], len(found)
 
 
 class PluginTests(unittest.IsolatedAsyncioTestCase):
@@ -131,7 +137,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.profiles[('pve', 1)] = profile(aid=1)
         names = FakeNames({'pve': [(1, 'Test_Player')]}, refresh=True)
         result = await self.run_command(self.plugin(names=names), Event('/tarkov pve Test_Player'))
-        self.assertIn('正在更新 PVE 玩家名单', result[0])
+        self.assertIn('正在检查 PVE 玩家名单的更新', result[0])
         self.assertIn('档案', result[1])
 
     async def test_name_not_found(self):
@@ -152,6 +158,12 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         names = FakeNames({'pve': [(1, 'Same'), (2, 'SAME')]})
         result = await self.run_command(self.plugin(names=names), Event('/tarkov pve SAME'))
         self.assertIn('SAME（账号 ID 2）', result[0])
+
+    async def test_long_candidate_lists_say_there_are_more(self):
+        names = FakeNames({'pve': [(i, 'same') for i in range(1, 9)]})
+        result = await self.run_command(self.plugin(names=names), Event('/tarkov pve Same'))
+        self.assertEqual(result[0].count('（ID '), 5)
+        self.assertIn('等，共 8 个', result[0])
 
     async def test_two_exact_matches_are_still_ambiguous(self):
         names = FakeNames({'pve': [(1, 'Same'), (2, 'Same')]})
@@ -174,10 +186,23 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result), 1)
         self.assertIn('没有账号 ID 11505337 的档案，名单里也没有叫 11505337 的玩家', result[0])
 
-    async def test_refresh_notice_mentions_size_only_for_pvp(self):
-        for text, size in (('/tarkov pve Nobody', False), ('/tarkov pvp Nobody', True)):
-            result = await self.run_command(self.plugin(names=FakeNames(refresh=True)), Event(text))
-            self.assertEqual('30 MB' in result[0], size)
+    async def test_refresh_notice_mentions_size_only_for_a_first_pvp_download(self):
+        # Review F-20: the size note is only true when there is no index yet.
+        for text, indexed, size in (('/tarkov pve Nobody', False, False), ('/tarkov pvp Nobody', False, True),
+                                    ('/tarkov pvp Nobody', True, False)):
+            with self.subTest(text=text, indexed=indexed):
+                result = await self.run_command(self.plugin(names=FakeNames(refresh=True, indexed=indexed)), Event(text))
+                self.assertEqual('30 MB' in result[0], size)
+                self.assertIn('下载' if not indexed else '检查', result[0])
+
+    async def test_texts_follow_the_refresh_interval(self):
+        # Review F-05: the chat texts used to say "每周" whatever the setting.
+        for seconds, words in ((168*3600, '每周'), (24*3600, '每天'), (72*3600, '每 3 天'), (336*3600, '每 2 周'), (5*3600, '每 5 小时')):
+            with self.subTest(words=words):
+                plugin = self.plugin(names=FakeNames(refresh=True, refresh_seconds=seconds))
+                self.assertIn(f'昵称名单{words}更新一次', plugin.help_text())
+                result = await self.run_command(plugin, Event('/tarkov pve Nobody'))
+                self.assertIn(words, result[1])
 
     async def test_all_digit_name_falls_back_to_the_index(self):
         self.profiles[('pve', 77)] = profile(aid=77, info_nickname='123456')
@@ -284,6 +309,51 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                 self.logs.clear()
                 self.assertEqual(self.plugin(config).allowed(Event()), ok)
                 self.assertEqual(any('not a list' in str(entry[0]) for entry in self.logs), warns)
+
+    async def test_empty_list_items_are_ignored(self):
+        # Review F-11: an empty row from the config page used to deny everyone.
+        for value in ('', [''], ['  '], ['platform:group:1 '], [' ', 'platform:group:1']):
+            with self.subTest(value=value):
+                self.assertTrue(self.plugin({'allowed_origins': value}).allowed(Event()))
+        self.assertFalse(self.plugin({'allowed_origins': ['', 'platform:group:2']}).allowed(Event()))
+
+    async def test_enabled_proxy_without_address_fails_closed(self):
+        # Review F-04: an empty address used to mean a direct connection.
+        for url in ('', '   '):
+            with self.subTest(url=url):
+                result = await self.run_command(self.plugin({'proxy_enabled': True, 'proxy_url': url}), Event('/tarkov pve 1'))
+                self.assertIn('没有填写代理地址', result[0])
+        self.assertEqual(self.fetched, [])
+
+    async def test_index_404_and_timeouts_in_chat(self):
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {})
+        async def missing(*a, **k):
+            raise self.transport.NotFound('x')
+        with patch.object(self.transport, 'fetch_index', missing):
+            result = [r async for r in plugin.tarkov_command(Event('/tarkov pve Somebody'))]
+        # Review F-12: no English text.
+        self.assertIn('没有 PVE 模式的玩家名单', result[-1])
+        # Review F-17: only an index timeout suggests the download-timeout setting.
+        async def slow_index(*a, **k):
+            raise TimeoutError('阶段=读取响应体')
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {})
+        with patch.object(self.transport, 'fetch_index', slow_index):
+            result = [r async for r in plugin.tarkov_command(Event('/tarkov season Somebody'))]
+        self.assertIn('下载最长等待', result[-1])
+        async def slow_profile(*a, **k):
+            raise TimeoutError('阶段=读取响应体')
+        with patch.object(self.transport, 'fetch_profile', slow_profile):
+            result = [r async for r in plugin.tarkov_command(Event('/tarkov pve 1'))]
+        self.assertIn('超时', result[-1])
+        self.assertNotIn('下载最长等待', result[-1])
+
+    async def test_long_generated_names_are_accepted(self):
+        self.profiles[('pve', 5)] = profile(aid=5, info_nickname='TarkovCitizen1019349')
+        names = FakeNames({'pve': [(5, 'TarkovCitizen1019349')]})
+        result = await self.run_command(self.plugin(names=names), Event('/tarkov pve TarkovCitizen1019349'))
+        self.assertIn('TarkovCitizen1019349（账号 ID 5）', result[0])
+        result = await self.run_command(self.plugin(), Event('/tarkov pve '+'x'*25))
+        self.assertIn('长度 3～24', result[0])
 
     async def test_infinite_setting_falls_back(self):
         plugin = self.plugin({'name_index_refresh_hours': float('inf'), 'skill_count': float('nan')})
