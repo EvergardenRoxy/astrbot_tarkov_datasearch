@@ -143,7 +143,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         result = await self.run_command(self.plugin(), Event('/tarkov pve 1234567'))
         self.assertEqual(len(result), 1)
         self.assertIn('【塔科夫 PVE 档案】Test_Player（账号 ID 1234567）', result[0])
-        self.assertEqual(self.fetched, [('pve', 1234567)])
+        self.assertEqual(self.fetched, [('pve', 1234567), ('profile', 1234567), ('pvp-season', 1234567)])
 
     async def test_query_by_name_uses_the_mode_index(self):
         self.profiles[('profile', 1234567)] = profile()
@@ -212,13 +212,13 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_id_profile(self):
         result = await self.run_command(self.plugin(), Event('/tarkov 赛季 12'))
-        self.assertIn('PVP 赛季 模式下还没有账号 ID 12 的档案', result[0])
+        self.assertIn('tarkov.dev 上还没有账号 ID 12 的档案（PVP、PVE、赛季都没有）', result[0])
         self.assertIn('https://tarkov.dev/players?gameMode=pvp-season', result[0])
 
     async def test_digits_missing_as_id_and_as_name(self):
         result = await self.run_command(self.plugin(), Event('/tarkov 赛季 3456789'))
         self.assertEqual(len(result), 1)
-        self.assertIn('PVP 赛季 模式下没有账号 ID 3456789 的档案，还不知道 3456789 的账号 ID', result[0])
+        self.assertIn('tarkov.dev 上没有账号 ID 3456789 的档案，还不知道 3456789 的账号 ID', result[0])
 
     async def test_refresh_notice_mentions_size_only_for_a_first_pvp_download(self):
         # Review F-20: the size note is only true when there is no index yet.
@@ -242,7 +242,8 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.profiles[('pve', 77)] = profile(aid=77, info_nickname='123456')
         names = FakeNames({'pve': [(77, '123456')]})
         result = await self.run_command(self.plugin(names=names), Event('/tarkov pve 123456'))
-        self.assertEqual(self.fetched, [('pve', 123456), ('pve', 77)])
+        # Every mode is looked at for the id, then for the account the name points to.
+        self.assertEqual(self.fetched, [('pve', 123456), ('profile', 123456), ('pvp-season', 123456), ('pve', 77), ('profile', 77), ('pvp-season', 77)])
         self.assertIn('123456（账号 ID 77）', result[0])
 
     async def test_bad_input(self):
@@ -271,12 +272,23 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         plugin = self.plugin({'profile_cache_minutes': 10})
         await self.run_command(plugin, Event('/tarkov pve 1'))
         await self.run_command(plugin, Event('/tarkov pve 1', sender='bob'))
-        self.assertEqual(len(self.fetched), 1)
+        # One request per mode for the first query (two of them "no profile", cached too); none for the second.
+        self.assertEqual(len(self.fetched), 3)
         plugin = self.plugin({'profile_cache_minutes': 0})
         await self.run_command(plugin, Event('/tarkov pve 1'))
         await self.run_command(plugin, Event('/tarkov pve 1'))
-        self.assertEqual(len(self.fetched), 3)
+        self.assertEqual(len(self.fetched), 9)
         self.assertFalse(plugin.cache)
+
+    async def test_missing_profiles_are_cached_briefly(self):
+        self.profiles[('pve', 1)] = profile(aid=1)
+        plugin = self.plugin({'profile_cache_minutes': 10})
+        await self.run_command(plugin, Event('/tarkov pve 1'))
+        # Past NOT_FOUND_SECONDS the missing modes are asked again; the found profile still comes from the cache.
+        for key, (stamp, summary) in list(plugin.cache.items()):
+            plugin.cache[key] = (stamp-self.module.NOT_FOUND_SECONDS-1, summary)
+        await self.run_command(plugin, Event('/tarkov pve 1'))
+        self.assertEqual(sorted(self.fetched[3:]), [('profile', 1), ('pvp-season', 1)])
 
     async def test_cache_is_bounded(self):
         plugin = self.plugin()
@@ -458,9 +470,13 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         elsewhere = Event('/tarkov pve')
         elsewhere.unified_msg_origin = 'telegram:private:1'
         self.assertIn('你还没有绑定账号', (await self.run_command(plugin, elsewhere))[0])
-        # No mode: the default mode (PVP), where this account has no profile yet.
+        # No mode: the default mode (PVP) has no profile, so the PVE one is shown, saying so.
         result = await self.run_command(plugin, Event('/tarkov'))
-        self.assertIn('你绑定的账号 Player_Two（ID 2345678）在 PVP 模式下还没有档案', result[0])
+        self.assertIn('【塔科夫 PVE 档案】Player_Two', result[0])
+        self.assertIn('PVP 模式下没有这个账号的档案，下面是 PVE 模式的档案', result[0])
+        # An explicit mode without a profile says where there is one.
+        result = await self.run_command(plugin, Event('/tarkov pvp'))
+        self.assertIn('你绑定的账号 Player_Two：PVP 模式下还没有账号 ID 2345678 的档案，但 PVE 模式（/tarkov pve 2345678）下有档案', result[0])
         self.assertIn('https://tarkov.dev/players?gameMode=regular', result[0])
 
     async def test_bind_by_id_by_name_and_failures(self):
@@ -468,7 +484,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         plugin = self.plugin()
         self.assertIn('用法：/tarkov 绑定', (await self.run_command(plugin, Event('/tarkov 绑定')))[0])
         result = await self.run_command(plugin, Event('/tarkov 绑定 赛季 9'))
-        self.assertIn('PVP 赛季 模式下还没有账号 ID 9 的档案', result[0])
+        self.assertIn('tarkov.dev 上还没有账号 ID 9 的档案（PVP、PVE、赛季都没有）', result[0])
         self.assertIn('/tarkov 绑定 https://tarkov.dev/players/pvp-season/1234567', result[0])
         self.assertIn('不能确定 Seven 是哪个账号', (await self.run_command(plugin, Event('/tarkov 绑定 赛季 Seven')))[0])
         self.assertIn('已绑定：Seven', (await self.run_command(plugin, Event('/tarkov bind season 7')))[0])
@@ -488,7 +504,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         plugin = self.plugin()
         result = await self.run_command(plugin, Event('/tarkov https://tarkov.dev/players/pve/7654321'))
         self.assertIn('【塔科夫 PVE 档案】Player_One（账号 ID 7654321）', result[0])
-        self.assertEqual(self.fetched, [('pve', 7654321)])
+        self.assertEqual(self.fetched, [('pve', 7654321), ('profile', 7654321), ('pvp-season', 7654321)])
         self.assertIn('不一致', (await self.run_command(plugin, Event('/tarkov pvp https://tarkov.dev/players/pve/1')))[0])
         self.assertIn('竞技场', (await self.run_command(plugin, Event('/tarkov https://tarkov.dev/players/arena/1')))[0])
         result = await self.run_command(plugin, Event('/tarkov https://tarkov.dev/players/regular/7654321'))
@@ -532,6 +548,57 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
             result = await self.run_command(plugin, Event('/tarkov pve 1'))
         self.assertIn('【塔科夫 PVE 档案】', result[0])
         self.assertTrue(any('name record not saved' in str(entry[0]) for entry in self.logs))
+
+    async def test_without_a_mode_every_mode_is_looked_at(self):
+        # The default mode (PVP) has no profile: the first mode that has one is shown, and the others are named.
+        self.profiles[('pvp-season', 7)] = profile(aid=7, info_nickname='Seven')
+        self.profiles[('pve', 7)] = profile(aid=7, info_nickname='Seven')
+        result = await self.run_command(self.plugin(), Event('/tarkov 7'))
+        self.assertTrue(result[0].startswith('【塔科夫 PVE 档案】Seven'))
+        self.assertIn('PVP 模式下没有这个账号的档案，下面是 PVE 模式的档案', result[0])
+        self.assertIn('这个账号在 PVP 赛季 模式下也有档案，查询时写上模式即可（例如 /tarkov 赛季 7）', result[0])
+        self.assertEqual(sorted(self.fetched), [('profile', 7), ('pve', 7), ('pvp-season', 7)])
+
+    async def test_a_chosen_mode_is_kept(self):
+        self.profiles[('profile', 7)] = profile(aid=7)
+        self.profiles[('pvp-season', 7)] = profile(aid=7)
+        result = await self.run_command(self.plugin(), Event('/tarkov 赛季 7'))
+        self.assertTrue(result[0].startswith('【塔科夫 PVP 赛季 档案】'))
+        self.assertNotIn('下面是', result[0])
+        self.assertIn('这个账号在 PVP 模式下也有档案', result[0])
+        result = await self.run_command(self.plugin(), Event('/tarkov pve 7'))
+        self.assertIn('PVE 模式下还没有账号 ID 7 的档案，但 PVP 模式（/tarkov pvp 7）、PVP 赛季 模式（/tarkov 赛季 7）下有档案', result[0])
+
+    async def test_names_work_in_every_mode(self):
+        self.profiles[('pvp-season', 7)] = profile(aid=7, info_nickname='Seven')
+        plugin = self.plugin()
+        await self.run_command(plugin, Event('/tarkov 赛季 7'))
+        result = await self.run_command(plugin, Event('/tarkov seven'))
+        self.assertTrue(result[0].startswith('【塔科夫 PVP 赛季 档案】Seven'))
+        self.assertIn('PVP 模式下没有这个账号的档案，下面是 PVP 赛季 模式的档案', result[0])
+
+    async def test_other_modes_failing_do_not_fail_the_query(self):
+        self.profiles[('pve', 7)] = profile(aid=7)
+        async def flaky(mode_path, aid, **kwargs):
+            if mode_path == 'profile':
+                raise self.transport.QueryError('tarkov.dev 返回 HTTP 500，请稍后再试')
+            return await self.fake_fetch(mode_path, aid, **kwargs)
+        plugin = self.plugin()
+        with patch.object(self.transport, 'fetch_profile', flaky):
+            result = [r async for r in plugin.tarkov_command(Event('/tarkov pve 7'))]
+            self.assertTrue(result[0].startswith('【塔科夫 PVE 档案】'))
+            self.assertTrue(any('profile skipped' in str(entry[0]) for entry in self.logs))
+            # The mode the reply is about must not fail silently.
+            result = [r async for r in plugin.tarkov_command(Event('/tarkov pvp 7'))]
+        self.assertIn('查询失败：tarkov.dev 返回 HTTP 500', result[0])
+
+    async def test_bind_accepts_a_profile_in_any_mode(self):
+        self.profiles[('pve', 7)] = profile(aid=7, info_nickname='Seven')
+        plugin = self.plugin()
+        result = await self.run_command(plugin, Event('/tarkov 绑定 https://tarkov.dev/players/pvp-season/7'))
+        self.assertIn('已绑定：Seven（账号 ID 7），目前在 PVE 模式下有档案', result[0])
+        result = await self.run_command(plugin, Event('/tarkov'))
+        self.assertTrue(result[0].startswith('【塔科夫 PVE 档案】Seven'))
 
     async def test_proxy_setting_reaches_transport(self):
         seen = {}

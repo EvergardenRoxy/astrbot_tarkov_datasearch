@@ -14,7 +14,7 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
 | Version | 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 131, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Tests | 137, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -450,3 +450,25 @@ name -> unknown + steps; by link -> image; then `player_one` by name -> image (l
 Mutation check (12, full suite): binding key per platform, name learning, index off by default, link-mode conflict,
 arena refusal, refresh note in the card, link line after the image, exact-case-first order, record bound, unbind reply,
 record failure tolerated, link host check. All killed. 115 -> 131 tests.
+
+### 16.4 Multi-mode (maintainer: "不要仅局限于 PVE 模式，本插件需要支持多模式数据")
+
+- `TarkovPlugin.profiles(aid, first)` fetches all three modes together (`asyncio.gather`); "no profile" is skipped; any
+  other error fails only for `first`, the mode the reply is about (logged and skipped for the others).
+- `show()`: a mode chosen by the user (`explicit`: a mode word or a link) is kept; without one, the default mode is shown
+  when it has a profile, else the first other mode that has one, with a note. The reply names the other modes with a
+  profile (with a ready command). Nothing shown -> a message naming the modes that do have a profile, or "none of the
+  three", with the matching search hint. The rename note moved into `show()` (it needs the shown profile).
+- `show()` returns `(reply, missing_text)`; a first draft kept the text on `self`, which concurrent queries of
+  different users would have overwritten. Caught in self-review before any commit.
+- Binding: a profile in any mode confirms the account; the reply lists the modes with a profile.
+- Cost: a query now makes up to three profile requests. "No profile" is cached in memory for `NOT_FOUND_SECONDS` = 60
+  (a found profile for `profile_cache_minutes`), so repeated queries do not ask again, and a player searched on the
+  website a moment ago appears within a minute (Cloudflare's own caching aside).
+- The optional downloaded index stays per mode: a name lookup uses the chosen (or default) mode's index.
+- Tests: `test_without_a_mode_every_mode_is_looked_at`, `test_a_chosen_mode_is_kept`, `test_names_work_in_every_mode`,
+  `test_other_modes_failing_do_not_fail_the_query`, `test_bind_accepts_a_profile_in_any_mode`,
+  `test_missing_profiles_are_cached_briefly`; existing expectations updated (fetch lists now hold all modes).
+  131 -> 137. Mutation check (9): explicit mode kept, fallback, explicit flag, main-mode error, "also has" note,
+  bind in any mode, not-found TTL, not-found cached, rename note. All killed.
+- Fonts: subset rebuilt for the new messages (1248 characters, 196 KB).
