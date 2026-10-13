@@ -12,7 +12,7 @@
 
 - 当前版本 **0.2.0**，加入了图片和 Markdown 回复，尚未在聊天平台实测。
 - 已用真实网络把插件的查询流程完整跑过一遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID 和昵称各查了 PVE、PVP、赛季模式。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
-- 自动测试共 113 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
+- 自动测试共 115 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
 
 修改由 Claude Opus 5.5（通过 Claude Code）完成，经项目维护者审阅。做法与 spark 项目相同：先写测试，再改代码，最后跑完全部测试。另外用“故意改坏代码”的方式检查测试：把关键保护逐一从代码里去掉，确认每一项都会被测试发现（共 24 项）。
 
@@ -20,7 +20,7 @@
 
 ```bash
 pip install -r requirements.txt
-python -m unittest discover -s tests   # 应显示 Ran 113 tests ... OK
+python -m unittest discover -s tests   # 应显示 Ran 115 tests ... OK
 python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.2.0.zip
 ```
 
@@ -73,6 +73,9 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
    - 测试 `tests/test_image.py` 检查：图片能生成、同一份档案每次画出的图片完全相同、高度随技能和备注变化、异常数据也能画；代码里的每个中文字符都在字体里（以后在代码里加了中文却忘了重新生成字体，这个测试会失败）。
    - 测试 `test_text_is_unchanged_by_the_card_model` 和 40 组新旧对比确认文字回复与改动前逐字相同。
    - 把新增的保护逐一从代码里去掉，共 11 处，每一处都会被测试发现。
+5. **撤离状态改用游戏叫法**（维护者要求）
+   - 撤离 / 匆匆逃离 / 转移 / KIA / 行动中失踪，按这个顺序出现在文字、Markdown 和图片里；作战记录的“存活”列改为“撤离”。
+   - 怎么核对：测试 `test_exit_statuses_use_the_game_wording`、`test_exit_legend_uses_the_game_wording`。
 
 ### 0.1.0：首个版本
 

@@ -12,9 +12,9 @@ class OutputTests(unittest.TestCase):
     def test_full_profile(self):
         text = render(summarize(profile()), 'PVE', now=NOW)
         for part in ('【塔科夫 PVE 档案】Test_Player（账号 ID 1234567）', '阵营 USEC｜等级 66', '账号总游戏时长 1305 小时｜成就 2 个',
-                     'PMC：战局 1472，存活 1234，存活率 83.8%', '击杀 12115，死亡 164，K/D 73.87，击杀 PMC 1894',
-                     '阵亡 155，失踪 1，Run Through 27，转图 55，最长连续存活 60 局',
-                     'Scav：战局 58，存活 42，存活率 72.4%', '精英技能（2 项）：耐力、力量', '其他技能（前 2 项）：魅力 48、活力 29',
+                     'PMC：战局 1472，撤离 1234，存活率 83.8%', '击杀 12115，死亡 164，K/D 73.87，击杀 PMC 1894',
+                     '匆匆逃离 27，转移 55，KIA 155，行动中失踪 1，最长连续存活 60 局',
+                     'Scav：战局 58，撤离 42，存活率 72.4%', '精英技能（2 项）：耐力、力量', '其他技能（前 2 项）：魅力 48、活力 29',
                      '档案更新于 2026-10-13 22:53（北京时间）'):
             with self.subTest(part=part):
                 self.assertIn(part, text)
@@ -48,6 +48,17 @@ class OutputTests(unittest.TestCase):
                 self.assertNotIn('档案更新于', text)
                 self.assertNotIn('天没有更新', text)
 
+    def test_exit_statuses_use_the_game_wording(self):
+        # Maintainer: 撤离 / 匆匆逃离 / 转移 / KIA / 行动中失踪, in this order.
+        card = build_card(summarize(profile()), 'PVE', now=NOW)
+        text, markdown = render(summarize(profile()), 'PVE', now=NOW), render_markdown(card)
+        self.assertIn('撤离 1234', text)
+        self.assertIn('**撤离状态（PMC）**：撤离 1234 · 匆匆逃离 27 · 转移 55 · KIA 155 · 行动中失踪 1', markdown)
+        self.assertIn('| | 战局 | 撤离 | 存活率 |', markdown)
+        for old in ('阵亡', 'Run Through', '转图'):
+            self.assertNotIn(old, text+markdown)
+        self.assertNotRegex(text+markdown, '(?<!行动中)失踪')
+
     def test_markdown(self):
         s = summarize(profile(info_nickname='A_b*c'))
         s['scav'] = dict.fromkeys(s['scav'], 0)
@@ -65,9 +76,9 @@ class OutputTests(unittest.TestCase):
         s = summarize(profile())
         self.assertEqual(render(s, 'PVE', notes=['n'], now=NOW), '\n'.join([
             '【塔科夫 PVE 档案】Test_Player（账号 ID 1234567）', '阵营 USEC｜等级 66', '账号总游戏时长 1305 小时｜成就 2 个',
-            '最近活跃 2026-10-04 19:25', '', 'PMC：战局 1472，存活 1234，存活率 83.8%',
-            '　击杀 12115，死亡 164，K/D 73.87，击杀 PMC 1894', '　阵亡 155，失踪 1，Run Through 27，转图 55，最长连续存活 60 局',
-            'Scav：战局 58，存活 42，存活率 72.4%', '　击杀 110，死亡 15，K/D 7.33，击杀 PMC 66', '　阵亡 15，Run Through 1，最长连续存活 8 局',
+            '最近活跃 2026-10-04 19:25', '', 'PMC：战局 1472，撤离 1234，存活率 83.8%',
+            '　击杀 12115，死亡 164，K/D 73.87，击杀 PMC 1894', '　匆匆逃离 27，转移 55，KIA 155，行动中失踪 1，最长连续存活 60 局',
+            'Scav：战局 58，撤离 42，存活率 72.4%', '　击杀 110，死亡 15，K/D 7.33，击杀 PMC 66', '　匆匆逃离 1，KIA 15，最长连续存活 8 局',
             '精英技能（2 项）：耐力、力量', '其他技能（前 2 项）：魅力 48、活力 29', '', '数据来自 tarkov.dev，档案更新于 2026-10-13 22:53（北京时间）', 'n']))
 
     def test_prestige_and_notes(self):
