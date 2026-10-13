@@ -10,9 +10,9 @@
 
 ## 当前状态
 
-- 当前版本 **0.1.0**，是首个版本，尚未在聊天平台实测。
+- 当前版本 **0.2.0**，加入了图片和 Markdown 回复，尚未在聊天平台实测。
 - 已用真实网络把插件的查询流程完整跑过一遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID 和昵称各查了 PVE、PVP、赛季模式。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
-- 自动测试共 96 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
+- 自动测试共 113 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
 
 修改由 Claude Opus 5.5（通过 Claude Code）完成，经项目维护者审阅。做法与 spark 项目相同：先写测试，再改代码，最后跑完全部测试。另外用“故意改坏代码”的方式检查测试：把关键保护逐一从代码里去掉，确认每一项都会被测试发现（共 24 项）。
 
@@ -20,8 +20,8 @@
 
 ```bash
 pip install -r requirements.txt
-python -m unittest discover -s tests   # 应显示 Ran 96 tests ... OK
-python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.1.0.zip
+python -m unittest discover -s tests   # 应显示 Ran 113 tests ... OK
+python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.2.0.zip
 ```
 
 在聊天中核对：
@@ -49,9 +49,30 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
   - 只在磁盘上保存三个模式的昵称名单（tarkov.dev 已公开的数据）；
   - 玩家档案只在内存中缓存，默认 10 分钟；
   - 插件自己不另存查询记录。AstrBot 的日志会记下每条消息的发送者和内容，插件日志里也有被查询的昵称或 ID。
+- **图片在本地绘制**：不把档案内容发给任何在线渲染服务（AstrBot 自带的文转图默认会发给公共服务），图片只在内存里，不写文件。
 - **一个人一次只查一个**：上一次查询还没完成时，同一个人在同一会话里的新查询会被拒绝，不同的人互不影响。
 
 ## 各版本做了什么
+
+### 0.2.0：图片和 Markdown 回复
+
+1. **为什么自己画图**
+   - AstrBot 自带的两种出图方式（Markdown 转图片、HTML 模板）默认都把内容发到公共渲染服务，会打破“只访问 tarkov.dev”的承诺。
+   - Pillow 是 AstrBot 自带的依赖，用它在本地画图不需要新增依赖，也能离线测试。
+   - 维护者从三种风格中选了组合方案：以情报档案为底，加入角色面板的狗牌和撤离结算的撤离状态条。
+2. **做了什么**
+   - 新配置项“输出方式”：图片（默认）/ 文字 / Markdown 文字。
+   - 三种回复都由同一份“卡片内容”生成。
+   - 图片在后台线程绘制，失败时自动改发文字。
+   - 找不到玩家、同名列表和出错提示仍是文字。
+3. **字体**
+   - 随插件附带三款开源字体（SIL OFL）。思源黑体裁剪到插件会用到的字，约 183 KB；另两款原样附带。Share Tech Mono 的许可保留了 “Share” 这个名字，修改过的版本不能再用原名，所以不裁剪。
+   - 字体画不出的字符显示为 `?`。
+4. **怎么核对**
+   - 在配置中切换三种输出方式，分别查询一次。
+   - 测试 `tests/test_image.py` 检查：图片能生成、同一份档案每次画出的图片完全相同、高度随技能和备注变化、异常数据也能画；代码里的每个中文字符都在字体里（以后在代码里加了中文却忘了重新生成字体，这个测试会失败）。
+   - 测试 `test_text_is_unchanged_by_the_card_model` 和 40 组新旧对比确认文字回复与改动前逐字相同。
+   - 把新增的保护逐一从代码里去掉，共 11 处，每一处都会被测试发现。
 
 ### 0.1.0：首个版本
 

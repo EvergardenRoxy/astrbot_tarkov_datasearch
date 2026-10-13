@@ -36,7 +36,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_direct_imports_are_declared(self):
         requirements = (ROOT/'requirements.txt').read_text(encoding='utf-8')
-        for package in ('aiohttp', 'yarl'):
+        for package in ('aiohttp', 'yarl', 'pillow'):
             self.assertRegex(requirements, rf'(?m)^{package}\b')
 
     def test_package_contents(self):
@@ -46,4 +46,8 @@ class ReleaseTests(unittest.TestCase):
             names = archive.namelist()
         self.assertIn('astrbot_tarkov_datasearch/main.py', names)
         self.assertIn('astrbot_tarkov_datasearch/tarkov_core/data/static.json', names)
+        for font in ('NotoSansSC-Subset.ttf', 'NotoSansSC-Subset.chars.txt', 'Oswald-Variable.ttf', 'ShareTechMono-Regular.ttf',
+                     'OFL-NotoSansSC.txt', 'OFL-Oswald.txt', 'OFL-ShareTechMono.txt'):
+            self.assertIn('astrbot_tarkov_datasearch/tarkov_core/fonts/'+font, names)
+        self.assertLess(path.stat().st_size, 1024*1024)
         self.assertFalse([n for n in names if '/tests/' in n or n.endswith(('.sqlite3', '.pyc'))])

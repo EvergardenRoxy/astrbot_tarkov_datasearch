@@ -1,3 +1,5 @@
 aiohttp>=3.10,<4
 # Imported directly (proxy URL validation); also an aiohttp dependency.
 yarl>=1.9,<2
+# Draws the image reply; AstrBot itself requires pillow>=11.2.1.
+pillow>=11.2.1

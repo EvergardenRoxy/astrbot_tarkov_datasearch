@@ -13,8 +13,8 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Inputs | Maintainer's analysis `report.md` of the-hideout/tarkov-dev (not in the tree; key facts restated in §2). Maintainer's own profile JSON downloaded from tarkov.dev, used only for a local comparison (§2.4), not committed. |
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
-| Version | 0.1.0 (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 96, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Version | 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
+| Tests | 113, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -77,8 +77,10 @@ not present in any profile seen; it is not used.
 | Name index | `tarkov_core/names.py` | Per mode, one SQLite file `names-<path>.sqlite3`, table `names(key, aid, name)` `WITHOUT ROWID`, PK `(key, aid)`, `meta(etag, checked_at, entries)`. Built from the downloaded document with a bytes regex (`ENTRY`), not `json.loads`, to avoid ~3M Python objects. Built into `.tmp`, then `os.replace`. One `asyncio.Lock` per mode covers both refresh and query, so the file is never replaced under this plugin's own reader. Failed refresh with an existing db: keep serving it, retry after `RETRY_SECONDS` (600). Without a db: the error reaches the user. |
 | Profile | `tarkov_core/profile.py` | `summarize()` validates loosely: anything not of the expected type becomes 0/None. Counters use the shortest key containing all parts (tarkov.dev takes the first match). MIA: `MissingInAction`, falling back to `Left` (the name tarkov.dev's page uses). Skills filtered like tarkov.dev (progress > 0, LastAccess > 0, id known). |
 | Static tables | `tarkov_core/data/static.json`, `tools/build_static.py` | Level table (79 rows) and 49 skill names from `json.tarkov.dev/regular/items` + `items_zh`. The PvE level table was checked identical. Not fetched at run time. |
-| Output | `tarkov_core/output.py` | Plain text, Beijing time (UTC+8, labelled). Elite skills listed in full; `skill_count` limits the rest. |
-| Plugin | `main.py` | `/tarkov` (alias `/塔科夫`). Flow: access check → parse `[mode] target` → digits: fetch by id, on 404 fall back to the name index if the digits are a valid name → name: refresh notice if needed, lookup, disambiguate (one exact-case hit wins; otherwise >1 hit lists ids) → fetch → render. One in-flight query per sender (`self.active`, sha256 of origin + sender like spark). Profile summaries cached in memory (TTL `profile_cache_minutes`, at most `CACHE_ENTRIES` = 128, oldest-inserted evicted). |
+| Card | `tarkov_core/card.py` | `build_card(summary, mode_label, skill_limit, notes, now)`: the one content model for every output (formatted rates/K/D, Beijing-time strings, stale days, skills shown = all elite + `skill_limit` others, notes). |
+| Output | `tarkov_core/output.py` | `render_text(card)` (unchanged text format; `render(summary, …)` wraps it) and `render_markdown(card)` (escapes Markdown in third-party text). |
+| Image | `tarkov_core/image.py`, `tarkov_core/fonts/` | `render_image(card)` -> JPEG bytes (q85, 4:4:4), 820 px wide, height from content. Bundled OFL fonts; characters outside `NotoSansSC-Subset.chars.txt`/ASCII drawn as `?`. Seeded paper grain, so output is byte-stable. |
+| Plugin | `main.py` | `/tarkov` (alias `/塔科夫`). Flow: access check → parse `[mode] target` → digits: fetch by id, on 404 fall back to the name index if the digits are a valid name → name: refresh notice if needed, lookup, disambiguate (one exact-case hit wins; otherwise >1 hit lists ids) → fetch → `reply()`: card, then image (`asyncio.to_thread`, `Image.fromBytes`, text on any failure), text or Markdown per `output_mode` (unknown value -> image). One in-flight query per sender (`self.active`, sha256 of origin + sender like spark). Profile summaries cached in memory (TTL `profile_cache_minutes`, at most `CACHE_ENTRIES` = 128, oldest-inserted evicted). |
 
 Measured (this container, 2026-10-13): PVP index download + build 23-26 s, db 97 MB, process max RSS ~106 MB;
 pve ~1 s / 4.3 MB; pvp-season ~0.6 s / 1.4 MB; an unchanged index refresh (304) 0.2 s; a profile fetch 0.2 s.
@@ -88,11 +90,12 @@ pve ~1 s / 4.3 MB; pvp-season ~0.6 s / 1.4 MB; an unchanged index refresh (304) 
 | File | Covers |
 |---|---|
 | `test_profile.py` (16) | level boundaries against the bundled table, hand-checked level 66, table shape, counter selection, side stats, `Left` fallback, malformed counters, summary fields, skill filter/sort/elite, control characters, odd shapes in every field (>1000 combinations), huge integers, non-profiles, missing fields, mode aliases, `profile` path. |
-| `test_output.py` (6) | full rendering (account-wide play time label), no deaths / no raids, skill limit, stale flag, out-of-range timestamps, prestige and notes. |
+| `test_output.py` (8) | full rendering (account-wide play time label), text unchanged through the card model (exact string), Markdown (escaping, empty side, skills hidden), no deaths / no raids, skill limit, stale flag, out-of-range timestamps, prestige and notes. |
+| `test_image.py` (11) | JPEG of the right width and size, byte-stable (also after clearing the grain cache), height follows skills and notes, odd cards (missing values, empty sides, long/foreign names, huge numbers, every mode), long text shrunk to fit, empty sides say so, `safe()`, every non-ASCII character of the code and skill table is in the subset font, listed characters have glyphs, licences shipped and Share Tech Mono unmodified. |
 | `test_names.py` (22) | entry parsing (escapes, whitespace, empty, over-long, control characters), HTML rejected, empty index keeps old db, nickname rule (3-24), build-then-reuse, ETag + 304, replacement, failed refresh keeps serving + retry delay, first-download failure backed off, one download under concurrency, match cap, exact case first + total, corrupt db rebuilt, damaged names table rebuilt, URI characters in the data dir, old leftovers only removed at start, reload during a download, two instances never share a download file, failed build removes its temp file, refresh interval, weekly default. |
 | `test_transport.py` (18) | local aiohttp server with `HOST` patched: gzip + agent header, plain body, 404 (Chinese default text), 403/429/500 messages, no redirects, HTML/non-object/invalid JSON, compressed/decoded limits (gzip and plain), wrong content type, truncated and garbage gzip, other encodings, profile parsed off the loop, index limits, index download + 304, connection error text, environment proxy ignored, proxy validation (explicit port). |
-| `test_plugin.py` (30) | SDK stubbed like the spark tests: help, id, name, default mode, refresh notices (download vs check, size only for a first PvP download), texts follow the interval, not found, digits missing as id and name, ambiguity (incl. two exact-case hits, "等，共 N 个"), exact case wins, rename note, missing id, digit-name fallback, long generated names, bad input, full-width digits, error messages, index 404 and timeouts in chat, cache on/off and bound, one query per sender (bounded wait), access modes incl. unknown value and list types, empty list rows, infinite settings, proxy with empty address fails closed, proxy/timeout reach transport. |
-| `test_release.py` (4) | version consistency, schema defaults equal code fallbacks, direct imports declared, package contents. |
+| `test_plugin.py` (34) | SDK stubbed like the spark tests: help, id, name, default mode, refresh notices (download vs check, size only for a first PvP download), texts follow the interval, not found, digits missing as id and name, ambiguity (incl. two exact-case hits, "等，共 N 个"), exact case wins, rename note, missing id, digit-name fallback, long generated names, bad input, full-width digits, error messages, index 404 and timeouts in chat, cache on/off and bound, one query per sender (bounded wait), access modes incl. unknown value and list types, empty list rows, infinite settings, proxy with empty address fails closed, proxy/timeout reach transport, default output is a JPEG image (also for an unknown setting), Markdown and text outputs, image failure falls back to text with a note, image drawn off the loop. |
+| `test_release.py` (4) | version consistency, schema defaults equal code fallbacks, direct imports declared (aiohttp, yarl, pillow), package contents (fonts and licences included, zip under 1 MiB). |
 
 Mutation check (scratch copy, one change at a time, full suite, 120 s limit each): 24 mutations of the guards
 above (no-redirect, trust_env, both size limits, gzip-only header, ETag, content type, lock, retry delay and check,
@@ -134,6 +137,8 @@ tests were added or bounded for each, and one survivor was a no-op mutation (it 
 - Messages shown in chat come from `QueryError` texts written here or from exception type names, never from raw
   exception strings.
 - When upstream game data changes (new levels or skills), re-run `python tools/build_static.py` and commit the diff.
+- Never render through AstrBot's `text_to_image`/`html_render` (they post content to a remote renderer by default). After adding Chinese text to the code or new skill names, re-run `python tools/build_fonts.py`; `test_font_covers_every_character_of_the_code` fails until then.
+- Never subset or otherwise modify `ShareTechMono-Regular.ttf` (Reserved Font Name 'Share').
 
 ## 8. Ideas recorded for later (not requested for v0.1)
 
@@ -357,3 +362,34 @@ achievements, last active, profile updated); the PMC/Scav exit-status bars of st
 muted paper inks with hatching, a 0-100 % scale and a legend (PMC/Scav counts). 820x1364 PNG, 945 KB because of the
 noise texture (to be reduced in the implementation: lighter texture and/or JPEG). Awaiting the maintainer's go-ahead
 to implement it together with the three output settings.
+
+## 15. Image and Markdown output (0.2.0)
+
+Maintainer decisions (§14.1-§14.2): option C, image by default, three outputs (text / image / Markdown), the
+combined style (dossier of 3 + dog tag of 1 + exit-status bars of 2). Version 0.2.0. 96 -> 113 tests.
+
+**Code**
+- `card.py` (new): the content model; `when`, `ratio`, `STALE_DAYS`, `stale_note` moved here from `output.py`.
+- `output.py`: `render_text(card)` reproduces the 0.1.0 text exactly (40 old/new comparisons over 5 summaries x
+  4 skill limits x 2 times, plus `test_text_is_unchanged_by_the_card_model`); `render_markdown(card)` added.
+- `image.py` (new): ported from the preview script. Section numbers adapt when skills are hidden; notes (stale, rename,
+  image-fallback) are wrapped into the 备注 section; table cells shrink their font to fit (`fit()`); bars for an
+  empty side say 暂无记录; `MODE_EN` maps labels for the Latin-only fonts. Measured here: 0.2-0.3 s per image, about
+  300-400 KB.
+- `main.py`: `output_mode` setting (schema default `image` = code fallback), `reply()`; the image goes out as
+  `Image.fromBytes(data)` (AstrBot 4.16 `components.Image.fromBytes` -> base64), so no file is written and there is
+  nothing to clean up. Non-profile replies stay text.
+- `tools/build_fonts.py` (new, dev only, needs fonttools): downloads the three fonts and OFL texts from google/fonts,
+  subsets Noto Sans SC to printable ASCII + every non-ASCII character in `main.py`, `tarkov_core/*.py` and the skill
+  names (1158 characters, 183 KB, variable `wght` axis kept, hinting removed), writes the character list, copies
+  Oswald and Share Tech Mono unmodified. Source sha256 values are printed and recorded in THIRD_PARTY.md.
+- `requirements.txt`: `pillow>=11.2.1` (AstrBot 4.16 requires the same).
+
+**Mutation check** (11, full suite): unknown mode -> image, image fallback, image off the loop, Markdown mode,
+Markdown escaping, `safe()`, skills hidden at 0, skills capped, `fit()`, seeded grain, empty-bar text. The last three
+survived the first run; `test_long_text_is_shrunk_to_fit`, `test_same_picture_in_another_process` and
+`test_empty_sides_say_so` were added and kill them.
+
+**Not verified:** how chat platforms display a ~400 KB JPEG (QQ/NapCat, Telegram, Discord); Markdown rendering per
+platform; Pillow versions other than 12.3.0 (AstrBot allows >= 11.2.1; `set_variation_by_axes` and variable fonts
+need FreeType with variation support, present in Pillow wheels).

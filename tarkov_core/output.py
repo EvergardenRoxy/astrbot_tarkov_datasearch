@@ -1,34 +1,19 @@
-"""Plain chat text for a profile summary."""
-import datetime
-import time
+"""Plain-text and Markdown replies, built from a card (card.py)."""
+import re
 
-# Chat users of this plugin are mostly in China; times are shown in Beijing time and say so.
-TZ = datetime.timezone(datetime.timedelta(hours=8))
-STALE_DAYS = 30
+from .card import EXITS, build_card, stale_note
 
 
-def when(seconds):
-    """Beijing time of an epoch timestamp, or None when it is outside what datetime can represent."""
-    try:
-        return datetime.datetime.fromtimestamp(seconds, TZ).strftime('%Y-%m-%d %H:%M')
-    except (OverflowError, OSError, ValueError):
-        return None
-
-
-def ratio(part, whole):
-    return f'{part/whole*100:.1f}%' if whole else '—'
-
-
-def side_lines(title, stats):
-    if not stats['raids'] and not stats['kills'] and not stats['deaths']:
+def side_lines(card_side):
+    title, stats = card_side['title'], card_side['stats']
+    if card_side['empty']:
         return [f'{title}：暂无记录']
-    kd = f"{stats['kills']/stats['deaths']:.2f}" if stats['deaths'] else '—（无死亡记录）'
+    kd = card_side['kd'] or '—（无死亡记录）'
     lines = [
-        f"{title}：战局 {stats['raids']}，存活 {stats['survived']}，存活率 {ratio(stats['survived'], stats['raids'])}",
+        f"{title}：战局 {stats['raids']}，存活 {stats['survived']}，存活率 {card_side['rate']}",
         f"　击杀 {stats['kills']}，死亡 {stats['deaths']}，K/D {kd}，击杀 PMC {stats['pmc_kills']}",
     ]
-    exits = [(label, stats[key]) for label, key in (('阵亡', 'killed'), ('失踪', 'mia'), ('Run Through', 'runner'), ('转图', 'transit'))]
-    detail = [f'{label} {value}' for label, value in exits if value]
+    detail = [f'{label} {stats[key]}' for key, label in EXITS if stats[key]]
     if stats['streak']:
         detail.append(f"最长连续存活 {stats['streak']} 局")
     if detail:
@@ -36,43 +21,99 @@ def side_lines(title, stats):
     return lines
 
 
-def render(summary, mode_label, skill_limit=10, notes=(), now=None):
-    now = time.time() if now is None else now
-    aid = f"（账号 ID {int(summary['aid'])}）" if summary['aid'] is not None else ''
-    lines = [f"【塔科夫 {mode_label} 档案】{summary['nickname']}{aid}"]
-    basics = [f"阵营 {summary['side']}"]
-    if summary['level'] is not None:
-        basics.append(f"等级 {summary['level']}")
-    if summary['prestige']:
-        basics.append(f"声望 {int(summary['prestige'])}")
+def render_text(card):
+    aid = f"（账号 ID {card['aid']}）" if card['aid'] is not None else ''
+    lines = [f"【塔科夫 {card['mode']} 档案】{card['nickname']}{aid}"]
+    basics = [f"阵营 {card['side']}"]
+    if card['level'] is not None:
+        basics.append(f"等级 {card['level']}")
+    if card['prestige']:
+        basics.append(f"声望 {card['prestige']}")
     lines.append('｜'.join(basics))
-    extra = []
-    if summary['play_seconds']:
-        # Account-wide, not per mode: a pvp-season profile showed 7,141 h against 90 raids (review F-16).
-        extra.append(f"账号总游戏时长 {summary['play_seconds']/3600:.0f} 小时")
-    extra.append(f"成就 {summary['achievements']} 个")
+    extra = [f"账号总游戏时长 {card['play_hours']} 小时"] if card['play_hours'] else []
+    extra.append(f"成就 {card['achievements']} 个")
     lines.append('｜'.join(extra))
-    active = when(summary['last_active']) if summary['last_active'] else None
-    if active:
-        lines.append(f'最近活跃 {active}')
+    if card['last_active']:
+        lines.append(f"最近活跃 {card['last_active']}")
     lines.append('')
-    lines += side_lines('PMC', summary['pmc'])
-    lines += side_lines('Scav', summary['scav'])
-    if skill_limit > 0 and summary['skills']:
-        elite = [name for name, _, is_elite in summary['skills'] if is_elite]
-        rest = [(name, level) for name, level, is_elite in summary['skills'] if not is_elite][:skill_limit]
-        if elite:
-            lines.append(f"精英技能（{len(elite)} 项）：{'、'.join(elite)}")
-        if rest:
-            lines.append(f"其他技能（前 {len(rest)} 项）：{'、'.join(f'{name} {level}' for name, level in rest)}")
+    for card_side in card['sides']:
+        lines += side_lines(card_side)
+    elite = [name for name, _, is_elite in card['skills'] if is_elite]
+    rest = [(name, level) for name, level, is_elite in card['skills'] if not is_elite]
+    if elite:
+        lines.append(f"精英技能（{len(elite)} 项）：{'、'.join(elite)}")
+    if rest:
+        lines.append(f"其他技能（前 {len(rest)} 项）：{'、'.join(f'{name} {level}' for name, level in rest)}")
     lines.append('')
-    updated = when(summary['updated']) if summary['updated'] else None
-    if updated:
-        lines.append(f'数据来自 tarkov.dev，档案更新于 {updated}（北京时间）')
-        days = (now-summary['updated'])/86400
-        if days > STALE_DAYS:
-            lines.append(f'这份档案已有 {int(days)} 天没有更新：可能是该玩家很久没玩这个模式，也可能是 tarkov.dev 很久没有刷新过他的档案。')
+    if card['updated']:
+        lines.append(f"数据来自 tarkov.dev，档案更新于 {card['updated']}（北京时间）")
     else:
         lines.append('数据来自 tarkov.dev（时间为北京时间）')
-    lines += list(notes)
+    if card['stale_days']:
+        lines.append(stale_note(card['stale_days']))
+    lines += card['notes']
+    return '\n'.join(lines)
+
+
+def render(summary, mode_label, skill_limit=10, notes=(), now=None):
+    """The plain-text reply for a profile summary."""
+    return render_text(build_card(summary, mode_label, skill_limit, notes, now))
+
+
+MARKDOWN_SPECIAL = re.compile(r'([\\`*_{}\[\]()#+\-.!|>~<])')
+
+
+def md(text):
+    """Escape third-party or user text so it shows literally (nicknames such as Test_Player contain '_')."""
+    return MARKDOWN_SPECIAL.sub(r'\\\1', str(text))
+
+
+def render_markdown(card):
+    lines = [f"## 塔科夫 {card['mode']} 档案：{md(card['nickname'])}", '']
+    basics = []
+    if card['aid'] is not None:
+        basics.append(f"**账号 ID** {card['aid']}")
+    basics.append(f"**阵营** {md(card['side'])}")
+    if card['level'] is not None:
+        basics.append(f"**等级** {card['level']}")
+    if card['prestige']:
+        basics.append(f"**声望** {card['prestige']}")
+    lines.append(' · '.join(basics)+'  ')
+    extra = [f"账号总游戏时长 {card['play_hours']} 小时"] if card['play_hours'] else []
+    extra.append(f"成就 {card['achievements']} 个")
+    if card['last_active']:
+        extra.append(f"最近活跃 {card['last_active']}")
+    lines += [' · '.join(extra), '']
+    lines.append('| | 战局 | 存活 | 存活率 | 击杀 | 死亡 | K/D | 击杀 PMC | 最长连续存活 |')
+    lines.append('|---|---:|---:|---:|---:|---:|---:|---:|---:|')
+    for card_side in card['sides']:
+        stats = card_side['stats']
+        if card_side['empty']:
+            lines.append(f"| {card_side['title']} | 暂无记录 | | | | | | | |")
+            continue
+        lines.append(f"| {card_side['title']} | {stats['raids']} | {stats['survived']} | {card_side['rate']} | "
+                     f"{stats['kills']} | {stats['deaths']} | {card_side['kd'] or '—'} | {stats['pmc_kills']} | {stats['streak']} |")
+    lines.append('')
+    for card_side in card['sides']:
+        if not card_side['empty']:
+            stats = card_side['stats']
+            exits = ' · '.join([f"存活 {stats['survived']}"]+[f'{label} {stats[key]}' for key, label in EXITS])
+            # Two trailing spaces: a Markdown line break, so the two sides stay on separate lines.
+            lines.append(f"**撤离状态（{card_side['title']}）**：{exits}  ")
+    elite = [name for name, _, is_elite in card['skills'] if is_elite]
+    rest = [(name, level) for name, level, is_elite in card['skills'] if not is_elite]
+    if elite or rest:
+        lines.append('')
+    if elite:
+        lines.append(f"**精英技能（{len(elite)} 项）**：{'、'.join(elite)}  ")
+    if rest:
+        lines.append(f"**其他技能（前 {len(rest)} 项）**：{'、'.join(f'{name} {level}' for name, level in rest)}")
+    lines.append('')
+    if card['updated']:
+        lines.append(f"> 数据来自 tarkov.dev，档案更新于 {card['updated']}（北京时间）")
+    else:
+        lines.append('> 数据来自 tarkov.dev（时间为北京时间）')
+    if card['stale_days']:
+        lines.append('> '+stale_note(card['stale_days']))
+    lines += ['> '+md(note) for note in card['notes']]
     return '\n'.join(lines)
