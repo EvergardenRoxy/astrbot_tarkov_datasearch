@@ -11,10 +11,10 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 |---|---|
 | Task | New AstrBot plugin to look up Escape from Tarkov player profiles in chat (maintainer request, 2026-10-13). |
 | Inputs | Maintainer's analysis `report.md` of the-hideout/tarkov-dev (not in the tree; key facts restated in §2). Maintainer's own profile JSON downloaded from tarkov.dev, used only for a local comparison (§2.4), not committed. |
-| Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. |
+| Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
 | Version | 0.1.0 (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 71, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Tests | 72, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -56,11 +56,13 @@ not present in any profile seen; it is not used.
 
 - The maintainer's downloaded JSON equals `pve/<aid>.json` exactly (`dict ==`), and that object's `Last-Modified`
   (14:53:29 UTC) matched `updated` (14:53:28.537) and the time the maintainer viewed the page. **Inference:** a
-  tarkov.dev page view writes the snapshot. Snapshots of players nobody views stay old. The same account's
-  `profile/<aid>.json` was last written 2024-07 with `updated` = 2024-03-20 and a former nickname.
+  tarkov.dev page view writes the snapshot. Snapshots of players nobody views stay old.
+- The same account's `profile/<aid>.json` has `updated` = 2024-03-20. **This is not a data-source problem**: the
+  maintainer does not play PvP (maintainer's correction). An old `updated` therefore means "the player has not
+  played this mode recently" or "nobody has viewed the player on tarkov.dev recently"; the reply says both.
 - The current nickname is in none of the three indexes; the `pve` index does not contain the account id at all,
-  although `pve/<aid>.json` exists. The `profile` index maps the id to the former name.
-- Consequences in code: render shows `updated` and flags > 30 days (`output.STALE_DAYS`); name-not-found text
+  although `pve/<aid>.json` exists.
+- Consequences in code: render shows `updated` and notes > 30 days (`output.STALE_DAYS`); name-not-found text
   recommends querying by id; a name hit whose profile nickname differs gets a "may have been renamed" note.
 - Case-insensitive duplicates in the `profile` index: 8,344 lower-cased names with more than one id (31 of them
   the empty string). 35 names carry whitespace such as a trailing `\n`; they are stripped. Two entries have names
@@ -87,7 +89,7 @@ pve ~1 s / 4.3 MB; pvp-season ~0.6 s / 1.4 MB; an unchanged index refresh (304) 
 |---|---|
 | `test_profile.py` (13) | level boundaries against the bundled table, hand-checked level 66, table shape, counter selection, side stats, `Left` fallback, malformed counters, summary fields, skill filter/sort/elite, non-profiles, missing fields, mode aliases, `profile` path. |
 | `test_output.py` (5) | full rendering, no deaths / no raids, skill limit, stale flag, prestige and notes. |
-| `test_names.py` (14) | entry parsing (escapes, whitespace, empty, over-long), HTML rejected, empty index keeps old db, nickname rule, build-then-reuse, ETag + 304, replacement, failed refresh keeps serving + retry delay, failure without db, one download under concurrency, match cap, corrupt db rebuilt, leftovers removed, refresh interval. |
+| `test_names.py` (15) | entry parsing (escapes, whitespace, empty, over-long), HTML rejected, empty index keeps old db, nickname rule, build-then-reuse, ETag + 304, replacement, failed refresh keeps serving + retry delay, failure without db, one download under concurrency, match cap, corrupt db rebuilt, leftovers removed, refresh interval, weekly default. |
 | `test_transport.py` (15) | local aiohttp server with `HOST` patched: gzip + agent header, plain body, 404, 403/429/500 messages, no redirects, HTML/non-object/invalid JSON, compressed/decoded limits (gzip and plain), wrong content type, truncated gzip, other encodings, index download + 304, connection error text, environment proxy ignored, proxy validation. |
 | `test_plugin.py` (21) | SDK stubbed like the spark tests: help, id, name, default mode, refresh notice (size only for PvP), not found, digits missing as id and name, ambiguity (incl. two exact-case hits), exact case wins, rename note, missing id, digit-name fallback, bad input, error messages, cache on/off and bound, one query per sender (bounded wait), access modes incl. unknown value, proxy/timeout reach transport. |
 | `test_release.py` (3) | version consistency, schema defaults equal code fallbacks, package contents. |
@@ -116,11 +118,9 @@ tests were added or bounded for each, and one survivor was a no-op mutation (it 
 4. K/D = all kills / deaths (the counters `Kills`/`Deaths`, as in the game's overall stats); PMC kills shown separately.
    tarkov.dev's page shows the raw counters only.
 5. Nickname input limited to `[A-Za-z0-9_-]{3,15}` (tarkov.dev's search asks for 3-15; the game's character set).
-6. The AI statement in README/CHANGELOG names "Claude (via Claude Code)" without a model version; the maintainer
-   decides the wording.
-7. The maintainer's profile JSON is not committed (it also holds other players' nicknames from dog tags); fixtures
+6. The maintainer's profile JSON is not committed (it also holds other players' nicknames from dog tags); fixtures
    are synthetic but shaped like it.
-8. `report.md` is not committed; §2 restates what this code depends on.
+7. `report.md` is not committed; §2 restates what this code depends on.
 
 ## 7. Invariants for future changes
 
@@ -140,3 +140,11 @@ tests were added or bounded for each, and one survivor was a no-op mutation (it 
   no-return-value pitfalls).
 - Weapon mastering, equipment (needs item names: `json.tarkov.dev/<mode>/items`), achievements by name, prestige
   icons, account type flags (`memberCategory`; tarkov.dev's flag table is in its player page).
+
+## 9. Maintainer follow-up (same day, before release)
+
+| Request | Change | Test |
+|---|---|---|
+| Check the name index weekly instead of daily. | Default `name_index_refresh_hours` 24 -> 168 in `_conf_schema.json`, the `main.py` fallback and `NameIndex(refresh_hours=168)`. Range stays 1-720. Chat texts ("每天" -> "每周") and the config hint updated; the hint says tarkov.dev itself rebuilds the index daily, so a shorter interval finds new or renamed players sooner. | `test_default_check_is_weekly`; `test_schema_defaults_match_code_fallbacks` keeps schema and code equal. |
+| The 2024 PvP snapshot is because the maintainer does not play PvP, not a retrieval problem. | §2.4 corrected. The > 30 days line no longer says the data "may be outdated"; it names both causes (player inactive in that mode, or not viewed on tarkov.dev recently). README/checklist/CHANGELOG wording follows. | `test_stale_profile_is_flagged` (unchanged assertion on the day count). |
+| AI statement: name the model. | README and CHANGELOG badges and statements, CHANGELOG 0.1.0 note and checklist name Claude Opus 5.5 (via Claude Code); the open decision about it was removed from §6. | - |

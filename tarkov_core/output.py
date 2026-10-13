@@ -64,7 +64,7 @@ def render(summary, mode_label, skill_limit=10, notes=(), now=None):
         lines.append(f"数据来自 tarkov.dev，档案更新于 {when(summary['updated'])}（北京时间）")
         days = (now-summary['updated'])/86400
         if days > STALE_DAYS:
-            lines.append(f'这份档案已有 {int(days)} 天没有更新，数据可能过时；在 tarkov.dev 网站查看一次该玩家通常会刷新档案。')
+            lines.append(f'这份档案已有 {int(days)} 天没有更新：可能是该玩家很久没玩这个模式，也可能是 tarkov.dev 很久没有刷新过他的档案。')
     else:
         lines.append('数据来自 tarkov.dev（时间为北京时间）')
     lines += list(notes)

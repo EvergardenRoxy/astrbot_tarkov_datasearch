@@ -62,7 +62,7 @@ def build(db_path, raw, etag):
 
 
 class NameIndex:
-    def __init__(self, root, download, refresh_hours=24):
+    def __init__(self, root, download, refresh_hours=168):
         """download(mode_path, target, etag) -> {'status': 200|304, 'etag': ...} fetches an index file."""
         self.root = root
         self.download = download
