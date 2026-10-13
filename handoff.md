@@ -14,7 +14,7 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
 | Version | 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 138, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Tests | 153, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -90,13 +90,13 @@ pve ~1 s / 4.3 MB; pvp-season ~0.6 s / 1.4 MB; an unchanged index refresh (304) 
 
 | File | Covers |
 |---|---|
-| `test_profile.py` (18) | player-page link parsing (modes, old /player/ form, arena, foreign hosts), page and search links, level boundaries against the bundled table, hand-checked level 53, table shape, counter selection, side stats, `Left` fallback, malformed counters, summary fields, skill filter/sort/elite, control characters, odd shapes in every field (>1000 combinations), huge integers, non-profiles, missing fields, mode aliases, `profile` path. |
+| `test_profile.py` (20) | player-page link parsing (modes, old /player/ form, arena, foreign hosts), page and search links, level boundaries against the bundled table, hand-checked level 53, table shape, counter selection, side stats, `Left` fallback, malformed counters, summary fields, skill filter/sort/elite, control characters, odd shapes in every field (>1000 combinations), huge integers, non-profiles, missing fields, mode aliases, `profile` path. |
 | `test_output.py` (9) | exit-status wording, full rendering (account-wide play time label), text unchanged through the card model (exact string), Markdown (escaping, empty side, skills hidden), no deaths / no raids, skill limit, stale flag, out-of-range timestamps, prestige and notes. |
-| `test_image.py` (12) | exit legend wording, JPEG of the right width and size, byte-stable (also after clearing the grain cache), height follows skills and notes, odd cards (missing values, empty sides, long/foreign names, huge numbers, every mode), long text shrunk to fit, empty sides say so, `safe()`, every non-ASCII character of the code and skill table is in the subset font, listed characters have glyphs, licences shipped and Share Tech Mono unmodified. |
+| `test_image.py` (14) | exit legend wording, JPEG of the right width and size, byte-stable (also after clearing the grain cache), height follows skills and notes, odd cards (missing values, empty sides, long/foreign names, huge numbers, every mode), long text shrunk to fit, empty sides say so, `safe()`, every non-ASCII character of the code and skill table is in the subset font, listed characters have glyphs, licences shipped and Share Tech Mono unmodified. |
 | `test_names.py` (22) | entry parsing (escapes, whitespace, empty, over-long, control characters), HTML rejected, empty index keeps old db, nickname rule (3-24), build-then-reuse, ETag + 304, replacement, failed refresh keeps serving + retry delay, first-download failure backed off, one download under concurrency, match cap, exact case first + total, corrupt db rebuilt, damaged names table rebuilt, URI characters in the data dir, old leftovers only removed at start, reload during a download, two instances never share a download file, failed build removes its temp file, refresh interval, weekly default. |
 | `test_transport.py` (18) | local aiohttp server with `HOST` patched: gzip + agent header, plain body, 404 (Chinese default text), 403/429/500 messages, no redirects, HTML/non-object/invalid JSON, compressed/decoded limits (gzip and plain), wrong content type, truncated and garbage gzip, other encodings, profile parsed off the loop, index limits, index download + 304, connection error text, environment proxy ignored, proxy validation (explicit port). |
-| `test_plugin.py` (42) | (§16) bind then query yourself (same platform, other group, other platform, default mode without a profile), bind by id/name and its failures, unbind, query by player-page link (mode conflict, arena, missing profile), names learned from queries with the index off, renamed player found by an old name, refresh link in text/Markdown/image replies, a failed name record does not fail the query; SDK stubbed like the spark tests: help, id, name, default mode, refresh notices (download vs check, size only for a first PvP download), texts follow the interval, not found, digits missing as id and name, ambiguity (incl. two exact-case hits, "等，共 N 个"), exact case wins, rename note, missing id, digit-name fallback, long generated names, bad input, full-width digits, error messages, index 404 and timeouts in chat, cache on/off and bound, one query per sender (bounded wait), access modes incl. unknown value and list types, empty list rows, infinite settings, proxy with empty address fails closed, proxy/timeout reach transport, default output is a JPEG image (also for an unknown setting), Markdown and text outputs, image failure falls back to text with a note, image drawn off the loop. |
-| `test_accounts.py` (6) | owner key per platform and hashed, bind/rebind/unbind, names case-insensitive, old names kept after a rename, exact-case then most recent order, record bounded. |
+| `test_plugin.py` (59) | (§16) bind then query yourself (same platform, other group, other platform, default mode without a profile), bind by id/name and its failures, unbind, query by player-page link (mode conflict, arena, missing profile), names learned from queries with the index off, renamed player found by an old name, refresh link in text/Markdown/image replies, a failed name record does not fail the query; SDK stubbed like the spark tests: help, id, name, default mode, refresh notices (download vs check, size only for a first PvP download), texts follow the interval, not found, digits missing as id and name, ambiguity (incl. two exact-case hits, "等，共 N 个"), exact case wins, rename note, missing id, digit-name fallback, long generated names, bad input, full-width digits, error messages, index 404 and timeouts in chat, cache on/off and bound, one query per sender (bounded wait), access modes incl. unknown value and list types, empty list rows, infinite settings, proxy with empty address fails closed, proxy/timeout reach transport, default output is a JPEG image (also for an unknown setting), Markdown and text outputs, image failure falls back to text with a note, image drawn off the loop. |
+| `test_accounts.py` (7) | owner key per platform and keyed (HMAC, §17), secret file created once with mode 0600, bind/rebind/unbind, names case-insensitive, old names kept after a rename, exact-case then most recent order, record bounded. |
 | `test_release.py` (4) | version consistency, schema defaults equal code fallbacks, direct imports declared (aiohttp, yarl, pillow), package contents (fonts and licences included, zip under 1 MiB). |
 
 Mutation check (scratch copy, one change at a time, full suite, 120 s limit each): 24 mutations of the guards
@@ -349,7 +349,7 @@ no game assets, logos or the game's own font are used.
 |---|---|---|---|
 | 1 | 角色面板 (character screen) | stash-grid background, top tab bar, drawn dog tag with ball chain, two-column stat list, square skill tiles with level numbers (gold for elite) | 820x1108, 108 KB |
 | 2 | 撤离结算 (raid summary) | hazard stripes, stencil headings (SURVIVED / KILLED IN ACTION), survival ring, exit-status bar, dotted leader rows, 10-pip skill bars | 820x1240, 660 KB |
-| 3 | 情报档案 (intel dossier) | paper texture and vignette, file tab, photo slot with clip, typewriter digits, rotated "已核实" stamp, form fields, pip checklist, decorative redaction bar | 820x1226, 866 KB |
+| 3 | 情报档案 (intel dossier) | paper texture and vignette, file tab, photo slot with clip, typewriter digits, rotated "已核实" stamp ("存档快照 / SNAPSHOT" since §17), form fields, pip checklist, decorative redaction bar | 820x1226, 866 KB |
 
 Sizes 2 and 3 come from the per-pixel noise texture, which PNG compresses badly; the implementation would use a
 lighter texture or JPEG. Implementation (text / image / Markdown output setting, card model, font subset) waits for
@@ -383,7 +383,7 @@ combined style (dossier of 3 + dog tag of 1 + exit-status bars of 2). Version 0.
   nothing to clean up. Non-profile replies stay text.
 - `tools/build_fonts.py` (new, dev only, needs fonttools): downloads the three fonts and OFL texts from google/fonts,
   subsets Noto Sans SC to printable ASCII + every non-ASCII character in `main.py`, `tarkov_core/*.py` and the skill
-  names (1158 characters, 183 KB, variable `wght` axis kept, hinting removed), writes the character list, copies
+  names (character list 1158 bytes, 183 KB, variable `wght` axis kept, hinting removed), writes the character list, copies
   Oswald and Share Tech Mono unmodified. Source sha256 values are printed and recorded in THIRD_PARTY.md.
 - `requirements.txt`: `pillow>=11.2.1` (AstrBot 4.16 requires the same).
 
@@ -401,7 +401,7 @@ need FreeType with variation support, present in Pillow wheels).
 The game's Chinese wording and order: 撤离 (survived) / 匆匆逃离 (runner) / 转移 (transit) / KIA (killed) /
 行动中失踪 (MIA). `card.SURVIVED` and `card.EXITS` hold them; text, Markdown (column and status line) and image (table
 header, bar order, legend) all read from there. 存活率 (survived ÷ raids) keeps its name. The font subset was rebuilt
-for the new characters (1167 characters, 185 KB). Tests: `test_exit_statuses_use_the_game_wording`,
+for the new characters (character list 1167 bytes, 185 KB). Tests: `test_exit_statuses_use_the_game_wording`,
 `test_exit_legend_uses_the_game_wording`; 113 -> 115.
 
 ## 16. Bind-and-query redesign (0.3.0)
@@ -440,7 +440,7 @@ shared by everyone; `/tarkov` without arguments queries the caller's own binding
 | `main.py` | `handle()` parses `帮助/help`, `绑定/bind`, `解绑/unbind`, an optional mode, then nothing (own binding), a link, an id or a name. A link's mode wins; a different explicit mode is refused; arena is refused. `bind()` resolves link/id/recorded name, fetches the profile to confirm it exists, stores the binding. `query()`: own binding, link/id, then `by_name()`: the shared record first, the downloaded index only when `name_index_enabled`; not found -> step-by-step guidance (search page link for that mode, example link command). `profile()` records every fetched nickname (`sqlite3.Error` is logged, never fails the query). `reply()` passes the player's page to the card and, for images, appends `Plain('刷新数据：…')` after the image. |
 | Card / outputs | `build_card(..., refresh_url=)`; text, Markdown (unescaped link built by the plugin) and image notes end with the "数据不会自动更新" reminder. |
 | Config | `name_index_enabled` (bool, default false, schema = code fallback); `name_index_refresh_hours` and the timeout hint now say they apply only with the index. |
-| Fonts | Subset rebuilt for the new text (1242 characters, 196 KB). |
+| Fonts | Subset rebuilt for the new text (character list 1242 bytes, 196 KB). |
 
 Live run (real network, SDK stubbed, data dir fresh, not uploaded): unbound `/tarkov` -> guidance; bind by Player_Two's
 link; `/tarkov pve` -> image + link line; `/tarkov` (PVP, no profile) -> guidance with the PVP search link; Player_One by
@@ -471,8 +471,41 @@ record failure tolerated, link host check. All killed. 115 -> 131 tests.
   `test_missing_profiles_are_cached_briefly`; existing expectations updated (fetch lists now hold all modes).
   131 -> 137. Mutation check (9): explicit mode kept, fallback, explicit flag, main-mode error, "also has" note,
   bind in any mode, not-found TTL, not-found cached, rename note. All killed.
-- Fonts: subset rebuilt for the new messages (1248 characters, 196 KB).
+- Fonts: subset rebuilt for the new messages (character list 1248 bytes, 196 KB).
 - Live run after the push: `/tarkov pvp 7654321` (PVE profile only) answered "no profile, unknown name": an id of 5+
   digits is also a valid nickname, so the name lookup ran and its "unknown" text replaced the id's. Now, when no name
   matches, the id's own answer is given ("PVP 模式下还没有…但 PVE 模式（/tarkov pve 7654321）下有档案").
   `test_digits_with_a_profile_in_another_mode`; 137 -> 138; reverting the fix fails 2 tests.
+
+## 17. Second independent review (after §16.4) and fixes
+
+A general-purpose subagent with no shared context reviewed a detached copy at `31b6619` (report in Chinese, repro tests
+for 12 of 13 findings, no network, no change to the real repository). Every finding was checked against the code and
+held; the maintainer had authorised fixing review findings without asking again. All 13 fixed:
+
+| ID | Sev. | Finding | Fix | Test |
+|---|---|---|---|---|
+| R-01 | med | `profiles()` logged and dropped a failed non-first mode, so a 429 on the only mode with a profile read as "PVP、PVE、赛季都没有", and binding was refused. | `profiles()` returns `(found, failed)` and never raises. `show()`: a failed mode the reply is about, or nothing found with any failure, raises the error (chat shows "查询失败：…"); a failed default mode without a chosen mode falls back with "PVP 模式这次没有查到（…）"; other failures are named in the notes / missing text. `bind()` raises when nothing was found and something failed. `failure_text()`. | `test_a_failed_mode_is_never_reported_as_no_profile`, `test_a_failed_default_mode_falls_back_with_a_note`, updated `test_other_modes_failing_do_not_fail_the_query` |
+| R-02 | med | Found profiles stayed cached for `profile_cache_minutes`, so "refresh on the website, ask again in a few minutes" showed the old snapshot. | Summaries carry `fetched` (epoch). A reply from a cached summary at least `CACHE_NOTE_SECONDS` (60) old says how old and that a player-page link skips the cache. Link queries and binding pass `fresh=True` (skip the cache read). | `test_cached_profiles_say_how_old_they_are_and_links_skip_the_cache` |
+| R-09 | med | Negative counters accepted; `exit_bars` hatch loop ran `w/9` times with `w` ~ 10^14 for offsetting counters (10^6 took 63 s; the to_thread worker cannot be cancelled, and the sender stays in `active`). | `counter()` clamps to `max(0, …)`; `exit_bars` clamps `w` to `[0, bw]`. | `test_negative_counters_read_as_zero`, `test_offsetting_counters_draw_quickly` |
+| R-10 | med | Skills not de-duplicated by `Id`; elites uncapped; 3,700 repeats gave an 18 MB JPEG / 770 MB RSS, 4,000 broke JPEG save. | `skills()` keeps one entry per id (highest progress), so at most the static table size (49). | `test_repeated_skills_count_once` |
+| R-03 | low | With the index on, an account id tried as a name could start a 30 MB index download, and an index error replaced the id's answer. | The digit fallback (`by_name(..., id_missing=…)`) uses only the shared record. | `test_an_account_id_never_downloads_the_index`; `test_all_digit_name_falls_back_to_the_record` (was `…_to_the_index`) |
+| R-04 | low | With the index on and no mode, only the default mode's index is searched but the reply said "the index". | Reply names the mode's index; without an explicit mode it adds "其他模式的名单要写上模式查询". | `test_index_name_miss_says_which_mode_was_searched` |
+| R-05 | low | Bind reply had no manual-refresh reminder; fallback note stated "no profile" as a fact about the account. | Bind reply adds the reminder and which modes appear only after a search in that mode; the fallback note says tarkov.dev has no profile in that mode yet, with the mode's search link. | `test_bind_reply_reminds_to_refresh`, wording in existing tests |
+| R-06 | low | Displayed id came from the document's `aid`. | `reply()` sets `card['aid']` to the requested id, logs when they differ. | `test_the_shown_account_id_is_the_one_asked_for` |
+| R-07 | low | README/checklist said a profile waits at most 60 s; it is `min(60, download_timeout_seconds)`. | Docs corrected (schema hint was already right). | docs |
+| R-08 | low | Identical concurrent queries not merged; no global cap (10 users -> 30 requests). | `self.pending` `{(mode, aid): Task}` shared through `asyncio.shield` (one waiter cancelling does not cancel the others; the done callback pops the entry and retrieves the exception); `FETCHES_AT_ONCE = 6` semaphore around `transport.fetch_profile`; `terminate()` cancels pending tasks. | `test_one_request_per_profile_for_queries_at_the_same_time`, `test_requests_at_once_are_capped`, `test_one_user_giving_up_does_not_cancel_the_shared_request` |
+| R-11 | low | Unsalted `sha256(platform\0sender)`: a QQ number came back in 0.6 s. | `load_secret(root/'binding.key')` (32 random bytes, written via a temp file with mode 0600, regenerated if shorter than 32 bytes); `owner_key(secret, platform, sender)` = HMAC-SHA256; the per-session lock key / log trace uses the same secret. 0.3.0 is untagged and unreleased, so no migration of old keys: bindings made while testing 0.3.0 must be redone (CHANGELOG says so). Docs state the limit: whoever has the key file as well can still enumerate. | `test_owner_key_is_per_platform_and_keyed`, `test_secret_is_created_once_and_private` |
+| R-12 | low | checklist "how to verify" and "data kept" described 0.2. | Rewritten for 0.3.0 (unbound reply, bind, own query, unknown name steps; `accounts.sqlite3` and `binding.key` always exist, index files only with the option). | docs |
+| R-13 | low | "已核实 / VERIFIED" stamp contradicts "non-live snapshot". | "存档快照 / SNAPSHOT". Fonts rebuilt. | `test_stamp_says_snapshot` |
+
+Mutation check (`scratchpad/mut3.py`, scratch copy, one change at a time, full suite, 120 s limit): 23 mutations, one
+or more per fix (counter clamp, bar clamp, dedupe, stamp, keyed hash, key file mode, failures kept apart, raise on
+failure, fallback failure note, shown-reply failure note, missing-text failure note, bind raise, cache-age note, link
+skips cache, single flight, semaphore, shield, requested id, no index for ids, index label, other-mode hint, bind
+reminder, bind "other modes" line). All killed; removing the bar clamp makes the suite run until the time limit (the
+original hang).
+
+Found while fixing: the "N characters" figures for the font subset in §15, §16.3 and §16.4 were the byte size of
+`NotoSansSC-Subset.chars.txt` (UTF-8; `wc -m` under the C locale counts bytes). Reworded as "character list N bytes".
+The subset now holds 484 characters (character list 1263 bytes, font 197,760 bytes). Tests 138 -> 153.

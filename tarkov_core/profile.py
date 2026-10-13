@@ -47,7 +47,9 @@ def counter(items, *parts):
             continue
         if best is None or len(key) < len(best[0]):
             best = (key, number(item.get('Value')))
-    return (best[1] or 0) if best else 0
+    # Every counter shown is a count: a negative value is malformed (and made the image's exit bars draw for hours,
+    # review R-09), so it reads as 0.
+    return max(0, best[1] or 0) if best else 0
 
 
 def counters(block):
@@ -77,7 +79,7 @@ def side_stats(block):
 def skills(raw):
     """Trained skills the static table knows, highest first: [(Chinese name, level, elite)]."""
     common = raw.get('Common') if isinstance(raw, dict) else None
-    found = []
+    found = {}
     for skill in common if isinstance(common, list) else []:
         if not isinstance(skill, dict):
             continue
@@ -87,9 +89,11 @@ def skills(raw):
         # The same filter as tarkov.dev: untouched skills have no progress or a negative access time.
         if not known or not progress or progress <= 0 or not access or access <= 0:
             continue
-        found.append((known['zh'], progress))
-    found.sort(key=lambda item: -item[1])
-    return [(name, int(min(progress, ELITE_PROGRESS)//100), progress >= ELITE_PROGRESS) for name, progress in found]
+        # One entry per skill (a document repeating an id thousands of times made a 18 MB image, review R-10), so
+        # the list is never longer than the static skill table.
+        found[skill_id] = max(found.get(skill_id, (None, 0)), (known['zh'], progress), key=lambda item: item[1])
+    ranked = sorted(found.values(), key=lambda item: -item[1])
+    return [(name, int(min(progress, ELITE_PROGRESS)//100), progress >= ELITE_PROGRESS) for name, progress in ranked]
 
 
 def last_active(raw):

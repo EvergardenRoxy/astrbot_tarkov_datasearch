@@ -97,8 +97,9 @@ def stamp(img, side):
     md = ImageDraw.Draw(mark)
     md.rectangle([4, 4, 295, 115], outline=RED+(210,), width=5)
     md.rectangle([12, 12, 287, 107], outline=RED+(170,), width=2)
-    md.text((30, 22), '已核实', font=font('sc', 40, 900), fill=RED+(210,))
-    md.text((32, 74), 'VERIFIED · '+safe(side, latin=True)[:12], font=font('mono', 20), fill=RED+(210,))
+    # "Snapshot", not "verified": the data is whatever tarkov.dev stored last (review R-13).
+    md.text((30, 22), '存档快照', font=font('sc', 40, 900), fill=RED+(210,))
+    md.text((32, 74), 'SNAPSHOT · '+safe(side, latin=True)[:12], font=font('mono', 20), fill=RED+(210,))
     mark = mark.rotate(-12, expand=True, resample=Image.BICUBIC)
     img.paste(mark, (W-345, 18), mark)
 
@@ -159,7 +160,9 @@ def exit_bars(d, sides, x, y, width):
         if total > 0:
             cx = lx
             for key, _ in EXIT_LABELS:
-                w = bw*stats[key]/total
+                # Counters are never negative (profile.counter), so w <= bw; clamped again because the hatch loop
+                # below runs w/9 times.
+                w = min(bw, max(0, bw*stats[key]/total))
                 if w >= 1:
                     d.rectangle([cx, y, cx+w, y+24], fill=EXIT_COLORS[key])
                     shade = tuple(max(0, c-22) for c in EXIT_COLORS[key])

@@ -1,6 +1,7 @@
 import io
 import json
 import re
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -89,6 +90,27 @@ class ImageTests(unittest.TestCase):
         for summary, mode in ((odd, 'PVP'), (long_name, 'PVP 赛季'), (foreign, 'PVE'), (huge, 'PVE')):
             with self.subTest(nickname=summary['nickname'][:8], mode=mode):
                 self.assertEqual(draw(summary, mode=mode, skill_limit=49)[1].width, image.W)
+
+    def test_offsetting_counters_draw_quickly(self):
+        # Review R-09: 10**6 took 63 s and 10**12 never finished before counters were clamped.
+        raw = profile()
+        raw['pmcStats']['eft']['overAllCounters']['Items'] += [
+            {'Key': ['ExitStatus', 'Survived'], 'Value': 10**12}, {'Key': ['ExitStatus', 'Killed'], 'Value': -(10**12)+1}]
+        card = build_card(summarize(raw), 'PVE', now=NOW)
+        started = time.monotonic()
+        image.render_image(card)
+        self.assertLess(time.monotonic()-started, 10)
+        # Second line of defence: a bar never draws wider than its frame even for a card built by hand.
+        card['sides'][0]['stats'].update(survived=10**12, killed=-(10**12)+1)
+        started = time.monotonic()
+        image.render_image(card)
+        self.assertLess(time.monotonic()-started, 10)
+
+    def test_stamp_says_snapshot(self):
+        # Review R-13: "已核实 / VERIFIED" read as "checked and current" on a snapshot that may be weeks old.
+        source = (ROOT/'tarkov_core'/'image.py').read_text(encoding='utf-8')
+        self.assertNotIn('VERIFIED', source)
+        self.assertIn('SNAPSHOT', source)
 
     def test_characters_the_fonts_lack_become_question_marks(self):
         self.assertEqual(image.safe('Ab_1 耐力'), 'Ab_1 耐力')

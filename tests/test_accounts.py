@@ -1,3 +1,4 @@
+import hashlib
 import tempfile
 import time
 import unittest
@@ -5,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tarkov_core import accounts
-from tarkov_core.accounts import Accounts, owner_key
+from tarkov_core.accounts import Accounts, load_secret, owner_key
 
 
 class AccountsTests(unittest.TestCase):
@@ -16,11 +17,25 @@ class AccountsTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_owner_key_is_per_platform_and_hashed(self):
+    def test_owner_key_is_per_platform_and_keyed(self):
         # The same user in two groups of one platform is one owner (maintainer's choice); another platform is not.
-        self.assertEqual(owner_key('aiocqhttp', '10001'), owner_key('aiocqhttp', '10001'))
-        self.assertNotEqual(owner_key('aiocqhttp', '10001'), owner_key('telegram', '10001'))
-        self.assertNotIn('10001', owner_key('aiocqhttp', '10001'))
+        key = b'k'*32
+        self.assertEqual(owner_key(key, 'aiocqhttp', '10001'), owner_key(key, 'aiocqhttp', '10001'))
+        self.assertNotEqual(owner_key(key, 'aiocqhttp', '10001'), owner_key(key, 'telegram', '10001'))
+        self.assertNotIn('10001', owner_key(key, 'aiocqhttp', '10001'))
+        # Review R-11: an unkeyed sha256 of a QQ number is reversed by trying every number.
+        self.assertNotEqual(owner_key(key, 'aiocqhttp', '10001'), hashlib.sha256(b'aiocqhttp\x0010001').hexdigest())
+        self.assertNotEqual(owner_key(key, 'aiocqhttp', '10001'), owner_key(b'j'*32, 'aiocqhttp', '10001'))
+
+    def test_secret_is_created_once_and_private(self):
+        path = Path(self.temp.name)/'binding.key'
+        first = load_secret(path)
+        self.assertEqual(len(first), 32)
+        self.assertEqual(load_secret(path), first)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertNotEqual(load_secret(Path(self.temp.name)/'other.key'), first)
+        path.write_bytes(b'short')
+        self.assertEqual(len(load_secret(path)), 32)
 
     def test_bind_rebind_unbind(self):
         self.assertIsNone(self.store.bound('a'))

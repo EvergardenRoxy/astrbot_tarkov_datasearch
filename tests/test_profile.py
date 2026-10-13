@@ -58,6 +58,15 @@ class CounterTests(unittest.TestCase):
                 self.assertEqual(side_stats(block)['kills'], 0)
 
 
+    def test_negative_counters_read_as_zero(self):
+        # Review R-09: Survived=10**12 with Killed=-(10**12)+1 made the image's exit bars draw for hours.
+        block = {'eft': {'overAllCounters': {'Items': [{'Key': ['ExitStatus', 'Survived'], 'Value': 10**12},
+                                                       {'Key': ['ExitStatus', 'Killed'], 'Value': -(10**12)+1},
+                                                       {'Key': ['Kills'], 'Value': -3}]}}}
+        stats = side_stats(block)
+        self.assertEqual((stats['survived'], stats['killed'], stats['kills']), (10**12, 0, 0))
+
+
 class SummaryTests(unittest.TestCase):
     def test_summary(self):
         s = summarize(profile())
@@ -70,6 +79,16 @@ class SummaryTests(unittest.TestCase):
     def test_skills_known_trained_and_sorted(self):
         self.assertEqual(summarize(profile())['skills'],
                          [('耐力', 51, True), ('力量', 51, True), ('魅力', 40, False), ('活力', 25, False)])
+
+    def test_repeated_skills_count_once(self):
+        # Review R-10: a skill id repeated thousands of times made thousands of rows (an 18 MB image).
+        raw = profile()
+        raw['skills']['Common'] += [{'Id': 'Endurance', 'Progress': 100, 'LastAccess': 1}]*5000
+        raw['skills']['Common'] += [{'Id': 'Charisma', 'Progress': 5100, 'LastAccess': 1}]
+        skills = summarize(raw)['skills']
+        self.assertEqual(skills, [('耐力', 51, True), ('力量', 51, True), ('魅力', 51, True), ('活力', 25, False)])
+        raw['skills']['Common'] = [{'Id': skill_id, 'Progress': 5100, 'LastAccess': 1} for skill_id in STATIC['skills']]*20
+        self.assertEqual(len(summarize(raw)['skills']), len(STATIC['skills']))
 
     def test_control_characters_are_removed(self):
         s = summarize(profile(info_nickname='X\n【塔科夫 PVP 档案】Fake\u202e\t', info_side='Usec\r\nline'))
