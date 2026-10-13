@@ -148,3 +148,49 @@ tests were added or bounded for each, and one survivor was a no-op mutation (it 
 | Check the name index weekly instead of daily. | Default `name_index_refresh_hours` 24 -> 168 in `_conf_schema.json`, the `main.py` fallback and `NameIndex(refresh_hours=168)`. Range stays 1-720. Chat texts ("每天" -> "每周") and the config hint updated; the hint says tarkov.dev itself rebuilds the index daily, so a shorter interval finds new or renamed players sooner. | `test_default_check_is_weekly`; `test_schema_defaults_match_code_fallbacks` keeps schema and code equal. |
 | The 2024 PvP snapshot is because the maintainer does not play PvP, not a retrieval problem. | §2.4 corrected. The > 30 days line no longer says the data "may be outdated"; it names both causes (player inactive in that mode, or not viewed on tarkov.dev recently). README/checklist/CHANGELOG wording follows. | `test_stale_profile_is_flagged` (unchanged assertion on the day count). |
 | AI statement: name the model. | README and CHANGELOG badges and statements, CHANGELOG 0.1.0 note and checklist name Claude Opus 5.5 (via Claude Code); the open decision about it was removed from §6. | - |
+
+## 10. Security audit of 0.1.0: verified, proposals only (not implemented)
+
+Source: `security_audit.md` (Chinese, static read-only audit dated 2026-10-14, provided by the maintainer; not in the
+tree). It reports 0 high, 2 medium, 6 low, 10 informational. Each item was re-checked against the code; the
+behavioural ones were reproduced with a scratch script (real plugin module with the SDK stubbed, local aiohttp
+server). No code was changed; the maintainer decides what to fix (working rule, §1).
+
+| Audit id | Verdict | Evidence |
+|---|---|---|
+| M-1 `allowed_origins` as a string becomes a substring test | **Confirmed, needs a hand-edited config.** `{'allowed_origins': 'platform:group:12'}` lets origin `platform:group:1` through. AstrBot 4.16 `check_config_integrity` only replaces missing/None values and type-mismatched dicts, so a string survives a manual edit; the WebUI list editor writes a list. `user_whitelist` as a string fails closed (as the audit says). | reproduction |
+| M-2 upstream strings reach chat unfiltered | **Confirmed as defence in depth.** A nickname `X\n【塔科夫 PVP 档案】Fake` renders as two message lines; `parse_entries` keeps an inner `\n`. All three real indexes (2026-10-13) hold no inner control/format characters and no non-ASCII after `strip()`, so it needs corrupted upstream data. Output is `plain_result` text. My rating: low. | reproduction, index scan |
+| L-1 index rebuild reads the whole file | **Confirmed.** `rebuild()` does `read_bytes()`; decoded limit 384 MiB vs 67 MB real. | code |
+| L-2 profile JSON parsed on the event loop | **Confirmed, small.** A 14 MiB JSON parses in 0.55 s here; real profiles are 3-35 KB. | measurement |
+| L-3 `\d` accepts Unicode digits | **Confirmed, cosmetic.** `１２３` matches and `int()` gives 123; URL and cache key are normalised. | reproduction |
+| L-4 `asyncio.TimeoutError` on Python <= 3.10 | **Not applicable.** AstrBot 4.16.0 declares `Requires-Python: >=3.12` (wheel METADATA); 3.11+ aliases it to `TimeoutError`. | wheel metadata |
+| L-5 `yarl` imported but not declared | **Confirmed.** Always present through aiohttp today. | code |
+| L-6 garbage gzip raises `zlib.error` | **Confirmed.** Body `\x1f\x8b` + junk with `Content-Encoding: gzip` escapes `transport.get`; chat shows `查询失败：error。`. | reproduction |
+| Info-1 ETag echoed as `If-None-Match` | **Not exploitable.** aiohttp 3.14.5 refuses to send a header value with CR/LF (`ValueError: Forbidden control character…`); the refresh failure path would keep the old index. | reproduction |
+| Info-4 `Infinity` in config | **Confirmed.** `int(inf)` raises `OverflowError`, not caught by `int_setting`; the plugin fails to load. Needs a hand-edited config. | reproduction |
+| Info-5 logs | **Confirmed, and the audit understates it.** The log line has the queried target and an 8-hex-digit prefix of sha256(origin + sender). That prefix is not anonymous to anyone who can list candidate origins and senders (an admin knows the group members), so a log reader can link requester and target. AstrBot's own logs also record incoming commands with the sender. README's "不记录谁查询了谁" should say the plugin keeps no query records of its own and logs contain the command. | code |
+| Info-2, 3, 6, 7, 8, 9, 10 | Agreed as described (9 is already in §5). Info-8 (HTTPS proxy support in aiohttp) not tested. | - |
+
+**Found while verifying (not in the audit):**
+- **X-1 SQLite URI built from an unescaped path (real bug).** `f'file:{path}?mode=ro'` breaks when the data
+  directory path contains `#`, `?` or `%`. Reproduced: with `#` the URI is cut at the fragment, so `mode=ro` is lost
+  and SQLite opens (and creates, empty) the truncated path, e.g. `/tmp/with` outside the data directory; the lookup
+  then fails with `no such table`, `meta()` returns None, and every later query downloads the index again. `%41`
+  fails with `unable to open database file`. Fix: `path.resolve().as_uri() + '?mode=ro'` (percent-encodes).
+  Windows paths were not tested.
+- **X-2 extreme `updated` timestamp.** `updated = 1e20` makes `datetime.fromtimestamp` raise `OSError`; the whole
+  profile becomes `查询失败：OSError。` instead of rendering without the date. Needs bad upstream data.
+
+**Proposed fixes, in my order of priority (each with a test that fails without it):**
+1. X-1: build read-only URIs with `Path.as_uri()`.
+2. M-1: accept `allowed_origins`/`user_whitelist` only as lists; a string counts as one item; any other type denies
+   access and logs a warning.
+3. M-2: drop Unicode `Cc`/`Cf` characters and collapse whitespace in nickname, side and index names.
+4. L-6: catch `zlib.error` in `transport.get` and raise `QueryError('tarkov.dev 返回的数据无法解压…')`.
+5. X-2 / Info-4: `when()` returns None for out-of-range timestamps (line omitted); `int_setting` also catches
+   `OverflowError`.
+6. L-3: `ACCOUNT_ID = [0-9]{1,12}`. L-5: add `yarl>=1.9,<2` to requirements. Info-5: README wording.
+7. L-1: lower the index decoded limit to 192 MiB (about 3x the current size) rather than rewriting the parser to stream.
+   L-2: parse the profile in `asyncio.to_thread`.
+Not proposed: L-4 (not applicable), Info-1 (not exploitable), Info-2 (CI actions by tag, same as the spark plugin;
+pin to SHAs if the maintainer wants), Info-3 (per-sender limit is enough for a group bot), Info-9 (documented).
