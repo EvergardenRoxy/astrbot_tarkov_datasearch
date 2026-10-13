@@ -347,3 +347,13 @@ no game assets, logos or the game's own font are used.
 Sizes 2 and 3 come from the per-pixel noise texture, which PNG compresses badly; the implementation would use a
 lighter texture or JPEG. Implementation (text / image / Markdown output setting, card model, font subset) waits for
 the style choice.
+
+### 14.2 Combined preview (maintainer: dog tag of 1, overall design of 3, exit-status bar of 2)
+
+Rendered with the same throw-away script (not in the tree): the dossier of style 3; the photo slot replaced by the
+dog tag of style 1, tilted 4 degrees, with a paper-brown shadow, the hole showing the paper and the ball chain running
+up to a paper clip; the identity fields on the right reduced to what the tag does not show (mode, account play time,
+achievements, last active, profile updated); the PMC/Scav exit-status bars of style 2 under the combat table, in
+muted paper inks with hatching, a 0-100 % scale and a legend (PMC/Scav counts). 820x1364 PNG, 945 KB because of the
+noise texture (to be reduced in the implementation: lighter texture and/or JPEG). Awaiting the maintainer's go-ahead
+to implement it together with the three output settings.
