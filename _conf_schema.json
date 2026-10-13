@@ -1,0 +1,102 @@
+{
+    "default_mode": {
+        "type": "string",
+        "description": "默认模式",
+        "default": "pvp",
+        "options": [
+            "pvp",
+            "pve",
+            "season"
+        ],
+        "labels": [
+            "PVP",
+            "PVE",
+            "PVP 赛季"
+        ],
+        "hint": "查询时没写模式就用这里的模式。也可以在命令里写 pvp、pve 或 赛季 指定。"
+    },
+    "access_mode": {
+        "type": "string",
+        "description": "谁可以使用",
+        "default": "all",
+        "options": [
+            "admin_only",
+            "admin_and_whitelist",
+            "all"
+        ],
+        "labels": [
+            "仅管理员",
+            "管理员和指定用户",
+            "所有人"
+        ],
+        "hint": "默认“所有人”。“管理员”指 AstrBot 管理员，不是 QQ 群管理员。选择“管理员和指定用户”时，在下一项填写用户。"
+    },
+    "user_whitelist": {
+        "type": "list",
+        "description": "指定用户",
+        "default": [],
+        "hint": "每项填一个用户 ID（例如 QQ 号）。只在“管理员和指定用户”模式下生效。"
+    },
+    "allowed_origins": {
+        "type": "list",
+        "description": "限定聊天",
+        "default": [],
+        "hint": "只允许在这些聊天中使用，留空表示不限制。每项填一个 AstrBot 会话标识（在聊天中发送 /sid 查看）。这里只限定聊天，使用的人仍需符合“谁可以使用”。"
+    },
+    "skill_count": {
+        "type": "int",
+        "description": "显示的技能数",
+        "default": 10,
+        "slider": {
+            "min": 0,
+            "max": 49,
+            "step": 1
+        },
+        "hint": "精英技能总是全部列出；这里是其余技能按等级从高到低显示几项。设为 0 不显示技能。"
+    },
+    "profile_cache_minutes": {
+        "type": "int",
+        "description": "档案缓存时间（分钟）",
+        "default": 10,
+        "slider": {
+            "min": 0,
+            "max": 1440,
+            "step": 5
+        },
+        "hint": "同一个玩家在这段时间内再次查询时，直接使用上次取到的档案，不再访问 tarkov.dev。只保存在内存中，重载插件即清除。设为 0 关闭。"
+    },
+    "name_index_refresh_hours": {
+        "type": "int",
+        "description": "昵称名单更新间隔（小时）",
+        "default": 24,
+        "slider": {
+            "min": 1,
+            "max": 720,
+            "step": 1
+        },
+        "hint": "按昵称查询需要 tarkov.dev 的玩家名单，插件在本地保存一份并按这个间隔检查更新（tarkov.dev 每天更新一次名单）。名单没有变化时只做一次很小的请求；有变化时重新下载，PVP 名单约 30 MB，下载和整理需要几十秒。"
+    },
+    "download_timeout_seconds": {
+        "type": "int",
+        "description": "下载最长等待（秒）",
+        "default": 120,
+        "slider": {
+            "min": 15,
+            "max": 900,
+            "step": 15
+        },
+        "hint": "下载昵称名单最多等多久，默认 120 秒。网络慢时可以调高。查询单个档案最多等这个时间和 60 秒中较小的一个。"
+    },
+    "proxy_enabled": {
+        "type": "bool",
+        "description": "访问 tarkov.dev 时使用代理",
+        "default": false,
+        "hint": "默认关闭，直接连接。部分服务器的 IP 会被 tarkov.dev 的 Cloudflare 拦截（查询时提示 HTTP 403），这时可以开启并在下一项填写代理。开启后插件的所有请求都经过这个代理，不使用 AstrBot 或系统的代理设置；代理连不上时不会改为直连。"
+    },
+    "proxy_url": {
+        "type": "string",
+        "description": "代理地址",
+        "default": "",
+        "hint": "开启上一项后才使用。格式如 http://代理主机:端口，支持 HTTP / HTTPS 代理，不支持 SOCKS。AstrBot 在 Docker 中运行时，127.0.0.1 指容器自己。地址里有账号密码时只填在这里，不要发到聊天中。"
+    }
+}
