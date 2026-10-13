@@ -481,7 +481,7 @@ record failure tolerated, link host check. All killed. 115 -> 131 tests.
 
 ## 17. Second independent review (after §16.4) and fixes
 
-A general-purpose subagent with no shared context reviewed a detached copy at `31b6619` (report in Chinese, repro tests
+A general-purpose subagent with no shared context reviewed a detached copy at `84e2eaf` (hash after the §18 history rewrite) (report in Chinese, repro tests
 for 12 of 13 findings, no network, no change to the real repository). Every finding was checked against the code and
 held; the maintainer had authorised fixing review findings without asking again. All 13 fixed:
 
@@ -525,6 +525,12 @@ The subset now holds 484 characters (character list 1263 bytes, font 197,760 byt
 - `tools/build_preview.py` (new) builds the README text example and `docs/preview.jpg` from the fixture plus invented
   skills and achievements, so the documentation never needs real data again.
 - §2.4: exact times of the maintainer's page view and PvP snapshot date generalised.
-- `git grep -i -E` for the real names and ids returns nothing. They remain in the pushed history of
-  `claude/amazing-clarke-eu3xue` and `v0.3.0` (first in `b6031c1`; the copied numbers since the first commit). Removing
-  them needs a history rewrite and force push of both branches: left to the maintainer.
+- History rewritten at the maintainer's request ("改写历史并强制推送这两个分支"): `git filter-repo --file-info-callback`
+  on a fresh clone applied the same replacements to every `.md`/`.py` blob of all 17 commits (names, ids, the copied
+  numbers and the text derived from them, the two exact times in §2.4) and replaced every `docs/preview.jpg` with the
+  invented one. Checks before the force push: the final tree equals the pre-rewrite tree; the full test suite passes
+  at every one of the 17 rewritten commits; a scan of every blob and commit message in the history finds none of the
+  real names, ids or numbers. Both branches were force-pushed; every commit hash changed (hashes quoted in this file
+  are the new ones). A bundle of the old history was kept only in the session scratchpad, outside the repository.
+  Copies cloned or forked before the rewrite, and GitHub's cache of the old commits, are outside this repository's
+  control.
