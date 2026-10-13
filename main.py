@@ -15,7 +15,8 @@ from .tarkov_core.profile import summarize
 from .tarkov_core.transport import NotFound, QueryError
 
 COMMAND = re.compile(r'^/?(?:tarkov|塔科夫)(?:\s+|$)', re.I)
-ACCOUNT_ID = re.compile(r'\d{1,12}')
+# ASCII digits only: \d would also accept full-width and other Unicode digits.
+ACCOUNT_ID = re.compile(r'[0-9]{1,12}')
 # Profiles kept in memory at most, whatever the cache time.
 CACHE_ENTRIES = 128
 
@@ -34,7 +35,7 @@ class TarkovPlugin(Star):
     def int_setting(self, key, default, low, high):
         try:
             return max(low, min(high, int(self.config.get(key, default))))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return default
 
     def proxy(self):
@@ -43,16 +44,27 @@ class TarkovPlugin(Star):
     def owner(self, event):
         return hashlib.sha256((event.unified_msg_origin+'\0'+event.get_sender_id()).encode()).hexdigest()
 
+    def config_list(self, key):
+        """A list setting as strings. A string counts as one item (`in` on a string would be a substring test);
+        any other type returns None, which denies access."""
+        value = self.config.get(key, [])
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, (list, tuple, set)):
+            return [str(item) for item in value]
+        logger.warning('Tarkov setting %s is not a list (%s); access denied', key, type(value).__name__)
+        return None
+
     def allowed(self, event):
-        allow = self.config.get('allowed_origins', [])
-        if allow and event.unified_msg_origin not in allow:
+        allow = self.config_list('allowed_origins')
+        if allow is None or (allow and event.unified_msg_origin not in allow):
             return False
         mode = self.config.get('access_mode', 'all')
         admin = event.is_admin()
         if mode == 'admin_only':
             return admin
         if mode == 'admin_and_whitelist':
-            return admin or str(event.get_sender_id()) in {str(x) for x in self.config.get('user_whitelist', [])}
+            return admin or str(event.get_sender_id()) in (self.config_list('user_whitelist') or [])
         return mode == 'all'
 
     def default_mode(self):

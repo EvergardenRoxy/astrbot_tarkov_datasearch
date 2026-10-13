@@ -44,6 +44,10 @@ class ParseTests(unittest.TestCase):
         self.assertNotIn(22, [aid for _, aid, _ in entries])
         self.assertNotIn(23, [aid for _, aid, _ in entries])
 
+    def test_control_characters_in_names_are_removed(self):
+        entries = list(parse_entries(json.dumps({'1': 'a\nb', '2': 'c\u202ed', '3': '\u0000'}).encode()))
+        self.assertEqual(entries, [('a b', 1, 'a b'), ('cd', 2, 'cd')])
+
     def test_not_an_index(self):
         with self.assertRaises(QueryError):
             list(parse_entries(b'<!DOCTYPE html><html>blocked</html>'))
@@ -134,6 +138,21 @@ class IndexTests(unittest.IsolatedAsyncioTestCase):
         index = NameIndex(self.root, download)
         self.assertTrue(index.needs_refresh('pve'))
         self.assertEqual(await index.lookup('pve', 'Stea1'), [(30, 'Stea1')])
+
+    async def test_data_directory_with_uri_characters(self):
+        # Audit verification X-1: an unescaped path in the SQLite URI was cut at '#'/'?' or decoded at '%'.
+        for name in ('data#1', 'data?mode=rw', 'data%41'):
+            with self.subTest(name=name):
+                root = self.root/name
+                root.mkdir()
+                download = FakeDownload([document()])
+                index = NameIndex(root, download)
+                self.assertEqual(await index.lookup('pve', 'Stea1'), [(30, 'Stea1')])
+                self.assertFalse(index.needs_refresh('pve'))
+                await index.lookup('pve', 'Stea1')
+                self.assertEqual(len(download.calls), 1)
+        # Nothing was created outside the data directories (the '#' case used to create root/'data').
+        self.assertEqual(sorted(p.name for p in self.root.iterdir()), ['data#1', 'data%41', 'data?mode=rw'])
 
     def test_leftovers_are_removed_at_start(self):
         for name in ('names-pve.sqlite3.tmp', 'names-profile.download'):

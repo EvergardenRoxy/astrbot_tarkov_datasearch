@@ -69,6 +69,12 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(summarize(profile())['skills'],
                          [('耐力', 51, True), ('力量', 51, True), ('魅力', 40, False), ('活力', 25, False)])
 
+    def test_control_characters_are_removed(self):
+        s = summarize(profile(info_nickname='X\n【塔科夫 PVP 档案】Fake\u202e\t', info_side='Usec\r\nline'))
+        self.assertEqual(s['nickname'], 'X 【塔科夫 PVP 档案】Fake')
+        self.assertEqual(s['side'], 'Usec line')
+        self.assertEqual(summarize(profile(info_nickname='\u200b\n'))['nickname'], '未知')
+
     def test_not_a_profile(self):
         for raw in ({}, {'info': None}, {'info': {'nickname': 3}}):
             with self.subTest(raw=raw):

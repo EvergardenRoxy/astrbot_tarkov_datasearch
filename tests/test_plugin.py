@@ -269,6 +269,32 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn('没有塔科夫查询权限', result[0])
                 self.assertTrue(event.stopped)
 
+    async def test_access_list_types(self):
+        # Audit M-1: a string used to be a substring test for allowed_origins. (config, allowed, warning logged)
+        cases = [({'allowed_origins': 'platform:group:12'}, False, False),
+                 ({'allowed_origins': 'platform:group:1'}, True, False),
+                 ({'allowed_origins': ('platform:group:1',)}, True, False),
+                 ({'allowed_origins': {'platform:group:1': 1}}, False, True),
+                 ({'allowed_origins': 1}, False, True),
+                 ({'access_mode': 'admin_and_whitelist', 'user_whitelist': 'alice'}, True, False),
+                 ({'access_mode': 'admin_and_whitelist', 'user_whitelist': 'alice2'}, False, False),
+                 ({'access_mode': 'admin_and_whitelist', 'user_whitelist': {'alice': 1}}, False, True)]
+        for config, ok, warns in cases:
+            with self.subTest(config=config):
+                self.logs.clear()
+                self.assertEqual(self.plugin(config).allowed(Event()), ok)
+                self.assertEqual(any('not a list' in str(entry[0]) for entry in self.logs), warns)
+
+    async def test_infinite_setting_falls_back(self):
+        plugin = self.plugin({'name_index_refresh_hours': float('inf'), 'skill_count': float('nan')})
+        self.assertEqual(plugin.int_setting('name_index_refresh_hours', 168, 1, 720), 168)
+        self.assertEqual(plugin.skill_count(), 10)
+
+    async def test_fullwidth_digits_are_not_an_account_id(self):
+        result = await self.run_command(self.plugin(), Event('/tarkov pve １２３４５'))
+        self.assertIn('账号 ID 只能是数字', result[0])
+        self.assertEqual(self.fetched, [])
+
     async def test_proxy_setting_reaches_transport(self):
         seen = {}
         async def capture(mode_path, aid, **kwargs):

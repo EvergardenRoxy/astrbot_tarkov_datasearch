@@ -1,4 +1,5 @@
 """HTTP access to players.tarkov.dev: one fixed host, no redirects, bounded size and time."""
+import asyncio
 import io
 import json
 import time
@@ -18,7 +19,8 @@ USER_AGENT = f'astrbot_tarkov_datasearch/{VERSION} (+https://github.com/Evergard
 
 # A profile is 3-35 KB; the regular-mode name index is ~30 MB gzip, ~67 MB decoded (2026-10-13).
 PROFILE_LIMITS = (4*1024*1024, 16*1024*1024)
-INDEX_LIMITS = (128*1024*1024, 384*1024*1024)
+# Index limits are about three times the 2026-10-13 sizes; the whole decoded index is read into memory to build it.
+INDEX_LIMITS = (64*1024*1024, 192*1024*1024)
 
 BLOCKED = ('tarkov.dev 拒绝了这台服务器的访问（HTTP 403，Cloudflare 拦截）。'
            '可以在插件配置中开启“访问 tarkov.dev 时使用代理”后重试')
@@ -98,6 +100,8 @@ async def get(path, sink, *, limits, timeout_seconds, proxy=None, etag=None):
     except aiohttp.ClientError as exc:
         # aiohttp messages can include the proxy URL (with credentials); show the type only.
         raise QueryError(f'连接 tarkov.dev 失败（{type(exc).__name__}），请稍后再试') from None
+    except zlib.error:
+        raise QueryError('tarkov.dev 返回的数据无法解压，请稍后再试') from None
 
 
 async def fetch_profile(mode_path, aid, *, timeout_seconds=30, proxy=None):
@@ -105,7 +109,8 @@ async def fetch_profile(mode_path, aid, *, timeout_seconds=30, proxy=None):
     buffer = io.BytesIO()
     await get(f'/{mode_path}/{int(aid)}.json', buffer, limits=PROFILE_LIMITS, timeout_seconds=timeout_seconds, proxy=proxy)
     try:
-        data = json.loads(buffer.getvalue())
+        # Off the event loop: the decoded limit allows a 16 MiB document.
+        data = await asyncio.to_thread(json.loads, buffer.getvalue())
     except (ValueError, UnicodeDecodeError):
         raise QueryError('tarkov.dev 返回的档案无法解析') from None
     if not isinstance(data, dict):

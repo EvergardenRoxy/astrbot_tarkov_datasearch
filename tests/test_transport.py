@@ -3,6 +3,7 @@ import io
 import json
 import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -116,6 +117,29 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.routes['/pve/1.json'] = lambda r: web.Response(body=body, headers={'Content-Type': 'application/json', 'Content-Encoding': 'gzip'})
         with self.assertRaises(QueryError):
             await transport.fetch_profile('pve', 1)
+
+    async def test_garbage_gzip_body(self):
+        self.routes['/pve/1.json'] = lambda r: web.Response(body=b'\x1f\x8bgarbage-not-deflate',
+                                                            headers={'Content-Type': 'application/json', 'Content-Encoding': 'gzip'})
+        with self.assertRaises(QueryError) as caught:
+            await transport.fetch_profile('pve', 1)
+        self.assertIn('无法解压', str(caught.exception))
+
+    async def test_profile_is_parsed_off_the_event_loop(self):
+        self.routes['/pve/1.json'] = lambda r: self.json_response(profile())
+        threads = []
+        real = json.loads
+        def spy(*args, **kwargs):
+            threads.append(threading.current_thread())
+            return real(*args, **kwargs)
+        with patch.object(transport.json, 'loads', spy):
+            await transport.fetch_profile('pve', 1)
+        self.assertEqual(len(threads), 1)
+        self.assertIsNot(threads[0], threading.main_thread())
+
+    def test_index_decoded_limit(self):
+        # About three times the 67 MB regular-mode index of 2026-10-13 (audit L-1).
+        self.assertEqual(transport.INDEX_LIMITS, (64*1024*1024, 192*1024*1024))
 
     async def test_other_encodings_are_refused(self):
         self.routes['/pve/1.json'] = lambda r: web.Response(body=b'x', headers={'Content-Type': 'application/json', 'Content-Encoding': 'br'})

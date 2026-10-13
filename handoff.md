@@ -14,7 +14,7 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
 | Version | 0.1.0 (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 72, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Tests | 83, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -194,3 +194,24 @@ server). No code was changed; the maintainer decides what to fix (working rule, 
    L-2: parse the profile in `asyncio.to_thread`.
 Not proposed: L-4 (not applicable), Info-1 (not exploitable), Info-2 (CI actions by tag, same as the spark plugin;
 pin to SHAs if the maintainer wants), Info-3 (per-sender limit is enough for a group bot), Info-9 (documented).
+
+## 11. Security audit fixes (maintainer: fix all, in the proposed order)
+
+Method as before: tests first, each confirmed failing on the old code (19 failing assertions/sub-tests before any fix),
+then the fix, then the full suite. 72 -> 83 tests.
+
+| # | Item | Change | Tests |
+|---|---|---|---|
+| 1 | X-1 | `names.read_only(path)`: `sqlite3.connect(path.resolve().as_uri()+'?mode=ro', uri=True)` for `meta()` and `query()`. | `test_data_directory_with_uri_characters` (`#`, `?mode=rw`, `%41`; also asserts no file appears outside the data dirs) |
+| 2 | M-1 | `TarkovPlugin.config_list(key)`: str -> `[str]`; list/tuple/set -> list of `str(item)`; anything else -> None + warning, and `allowed()` denies. Used for `allowed_origins` and `user_whitelist`. | `test_access_list_types` (8 cases incl. the substring case and the warning) |
+| 3 | M-2 | New `tarkov_core/text.py` `clean(value, limit)`: Cc/Zl/Zp -> space, Cf dropped, whitespace collapsed, stripped, then cut. Applied to profile `nickname` (32, empty -> `未知`), `side` (16) and index names (64; empty entries skipped as before). | `test_control_characters_are_removed`, `test_control_characters_in_names_are_removed` |
+| 4 | L-6 | `transport.get`: `except zlib.error` -> `QueryError('tarkov.dev 返回的数据无法解压…')`. | `test_garbage_gzip_body` |
+| 5 | X-2, Info-4 | `output.when()` returns None on `OverflowError/OSError/ValueError`; `render` omits "最近活跃" or falls back to the dateless source line. `int_setting` also catches `OverflowError` (`int(inf)`); NaN already gave `ValueError`. | `test_out_of_range_timestamps_are_left_out`, `test_infinite_setting_falls_back` |
+| 6 | L-3, L-5, Info-5 | `ACCOUNT_ID = [0-9]{1,12}`; `requirements.txt` adds `yarl>=1.9,<2`; README/checklist say the plugin keeps no query records of its own, but AstrBot logs every message with sender id and outline (`astrbot/core/event_bus.py` `_print_event`, 4.16.0) and the plugin log has the queried target. | `test_fullwidth_digits_are_not_an_account_id`, `test_direct_imports_are_declared` |
+| 7 | L-1, L-2 | `INDEX_LIMITS = (64 MiB, 192 MiB)` (real: 30 MB / 67 MB); the parser was not changed to stream. `fetch_profile` parses with `asyncio.to_thread(json.loads, …)`. | `test_index_decoded_limit`, `test_profile_is_parsed_off_the_event_loop` |
+
+Mutation check (scratch copy, each fix reverted alone, full suite, 120 s limit): 13 mutations (URI escaping, string
+origin, other-type origin, Cf removal, Cc replacement, index cleaning, profile cleaning, zlib catch, timestamp range,
+OverflowError, ASCII digits, to_thread, index limit), all killed.
+
+Not changed: L-4 (not applicable), Info-1, Info-2, Info-3, Info-8, Info-9 (§10). Still not tested on Windows paths.

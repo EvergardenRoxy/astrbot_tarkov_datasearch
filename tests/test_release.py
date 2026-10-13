@@ -34,6 +34,11 @@ class ReleaseTests(unittest.TestCase):
             if 'labels' in spec:
                 self.assertEqual(len(spec['labels']), len(spec['options']))
 
+    def test_direct_imports_are_declared(self):
+        requirements = (ROOT/'requirements.txt').read_text(encoding='utf-8')
+        for package in ('aiohttp', 'yarl'):
+            self.assertRegex(requirements, rf'(?m)^{package}\b')
+
     def test_package_contents(self):
         out = subprocess.run([sys.executable, str(ROOT/'tools'/'package_plugin.py')], capture_output=True, text=True, check=True).stdout
         path = Path(out.split(' entries:')[0])

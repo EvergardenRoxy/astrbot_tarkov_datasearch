@@ -38,6 +38,15 @@ class OutputTests(unittest.TestCase):
         text = render(summarize(profile()), 'PVP', now=NOW+40*86400)
         self.assertIn('已有 40 天没有更新', text)
 
+    def test_out_of_range_timestamps_are_left_out(self):
+        for value in (1e20, -1e20):
+            with self.subTest(value=value):
+                s = summarize(profile(updated=value, achievements={'a': value}))
+                text = render(s, 'PVE', now=NOW)
+                self.assertIn('数据来自 tarkov.dev', text)
+                self.assertNotIn('档案更新于', text)
+                self.assertNotIn('天没有更新', text)
+
     def test_prestige_and_notes(self):
         text = render(summarize(profile(info_prestigeLevel=2)), 'PVP', notes=['注意：测试'], now=NOW)
         self.assertIn('声望 2', text)

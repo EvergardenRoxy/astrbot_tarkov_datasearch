@@ -8,7 +8,11 @@ STALE_DAYS = 30
 
 
 def when(seconds):
-    return datetime.datetime.fromtimestamp(seconds, TZ).strftime('%Y-%m-%d %H:%M')
+    """Beijing time of an epoch timestamp, or None when it is outside what datetime can represent."""
+    try:
+        return datetime.datetime.fromtimestamp(seconds, TZ).strftime('%Y-%m-%d %H:%M')
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def ratio(part, whole):
@@ -47,8 +51,9 @@ def render(summary, mode_label, skill_limit=10, notes=(), now=None):
         extra.append(f"游戏时长 {summary['play_seconds']/3600:.0f} 小时")
     extra.append(f"成就 {summary['achievements']} 个")
     lines.append('｜'.join(extra))
-    if summary['last_active']:
-        lines.append(f"最近活跃 {when(summary['last_active'])}")
+    active = when(summary['last_active']) if summary['last_active'] else None
+    if active:
+        lines.append(f'最近活跃 {active}')
     lines.append('')
     lines += side_lines('PMC', summary['pmc'])
     lines += side_lines('Scav', summary['scav'])
@@ -60,8 +65,9 @@ def render(summary, mode_label, skill_limit=10, notes=(), now=None):
         if rest:
             lines.append(f"其他技能（前 {len(rest)} 项）：{'、'.join(f'{name} {level}' for name, level in rest)}")
     lines.append('')
-    if summary['updated']:
-        lines.append(f"数据来自 tarkov.dev，档案更新于 {when(summary['updated'])}（北京时间）")
+    updated = when(summary['updated']) if summary['updated'] else None
+    if updated:
+        lines.append(f'数据来自 tarkov.dev，档案更新于 {updated}（北京时间）')
         days = (now-summary['updated'])/86400
         if days > STALE_DAYS:
             lines.append(f'这份档案已有 {int(days)} 天没有更新：可能是该玩家很久没玩这个模式，也可能是 tarkov.dev 很久没有刷新过他的档案。')
