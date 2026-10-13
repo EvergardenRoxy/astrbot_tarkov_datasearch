@@ -328,3 +328,22 @@ the name replaced (760x1038 PNG, 106 KB, not in the tree).
 **Open questions for the maintainer:** option (C recommended); default output (image with text fallback, or text);
 skills shown in the image (all trained, or capped); whether to add tarkov.dev images (level badge, skill icons),
 which would add `assets.tarkov.dev` as a second host (not recommended for the first version).
+
+### 14.1 Maintainer decisions and style previews
+
+Decided: option C (Pillow in the plugin); default output is the image; the config offers three outputs: plain
+text, image, Markdown text. The style is still open.
+
+Three previews were rendered from the same summary (throw-away script, not in the tree; fonts used, all SIL OFL from
+github.com/google/fonts: Noto Sans SC, Oswald, Black Ops One, Share Tech Mono). Game references are drawn, not copied:
+no game assets, logos or the game's own font are used.
+
+| # | Style | Elements | PNG |
+|---|---|---|---|
+| 1 | 角色面板 (character screen) | stash-grid background, top tab bar, drawn dog tag with ball chain, two-column stat list, square skill tiles with level numbers (gold for elite) | 820x1108, 108 KB |
+| 2 | 撤离结算 (raid summary) | hazard stripes, stencil headings (SURVIVED / KILLED IN ACTION), survival ring, exit-status bar, dotted leader rows, 10-pip skill bars | 820x1240, 660 KB |
+| 3 | 情报档案 (intel dossier) | paper texture and vignette, file tab, photo slot with clip, typewriter digits, rotated "已核实" stamp, form fields, pip checklist, decorative redaction bar | 820x1226, 866 KB |
+
+Sizes 2 and 3 come from the per-pixel noise texture, which PNG compresses badly; the implementation would use a
+lighter texture or JPEG. Implementation (text / image / Markdown output setting, card model, font subset) waits for
+the style choice.
