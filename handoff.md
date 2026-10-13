@@ -284,3 +284,47 @@ the first run (the reload test passed through the leftover-age rule alone); `tes
 was added and kills it. All 21 killed.
 
 Not changed: F-19 (cleaning is enough while the game restricts nicknames to `[A-Za-z0-9_-]`).
+
+## 14. Image output: design proposal (not implemented)
+
+The maintainer asked for a design for rendering the reply as an image (planned since v0.1: "先做纯文字，再考虑图片").
+Evidence read from the AstrBot 4.16.0 wheel; a throw-away Pillow mock-up was rendered from a real PvE profile with
+the name replaced (760x1038 PNG, 106 KB, not in the tree).
+
+**What AstrBot offers (4.16.0):**
+- `Star.text_to_image(text)` -> `html_renderer.render_t2i(...)`, `use_network=True` always: POSTs the text to the
+  configured `t2i_endpoint`, by default the public `https://t2i.soulter.top/text2img` (endpoint list fetched from
+  `api.soulter.top`), and falls back to `LocalRenderStrategy` (Pillow Markdown renderer; CJK font from
+  `data/font.ttf` or a short list of system fonts, else Pillow's default font without CJK glyphs).
+- `Star.html_render(tmpl, data)`: Jinja2 HTML rendered by the same remote service, **no local fallback**.
+- `pillow>=11.2.1` is an AstrBot dependency, so the plugin can draw locally without a new requirement.
+
+**Options:**
+
+| | A. `text_to_image` (Markdown) | B. `html_render` (HTML template) | C. Pillow in the plugin | D. Local headless browser |
+|---|---|---|---|---|
+| Code | ~10 lines | template + ~30 lines | ~300 lines layout | heavy |
+| Look | generic Markdown page | best, easy to restyle | good, fully controlled | best |
+| Network | profile text sent to a third-party renderer by default | same, no fallback | none beyond players.tarkov.dev | none |
+| Breaks the "only players.tarkov.dev" promise | yes (unless self-hosted endpoint) | yes | no | no |
+| Testable offline | no | no | yes (deterministic) | partly |
+| Fonts | renderer's / system | renderer's | must ship a CJK font | system |
+
+**Recommended: C**, as a second renderer next to the text one:
+1. `output.py` builds a small card model from the summary (header, 4 key tiles, PMC/Scav rows, skills with bars,
+   footer, notes); `render()` (text) and a new `tarkov_core/image.py` `render_png()` both consume it, so the two
+   outputs cannot drift.
+2. Font: ship a subset of an OFL CJK font (Noto Sans SC / Source Han Sans SC) holding only the glyphs the card can
+   need: fixed labels, the 49 skill names in `static.json`, ASCII. Nicknames are `[A-Za-z0-9_-]` in practice; any
+   other character falls back to `?`. Subset built by a `tools/` script; a test checks every label and skill
+   character is in the font's cmap. Size to be measured (expected ~100 KB). OFL notice in THIRD_PARTY.md.
+3. Config `output_mode`: `image` / `text` (default to be decided). Rendering runs in `asyncio.to_thread`; any
+   failure logs the type and sends the text reply instead. Candidate lists, notices and errors stay text.
+4. Sending: PNG written under the data dir and sent as an `Image` component (`Image.fromFileSystem`). When AstrBot
+   has finished with the file must be checked in its send path before choosing the clean-up rule (open question).
+5. Tests: renders a PNG of sane size for the fixture and for the odd-shape summaries of §13; skill-count setting;
+   fallback to text when rendering raises; font coverage.
+
+**Open questions for the maintainer:** option (C recommended); default output (image with text fallback, or text);
+skills shown in the image (all trained, or capped); whether to add tarkov.dev images (level badge, skill icons),
+which would add `assets.tarkov.dev` as a second host (not recommended for the first version).
