@@ -12,7 +12,7 @@
 
 - 当前版本 **0.4.1**：0.3.0 改为“绑定身份 + 查询”，0.4.0 加入图片页脚和塔科夫竞技场查询，0.4.1 加入名字相近的提示；尚未在聊天平台实测（维护者对 0.3.0 做过小范围封闭测试）。
 - 已用真实网络把插件的查询流程完整跑过一遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID 和昵称各查了 PVE、PVP、赛季模式。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
-- 自动测试共 177 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
+- 自动测试共 183 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
 
 修改由 Claude Opus 5.5（通过 Claude Code）完成，经项目维护者审阅。做法与 spark 项目相同：先写测试，再改代码，最后跑完全部测试。另外用“故意改坏代码”的方式检查测试：把关键保护逐一从代码里去掉，确认每一项都会被测试发现（每一轮修改都做，数量见下文各节）。
 
@@ -20,7 +20,7 @@
 
 ```bash
 pip install -r requirements.txt
-python -m unittest discover -s tests   # 应显示 Ran 177 tests ... OK
+python -m unittest discover -s tests   # 应显示 Ran 183 tests ... OK
 python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.4.1.zip
 ```
 
@@ -280,6 +280,14 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
    - 按名字绑定找不到时也给出提示；
    - 只找只差 `_`/`-` 的写法（不区分大小写），最多 3 个；只查插件记录和已经下载的昵称名单，不会为此下载名单或访问 tarkov.dev。名字里 `_`/`-` 超过 6 个时不提示。
 3. **怎么核对**：发送一个只把 `-` 写成 `_` 的名字，应收到提示；测试 `test_names_differing_by_underscore_or_hyphen_are_suggested`、`test_suggestions_from_the_downloaded_index`、`test_similar_names`、`test_spelling_variants`、`test_similar_names_from_the_index_on_disk_only`。把这些保护逐一从代码里去掉（共 10 处），每一处都会被测试发现。已用真实数据重现维护者的那次查询，两种情况都给出了正确提示。
+
+### PMC K/D、开源声明、图片文字和竞技场段位（未发布，维护者提出）
+
+1. **PMC K/D**：“击杀 PMC”后面加 PMC K/D = 击杀 PMC 数 ÷ 死亡数（没有死亡时显示“—”），PMC 和 Scav 两行都有，竞技场不加。
+2. **仓库地址和开源声明**：文字、Markdown 回复（包括竞技场）的最后两行是“astrbot_tarkov_datasearch v版本 · 仓库地址”和“本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系”。维护者给的原句里中英文之间没有空格、“与”后面有两个空格，这里按插件其他文字的习惯统一成中英文之间加一个空格。
+3. **塔科夫档案图片**：标题“塔科夫市 · 绝密情报档案”；狗牌“{N} 成就数”；时间“GMT+8 {时间}”；页脚两行放大并居中。
+4. **竞技场段位**：按最佳 ARP 显示段位名称；高于 7900 显示金色“竞技场前100名玩家”、不显示 ARP。段位表和重叠区间的算法见 README。注意档案里只有“最佳 ARP”（历史最高），所以显示的是达到过的最高段位，不一定是当前段位。
+5. **怎么核对**：测试 `test_pmc_kd_is_pmc_kills_per_death`、`test_markdown_ends_with_the_source`、`test_maintainer_wording`、`test_footer_names_the_plugin_source_and_licence`、`ArenaRankTests`；把这些修改逐一从代码里去掉（共 13 处），每一处都会被测试发现。已用维护者指定玩家的真实档案生成赛季和竞技场图片交维护者检查（图片和玩家信息都不写入仓库）。
 
 ## 需要维护者决定或确认的事
 

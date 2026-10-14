@@ -41,6 +41,8 @@ def side(title, stats):
         'empty': not stats['raids'] and not stats['kills'] and not stats['deaths'],
         'rate': ratio(stats['survived'], stats['raids']),
         'kd': f"{stats['kills']/stats['deaths']:.2f}" if stats['deaths'] else None,
+        # PMC kills per death (maintainer): PMC kills / deaths.
+        'pmc_kd': f"{stats['pmc_kills']/stats['deaths']:.2f}" if stats['deaths'] else None,
     }
 
 
