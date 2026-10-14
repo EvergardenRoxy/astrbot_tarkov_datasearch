@@ -13,8 +13,8 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Inputs | Maintainer's analysis `report.md` of the-hideout/tarkov-dev (not in the tree; key facts restated in §2). Maintainer's own profile JSON downloaded from tarkov.dev, used only for a local comparison (§2.4), not committed. |
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
-| Version | 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 168, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Version | 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
+| Tests | 172, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -97,7 +97,7 @@ pve ~1 s / 4.3 MB; pvp-season ~0.6 s / 1.4 MB; an unchanged index refresh (304) 
 | `test_transport.py` (18) | local aiohttp server with `HOST` patched: gzip + agent header, plain body, 404 (Chinese default text), 403/429/500 messages, no redirects, HTML/non-object/invalid JSON, compressed/decoded limits (gzip and plain), wrong content type, truncated and garbage gzip, other encodings, profile parsed off the loop, index limits, index download + 304, connection error text, environment proxy ignored, proxy validation (explicit port). |
 | `test_plugin.py` (64) | (§16) bind then query yourself (same platform, other group, other platform, default mode without a profile), bind by id/name and its failures, unbind, query by player-page link (mode conflict, arena, missing profile), names learned from queries with the index off, renamed player found by an old name, refresh link in text/Markdown/image replies, a failed name record does not fail the query; SDK stubbed like the spark tests: help, id, name, default mode, refresh notices (download vs check, size only for a first PvP download), texts follow the interval, not found, digits missing as id and name, ambiguity (incl. two exact-case hits, "等，共 N 个"), exact case wins, rename note, missing id, digit-name fallback, long generated names, bad input, full-width digits, error messages, index 404 and timeouts in chat, cache on/off and bound, one query per sender (bounded wait), access modes incl. unknown value and list types, empty list rows, infinite settings, proxy with empty address fails closed, proxy/timeout reach transport, default output is a JPEG image (also for an unknown setting), Markdown and text outputs, image failure falls back to text with a note, image drawn off the loop. |
 | `test_accounts.py` (7) | owner key per platform and keyed (HMAC, §17), secret file created once with mode 0600, bind/rebind/unbind, names case-insensitive, old names kept after a rename, exact-case then most recent order, record bounded. |
-| `test_arena.py` (8) | arena summary (ranked/unranked split, labels and order, counters), hostile counters and mode keys, odd shapes in `stat`/entries never raise, non-profiles, text (exact lines, no level), Markdown tables and escaping, no games, stale note. |
+| `test_arena.py` (12) | arena summary (ranked/unranked split, labels and order, counters), hostile counters and mode keys, odd shapes in `stat`/entries never raise, non-profiles, text (exact lines, no level), Markdown tables and escaping, no games, stale note. |
 | `test_release.py` (5) | version consistency, schema defaults equal code fallbacks, direct imports declared (aiohttp, yarl, pillow), package contents (fonts and licences included, zip under 1 MiB). |
 
 Mutation check (scratch copy, one change at a time, full suite, 120 s limit each): 24 mutations of the guards
@@ -551,8 +551,8 @@ the foot of the generated content; testers liked the image but asked for Tarkov 
 - Tests: `test_footer_names_the_plugin_source_and_licence` (exact lines, drawn last, inside the picture, also with long
   notes), `test_footer_facts_match_the_repository` (`metadata.yaml` `repo` == `REPO`, LICENSE is the GPL, README names
   the licence). 153 -> 155. Font subset rebuilt (character list 1272 bytes, font 199,048 bytes). `docs/preview.jpg`
-  regenerated with `tools/build_preview.py`. Version left at 0.3.0 with an "未发布" CHANGELOG section, so the
-  `v0.3.0` branch the maintainer tested stays as tested; only the work branch was pushed.
+  regenerated with `tools/build_preview.py`. Version left at 0.3.0 with an "未发布" CHANGELOG section at first, so the
+  `v0.3.0` branch the maintainer tested stayed as tested; released as 0.4.0 with the Arena work (§19.7).
 
 ### 19.2 Arena: feasibility (research only, not implemented)
 
@@ -655,3 +655,33 @@ every element drawn; footer as §19.1; no level):
 
 Not done: no map-level statistics exist in the profile, so maps are not shown; the round-1 proposals (§19.4) are
 superseded unless the maintainer prefers one of them.
+
+### 19.6 Arena picture: proposal B implemented (maintainer: "采用方案2")
+
+- `tarkov_core/arena_image.py` (new): `render_arena_image(card)` -> JPEG. Ledger page on a leather surface (seeded
+  grain tiles, byte-stable), "ARENA MASTERS · 选手名册", entry rows (nickname through `safe()`, fitted), a milled
+  medallion with `best_arp(card)` (highest ARP of any section or mode, "—" when none), per section a dark band
+  "非排位 UNRANKED · 不计 ARP" / "排位 RANKED · 计入 ARP" with `record(section)` (wins – losses summed over modes; hidden
+  when no mode counts wins), the section total line, a ruled table (EVENT, games, W – L, win rate, kills, K/D, MVP;
+  every cell fitted to its column), a pen tick where wins > losses, notes (stale, rename/also-has, refresh), "登记人：
+  THE HOST" and a wax seal; then `image.footer()`. Height is bounded: at most `MAX_MODES` rows per section.
+- `arena.py`: `losses()` (the document's `ArenaLoses` when present — unranked modes carry it too — else games -
+  wins, never negative), `record()`, `best_arp()`.
+- `image.py`: the footer and the JPEG save are now `footer()` and `jpeg()`, shared by both pictures.
+- `main.py`: `arena_reply()` is async; image output renders off the loop and sends the picture plus the refresh link
+  line, falling back to text with "（图片生成失败，已改为文字）" (same as the main card).
+- `tools/build_preview.py` also writes `docs/arena_preview.jpg` from the invented fixture (README shows it).
+- Tests: `ArenaImageTests` (stable JPEG of the right width, registry content incl. coin value, both section bands,
+  record, W – L cell, notes, no level, footer drawn last; 20 modes with huge values and a hostile nickname stay bounded;
+  missing `stat`/`aid`/`updated`/`achievements`; helpers), the plugin test now expects the picture and the link line,
+  and the image-failure fallback. 168 -> 172. Mutation check (8): best-ARP max, `ArenaLoses` first, losses floor,
+  record without wins, image fallback note, link line, footer, row cap — all killed. Fonts rebuilt (character list
+  1317 bytes, font 204,020 bytes).
+
+### 19.7 Release 0.4.0 (maintainer: "提交到新仓库v0.4.0")
+
+Version 0.4.0 (`VERSION`, `metadata.yaml`, `@register`, CHANGELOG `## 0.4.0 - 2026-10-14`, README/CHANGELOG AI
+statement "0.1.0 至 0.4.0"); branch `v0.4.0` created next to `v0.3.0`, the same way. Its history folds the proposal-B
+commit, the follow-up that removed the reference player's name from the docs, and this version bump into one commit,
+so the name never appears in `v0.4.0`'s history (it still appears in the work branch's history until that branch is
+rewritten, which waits for the maintainer).

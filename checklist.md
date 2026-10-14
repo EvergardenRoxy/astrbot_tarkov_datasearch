@@ -10,9 +10,9 @@
 
 ## 当前状态
 
-- 当前版本 **0.3.0**，改为“绑定身份 + 查询”，尚未在聊天平台实测。
+- 当前版本 **0.4.0**：0.3.0 改为“绑定身份 + 查询”，0.4.0 加入图片页脚和塔科夫竞技场查询；尚未在聊天平台实测（维护者对 0.3.0 做过小范围封闭测试）。
 - 已用真实网络把插件的查询流程完整跑过一遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID 和昵称各查了 PVE、PVP、赛季模式。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
-- 自动测试共 168 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
+- 自动测试共 172 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
 
 修改由 Claude Opus 5.5（通过 Claude Code）完成，经项目维护者审阅。做法与 spark 项目相同：先写测试，再改代码，最后跑完全部测试。另外用“故意改坏代码”的方式检查测试：把关键保护逐一从代码里去掉，确认每一项都会被测试发现（每一轮修改都做，数量见下文各节）。
 
@@ -20,8 +20,8 @@
 
 ```bash
 pip install -r requirements.txt
-python -m unittest discover -s tests   # 应显示 Ran 168 tests ... OK
-python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.3.0.zip
+python -m unittest discover -s tests   # 应显示 Ran 172 tests ... OK
+python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.4.0.zip
 ```
 
 在聊天中核对：
@@ -260,7 +260,7 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
 3. **改写了提交历史**（维护者决定）：所有 17 个提交里的这些信息都换成了同样的虚构数据，旧的示例图片也全部替换，然后强制推送了两个分支。改写后每个提交的测试都能通过，最新代码与改写前完全相同，整个历史里已搜不到真实玩家名、账号 ID 和真实战绩。所有提交的编号（哈希）都变了。改写前别人已经克隆或 fork 的副本，以及 GitHub 对旧提交的缓存，不在仓库能控制的范围内。
 4. **怎么核对**：`git log --all -p | grep -i -E "<真实玩家名>|<真实账号ID>"` 应没有结果；全部测试通过。
 
-### 封闭测试后的修改与竞技场调研（未发布）
+### 0.4.0：封闭测试后的修改与竞技场查询
 
 1. **图片页脚**（维护者意见）：图片最下方加两行小字，写明插件名称和版本、GitHub 仓库地址、开源许可（GPL-3.0-or-later），并注明与 tarkov.dev 和 Battlestate Games 无关。
    - 怎么核对：看 `docs/preview.jpg` 的最下方；测试 `test_footer_names_the_plugin_source_and_licence`（页脚是图上最后画的内容，而且在图片范围内）、`test_footer_facts_match_the_repository`（仓库地址与 metadata.yaml 一致）。
@@ -268,6 +268,7 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
 3. **竞技场查询**（维护者决定：用 `/tarkov 竞技场 <...>` 查；预留默认查询竞技场的设置；模式名保留英文；区分排位和非排位；不显示等级；图片样式重新设计三个方案）：
    - 做了什么：`/tarkov 竞技场`（或 `arena`）查竞技场，只请求竞技场一个档案；竞技场网址可以查询和绑定；从竞技场档案学到的名字和其他模式通用；新配置“不写模式时也查竞技场”，默认关闭。文字和 Markdown 回复分非排位、排位两段。三个图片方案的预览已交给维护者，选定前图片输出方式下以文字回复。
    - 为什么这样设计：竞技场是另一个游戏，默认不混进“三种模式一起看”，也不让每次查询多一个请求；需要时由管理员打开设置。
+   - 图片（维护者选定方案 B）：竞技场主办方的选手名册，皮面上的登记页，GP 币样式的最佳 ARP 徽章，非排位 / 排位两段，胜场多于负场的模式打勾，落款“登记人：THE HOST”和火漆印，最下方是数据时间和插件信息。示例见 `docs/arena_preview.jpg`。
    - 怎么核对：发送 `/tarkov 竞技场 <在 tarkov.dev 用竞技场模式搜索过的玩家ID>`；测试 `tests/test_arena.py`（档案读取、排位/非排位、畸形数据、文字和 Markdown、无等级）和 `tests/test_plugin.py` 中的 `test_arena_*`（命令、网址、绑定、名字、默认设置、各输出方式）。已用真实网络查过 3 个公开的竞技场档案，读取正常。
 
 ## 需要维护者决定或确认的事
@@ -278,5 +279,5 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
 2. 时间按北京时间显示。
 3. 档案超过 30 天未更新时注明。
 4. 维护者提供的个人档案只用于本地比对，没有放进仓库。档案里有别的玩家的昵称（狗牌）。测试、README 示例和示例图片里的数据全部是虚构的（此前测试数据里的数字是从维护者的 PVE 档案抄来的，只换了名字和 ID，见下方“去掉真实玩家信息”）。
-- **竞技场图片样式（待选）**：按维护者要求结合竞技场的游戏背景（主办方 Arena Masters、主持人 Host/Ref、城内角斗场、格斗海报、GP 币、ARP）重新设计了三个方案：A“Host 的格斗海报”、B“主办方选手名册”、C“场馆直播计分屏”（handoff.md §19.5）。维护者选定后实现。其余竞技场事项已按维护者决定实现。
+- **竞技场图片样式**：维护者选定方案 B“主办方选手名册”，已实现（handoff.md §19.6）。
 - **“默认查询竞技场”的含义**：理解为“不写模式时也查竞技场”的开关（默认关闭），没有把竞技场放进“默认模式”的选项。若本意是“默认模式可以设为竞技场”，需要再调整。
