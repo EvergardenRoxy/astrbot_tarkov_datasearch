@@ -16,7 +16,7 @@ from .tarkov_core.modes import GAME_MODES, MODES, label_of, page_url, parse_mode
 from .tarkov_core.names import NAME, SUGGESTIONS, NameIndex
 from .tarkov_core.arena import build_arena_card, render_arena_markdown, render_arena_text, summarize_arena
 from .tarkov_core.arena_image import render_arena_image
-from .tarkov_core.card import build_card
+from .tarkov_core.card import BOT_LIMIT, build_card
 from .tarkov_core.help_image import render_help_image
 from .tarkov_core.image import render_image
 from .tarkov_core.output import render_markdown, render_text
@@ -154,9 +154,10 @@ class TarkovPlugin(Star):
                 f"查别人：{self.cmd('[模式] <昵称、账号ID 或玩家页网址>')}\n"
                 f'模式：pvp、pve、赛季（pvp-season）、竞技场（arena）；不写时先看 {label_of(self.default_mode())}，没有档案就自动换成有档案的模式'
                 + ('（也会看竞技场）' if self.arena_by_default() else f"（竞技场要写明：{self.cmd('竞技场 <昵称、账号ID 或网址>')}）") + '\n'
-                '第一次查某个玩家前，请先在 tarkov.dev 用对应模式搜索他一次（链接见最后一行），'
+                f'由于 {BOT_LIMIT}，插件只能读取 tarkov.dev 上已有的档案，且档案不会自动更新。\n'
+                '第一次查某个玩家前，请先在 tarkov.dev 用对应模式搜索他（链接见最后一行），'
                 '再把跳转后的网址发给我；之后就能直接用名字查（按 ID 或网址查到过的名字会被记住' + index + '）。\n'
-                '档案不会自动更新：要看最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面。\n'
+                '如果需要查询最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面。\n'
                 + self.search_line())
 
     def search_line(self):
@@ -390,7 +391,7 @@ class TarkovPlugin(Star):
                                   f'{unknown}{later}'
                                   f'之后发送 {self.cmd()} 即可查询自己（先看 {label_of(self.default_mode())}，没有时自动换成有档案的模式），'
                                   f"也可以写模式，例如 {self.cmd('pve')}、{self.cmd('赛季')}。"
-                                  '档案不会自动更新：要看最新数据，请先在 tarkov.dev 上重新搜索或打开自己的页面。')
+                                  f'由于 {BOT_LIMIT}，档案不会自动更新：要看最新数据，请先在 tarkov.dev 上重新搜索或打开自己的页面。')
 
     async def query(self, event, mode, explicit, target, url, trace):
         if target is None:

@@ -43,7 +43,7 @@ class HelpImageTests(unittest.TestCase):
         self.assertIn('竞技场要写明', joined)
         self.assertNotIn('也会看竞技场', joined)
         self.assertNotIn('昵称名单', joined)
-        self.assertIn('档案不会自动更新', joined)
+        self.assertIn('都不向机器人开放档案查询', joined)
         self.assertEqual(texts[-1], '本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系')
         self.assertIn('数据来自 tarkov.dev 公开快照（非实时）', texts)
 
