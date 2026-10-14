@@ -5,7 +5,7 @@
 > [!IMPORTANT]
 > **AI 制作声明：塔科夫玩家数据查询采用生成式 AI 参与架构设计、编码、文档与测试。** AI 生成或修改的内容由项目维护者审阅、验证并承担最终维护责任。
 >
-> 参与的 AI：**Claude Opus 5.5**（通过 **Claude Code**）参与 0.1.0 至 0.4.1 版本的数据源调研与实测、方案制定、编码、测试、图片回复的设计与绘制、配置页说明，以及更新日志、核对清单（`checklist.md`）与交接文档（`handoff.md`）的编写。
+> 参与的 AI：**Claude Opus 5.5**（通过 **Claude Code**）参与 0.1.0 至 0.4.2 版本的数据源调研与实测、方案制定、编码、测试、图片回复的设计与绘制、配置页说明，以及更新日志、核对清单（`checklist.md`）与交接文档（`handoff.md`）的编写。
 
 # 记录文档
 
@@ -143,7 +143,7 @@ Scav：战局 50，撤离 30，存活率 60.0%
 
 数据来自 tarkov.dev，档案更新于 2026-10-03 12:00（北京时间）
 数据不会自动更新：在 tarkov.dev 用该模式搜索一次这名玩家，或打开 https://tarkov.dev/players/pve/1234567，即可刷新档案，几分钟后再查。
-astrbot_tarkov_datasearch v0.4.1 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch
+astrbot_tarkov_datasearch v0.4.2 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch
 本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系
 ```
 
