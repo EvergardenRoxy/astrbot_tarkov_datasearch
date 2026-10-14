@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 
 from fixtures import arena_profile
 from tarkov_core import arena_image
-from tarkov_core.arena import MAX_MODES, best_arp, losses, record, build_arena_card, render_arena_markdown, render_arena_text, summarize_arena
+from tarkov_core.arena import MAX_MODES, TOP_LABEL, arp_text, best_arp, losses, rank, record, build_arena_card, render_arena_markdown, render_arena_text, summarize_arena
 from tarkov_core.transport import QueryError
 
 NOW = 1791000000 + 3600
@@ -75,12 +75,12 @@ class ArenaOutputTests(unittest.TestCase):
             '【塔科夫竞技场档案】Test_Player（账号 ID 1234567）',
             '成就 2 个｜最近活跃 2026-09-10 08:26',
             '',
-            '非排位：对局 200，击杀 1500，死亡 600，K/D 2.50，最佳 ARP 1200，最长连杀 12，最长连胜 7',
+            '非排位：对局 200，击杀 1500，死亡 600，K/D 2.50，最佳 ARP 1200（Jackal），最长连杀 12，最长连胜 7',
             '　Team Fight：对局 100，胜 60（60.0%），击杀 800，死亡 300，K/D 2.67，MVP 10',
             '　Last Hero：对局 50，胜 10（20.0%），击杀 400，死亡 200，K/D 2.00，MVP 4',
             '　Checkpoint：对局 40，胜 20（50.0%），击杀 250，死亡 80，K/D 3.12，MVP 3',
             '　ShootOutDuo：对局 10，胜 5（50.0%），击杀 50，死亡 20，K/D 2.50',
-            '排位：对局 30，击杀 200，死亡 100，K/D 2.00，最佳 ARP 1500',
+            '排位：对局 30，击杀 200，死亡 100，K/D 2.00，最佳 ARP 1500（Jackal）',
         ])
         self.assertIn('数据不会自动更新', text)
         self.assertIn('https://tarkov.dev/players/arena/1234567', text)
@@ -137,12 +137,35 @@ class ArenaImageTests(unittest.TestCase):
         self.assertIn('排位  RANKED · 计入 ARP', drawn)
         self.assertIn('95 W  ·  105 L', drawn)
         self.assertIn('TEAM FIGHT', drawn)
-        self.assertIn('60 – 40', drawn)
+        self.assertIn('60 / 40', drawn)  # counts under the win / loss bar
+        self.assertIn('ARENA MASTERS · 竞技场主办方存档', drawn)
+        self.assertFalse([text for text in drawn if '登记人' in text])
         self.assertIn('这个账号在 PVE 模式下也有档案', drawn)
         self.assertTrue(any('数据不会自动更新' in text for text in drawn))
         # Maintainer: no level; the footer is the last thing on the page.
         self.assertFalse([text for text in drawn if '等级' in text or 'LVL' in text])
-        self.assertTrue(drawn[-1].startswith('开源插件，GPL-3.0-or-later 许可'))
+        self.assertIn('Jackal', drawn)  # rank under the ARP on the coin
+        self.assertEqual(drawn[-1], '本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系')
+
+    def test_win_loss_bar(self):
+        # Maintainer: wins green, losses red, as one bar; counts in small print under it.
+        img = Image.new('RGB', (200, 60), (255, 255, 255))
+        d = ImageDraw.Draw(img)
+        arena_image.win_bar(d, 10, 0, 100, 3, 1)
+        self.assertEqual(img.getpixel((30, 15)), arena_image.WIN)
+        self.assertEqual(img.getpixel((100, 15)), arena_image.LOSS)
+        img = Image.new('RGB', (200, 60), (255, 255, 255))
+        d = ImageDraw.Draw(img)
+        arena_image.win_bar(d, 10, 0, 100, 0, 0)  # no games: an empty frame, no division by zero
+        self.assertEqual(img.getpixel((50, 15)), (255, 255, 255))
+        drawn = []
+        real = ImageDraw.ImageDraw.text
+        def record_text(self, xy, text, *args, **kwargs):
+            drawn.append(text)
+            return real(self, xy, text, *args, **kwargs)
+        with patch.object(ImageDraw.ImageDraw, 'text', record_text):
+            arena_image.win_bar(ImageDraw.Draw(img), 10, 0, 100, None, None)
+        self.assertEqual(drawn, ['—'])
 
     def test_odd_cards_still_render(self):
         raw = arena_profile(stat={'arenaOverAllCounters': {f'UnrankedMode{chr(65+i)}': {'Counters': {'Kills': 10**15, 'GamesCount': 3, 'ArenaWins': 9}}
@@ -163,3 +186,39 @@ class ArenaImageTests(unittest.TestCase):
         self.assertIsNone(record({'modes': [('X', {'games': 1})]}))
         self.assertEqual(best_arp(c), 1500)
         self.assertIsNone(best_arp(card(arena_profile(stat={}))))
+
+
+class ArenaRankTests(unittest.TestCase):
+    def test_ranks_by_best_arp(self):
+        # Maintainer's table; neighbouring ranks overlap by 100, a rank counts once the previous one's limit is passed.
+        cases = {1: 'Marauder', 1000: 'Marauder', 1001: 'Jackal', 2000: 'Jackal', 2001: 'Mercenary', 3001: 'Fighter',
+                 4001: 'Warrior', 5001: 'Gladiator', 6001: 'Veteran', 7000: 'Veteran', 7001: 'Professional', 7900: 'Professional'}
+        for arp, name in cases.items():
+            with self.subTest(arp=arp):
+                self.assertEqual(rank(arp)[1], name)
+        self.assertEqual(rank(1001)[0], 'D+')
+        self.assertEqual(rank(7901), ('TOP', TOP_LABEL))
+        self.assertIsNone(rank(None))
+        self.assertIsNone(rank(0))
+
+    def test_top_ranks_hide_the_arp(self):
+        self.assertEqual(arp_text(1610), '1610（Jackal）')
+        self.assertEqual(arp_text(9000), '竞技场前100名玩家')
+        raw = arena_profile()
+        raw['stat']['arenaOverAllCounters']['Overall']['Counters']['BestArp'] = 8200
+        c = card(raw)
+        self.assertIn('排位：对局 30，击杀 200，死亡 100，K/D 2.00，最佳 ARP 竞技场前100名玩家', render_arena_text(c))
+        drawn = []
+        real = ImageDraw.ImageDraw.text
+        def record_text(self, xy, text, *args, **kwargs):
+            drawn.append(text)
+            return real(self, xy, text, *args, **kwargs)
+        with patch.object(ImageDraw.ImageDraw, 'text', record_text):
+            picture(c)
+        self.assertIn('前100名玩家', drawn)
+        self.assertNotIn('8200', drawn)
+
+    def test_arena_text_and_markdown_end_with_the_source(self):
+        notice = '本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系'
+        self.assertTrue(render_arena_text(card()).endswith(notice))
+        self.assertTrue(render_arena_markdown(card()).endswith('> '+notice))

@@ -1,6 +1,7 @@
 """Plain-text and Markdown replies, built from a card (card.py)."""
 import re
 
+from . import NAME, NOTICE, REPO, VERSION
 from .card import EXITS, SURVIVED, build_card, refresh_note, stale_note
 
 
@@ -11,7 +12,7 @@ def side_lines(card_side):
     kd = card_side['kd'] or '—（无死亡记录）'
     lines = [
         f"{title}：战局 {stats['raids']}，{SURVIVED} {stats['survived']}，存活率 {card_side['rate']}",
-        f"　击杀 {stats['kills']}，死亡 {stats['deaths']}，K/D {kd}，击杀 PMC {stats['pmc_kills']}",
+        f"　击杀 {stats['kills']}，死亡 {stats['deaths']}，K/D {kd}，击杀 PMC {stats['pmc_kills']}，PMC K/D {card_side['pmc_kd'] or '—'}",
     ]
     detail = [f'{label} {stats[key]}' for key, label in EXITS if stats[key]]
     if stats['streak']:
@@ -54,7 +55,12 @@ def render_text(card):
     lines += card['notes']
     if card['refresh_url']:
         lines.append(refresh_note(card['refresh_url']))
-    return '\n'.join(lines)
+    return '\n'.join(lines+source_lines())
+
+
+def source_lines():
+    """The repository and the open-source statement, after every text profile reply (maintainer)."""
+    return [f'{NAME} v{VERSION} · {REPO}', NOTICE]
 
 
 def render(summary, mode_label, skill_limit=10, notes=(), now=None):
@@ -91,15 +97,15 @@ def render_markdown(card):
     if card['last_active']:
         extra.append(f"最近活跃 {card['last_active']}")
     lines += [' · '.join(extra), '']
-    lines.append(f'| | 战局 | {SURVIVED} | 存活率 | 击杀 | 死亡 | K/D | 击杀 PMC | 最长连续存活 |')
-    lines.append('|---|---:|---:|---:|---:|---:|---:|---:|---:|')
+    lines.append(f'| | 战局 | {SURVIVED} | 存活率 | 击杀 | 死亡 | K/D | 击杀 PMC | PMC K/D | 最长连续存活 |')
+    lines.append('|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|')
     for card_side in card['sides']:
         stats = card_side['stats']
         if card_side['empty']:
-            lines.append(f"| {card_side['title']} | 暂无记录 | | | | | | | |")
+            lines.append(f"| {card_side['title']} | 暂无记录 | | | | | | | | |")
             continue
         lines.append(f"| {card_side['title']} | {stats['raids']} | {stats['survived']} | {card_side['rate']} | "
-                     f"{stats['kills']} | {stats['deaths']} | {card_side['kd'] or '—'} | {stats['pmc_kills']} | {stats['streak']} |")
+                     f"{stats['kills']} | {stats['deaths']} | {card_side['kd'] or '—'} | {stats['pmc_kills']} | {card_side['pmc_kd'] or '—'} | {stats['streak']} |")
     lines.append('')
     for card_side in card['sides']:
         if not card_side['empty']:
@@ -125,4 +131,8 @@ def render_markdown(card):
     lines += ['> '+md(note) for note in card['notes']]
     if card['refresh_url']:
         lines.append('> '+markdown_refresh(card['refresh_url']))
-    return '\n'.join(lines)
+    return '\n'.join(lines+markdown_source_lines())
+
+
+def markdown_source_lines():
+    return ['>', f'> {md(NAME)} v{VERSION} · {REPO}', f'> {NOTICE}']

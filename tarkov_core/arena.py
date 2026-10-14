@@ -10,7 +10,7 @@ import re
 import time
 
 from .card import STALE_DAYS, refresh_note, stale_note, when
-from .output import markdown_refresh, md
+from .output import markdown_refresh, markdown_source_lines, md, source_lines
 from .profile import last_active, number
 from .text import clean
 from .transport import QueryError
@@ -28,6 +28,15 @@ MODE_KEY = re.compile(r'[A-Za-z]{1,40}')
 # Modes kept per section at most, whatever the document holds.
 MAX_MODES = 12
 SECTIONS = ((False, '非排位'), (True, '排位'))
+# Arena ranks (maintainer's table): (highest ARP of the rank, tier, name shown). Neighbouring ranks overlap by 100 ARP
+# (promotion above the upper limit, demotion below the next rank's lower one); the profile only has the best ARP
+# ever reached, so a rank counts as reached once the best ARP passed the previous rank's upper limit.
+RANKS = ((1000, 'D', 'Marauder'), (2000, 'D+', 'Jackal'), (3000, 'C', 'Mercenary'), (4000, 'C+', 'Fighter'),
+         (5000, 'B', 'Warrior'), (6000, 'B+', 'Gladiator'), (7000, 'A', 'Veteran'), (7900, 'A+', 'Professional'))
+# Above this the ranks are leaderboard places (Elite 7900+, then Top 1000/100/10/1) the profile cannot tell apart:
+# shown as one label without the ARP (maintainer).
+TOP_ARP = 7900
+TOP_LABEL = '竞技场前100名玩家'
 
 
 def counters(entry):
@@ -84,6 +93,23 @@ def summarize_arena(raw):
     }
 
 
+def rank(arp):
+    """(tier, name) of an ARP, ('TOP', TOP_LABEL) above TOP_ARP, None without an ARP."""
+    if not arp:
+        return None
+    if arp > TOP_ARP:
+        return 'TOP', TOP_LABEL
+    return next((tier, name) for limit, tier, name in RANKS if arp <= limit)
+
+
+def arp_text(arp):
+    """"1200（Jackal）", or the top label alone (no ARP above TOP_ARP)."""
+    found = rank(arp)
+    if found and found[0] == 'TOP':
+        return found[1]
+    return f'{arp}（{found[1]}）' if found else str(arp)
+
+
 def kd(stats):
     deaths = stats.get('deaths')
     return f"{stats.get('kills', 0)/deaths:.2f}" if deaths else None
@@ -137,7 +163,9 @@ def build_arena_card(summary, notes=(), now=None, refresh_url=None):
 def overall_text(stats):
     parts = [f"对局 {stats.get('games', 0)}", f"击杀 {stats.get('kills', 0)}", f"死亡 {stats.get('deaths', 0)}",
              f"K/D {kd(stats) or '—'}"]
-    for key, label in (('best_arp', '最佳 ARP'), ('max_killstreak', '最长连杀'), ('win_streak', '最长连胜')):
+    if stats.get('best_arp'):
+        parts.append(f"最佳 ARP {arp_text(stats['best_arp'])}")
+    for key, label in (('max_killstreak', '最长连杀'), ('win_streak', '最长连胜')):
         if stats.get(key):
             parts.append(f'{label} {stats[key]}')
     return '，'.join(parts)
@@ -181,7 +209,7 @@ def render_arena_text(card):
         head = f"{section['title']}：" + (overall_text(section['overall']) if section['overall'] else '（无总计）')
         lines.append(head)
         lines += [mode_text(label, stats) for label, stats in section['modes']]
-    return '\n'.join(lines+['']+footer(card))
+    return '\n'.join(lines+['']+footer(card)+source_lines())
 
 
 def render_arena_markdown(card):
@@ -204,4 +232,4 @@ def render_arena_markdown(card):
                          f"{win_rate(stats) or '—'} | {stats.get('kills', 0)} | {stats.get('deaths', 0)} | "
                          f"{kd(stats) or '—'} | {stats.get('mvp', 0)} |")
         lines.append('')
-    return '\n'.join(lines+footer(card, '> '))
+    return '\n'.join(lines+footer(card, '> ')+markdown_source_lines())
