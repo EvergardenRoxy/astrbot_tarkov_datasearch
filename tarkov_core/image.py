@@ -282,10 +282,12 @@ def render_image(card):
     return jpeg(img.crop((0, 0, W, footer(d, y, card['updated'], FADED, FADED))))
 
 
-def footer(d, y, updated, fill, small_fill):
-    """The data-source line and the plugin's small print, from `y`; the y where the picture ends."""
-    updated = f'档案更新于 GMT+8 {updated}' if updated else '时间为 GMT+8'
-    line = f'数据来自 tarkov.dev 公开快照（非实时） · {updated}'
+def footer(d, y, updated, fill, small_fill, line=None):
+    """The data-source line (`line` instead, when given) and the plugin's small print, from `y`; the y where the
+    picture ends."""
+    if line is None:
+        updated = f'档案更新于 GMT+8 {updated}' if updated else '时间为 GMT+8'
+        line = f'数据来自 tarkov.dev 公开快照（非实时） · {updated}'
     d.text((W/2-d.textlength(line, font=font('sc', 14, 400))/2, y+10), line, font=font('sc', 14, 400), fill=fill)
     # Plugin name, repository and the open-source statement, centred like the line above and a little larger
     # (maintainer).

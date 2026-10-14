@@ -1,4 +1,4 @@
-"""Rebuild docs/preview.jpg and docs/arena_preview.jpg, and print the README text example, from invented profiles.
+"""Rebuild docs/preview.jpg, docs/arena_preview.jpg and docs/help_preview.jpg, and print the README text example, from invented profiles.
 
     python tools/build_preview.py
 
@@ -21,8 +21,9 @@ from fixtures import arena_profile, profile  # noqa: E402
 from tarkov_core.arena import build_arena_card, summarize_arena  # noqa: E402
 from tarkov_core.arena_image import render_arena_image  # noqa: E402
 from tarkov_core.card import build_card  # noqa: E402
+from tarkov_core.help_image import render_help_image  # noqa: E402
 from tarkov_core.image import render_image  # noqa: E402
-from tarkov_core.modes import page_url  # noqa: E402
+from tarkov_core.modes import page_url, search_url  # noqa: E402
 from tarkov_core.output import render_text  # noqa: E402
 from tarkov_core.profile import summarize  # noqa: E402
 
@@ -45,4 +46,7 @@ if __name__ == '__main__':
     arena = summarize_arena(arena_profile())
     arena_card = build_arena_card(arena, now=arena['updated']+3600, refresh_url=page_url('arena', arena['aid']))
     (ROOT/'docs'/'arena_preview.jpg').write_bytes(render_arena_image(arena_card))
+    help_card = {'mode': 'pve', 'label': 'PVE', 'search': search_url('pve'), 'example': page_url('pve', 1234567),
+                 'arena_by_default': False, 'index': None}
+    (ROOT/'docs'/'help_preview.jpg').write_bytes(render_help_image(help_card))
     print(render_text(card))
