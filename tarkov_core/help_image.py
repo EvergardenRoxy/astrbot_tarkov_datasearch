@@ -134,7 +134,7 @@ def render_help_image(card):
     d.line([40, y, W-40, y], fill=LINE)
 
     y = heading(d, y+24, '四、注意')
-    for text in ('档案不会自动更新：要看最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面，几分钟后再查。',
+    for text in ('由于 tarkov.dev 和 Battlestate Games 都不向机器人开放档案查询，机器人无法直接触发更新。要看最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面，几分钟后再查。',
                  '昵称只含字母、数字、下划线 _ 和连字符 -；_ 和 - 容易记混，查不到时插件会提示相近的名字。'):
         d.rectangle([44, y+10, 54, y+20], fill=INK)
         y = paragraph(d, y, text, x=70)+10
