@@ -13,8 +13,8 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Inputs | Maintainer's analysis `report.md` of the-hideout/tarkov-dev (not in the tree; key facts restated in §2). Maintainer's own profile JSON downloaded from tarkov.dev, used only for a local comparison (§2.4), not committed. |
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
-| Version | 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 172, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Version | 0.4.1 since §20; 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
+| Tests | 177, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -93,10 +93,10 @@ pve ~1 s / 4.3 MB; pvp-season ~0.6 s / 1.4 MB; an unchanged index refresh (304) 
 | `test_profile.py` (20) | player-page link parsing (modes, old /player/ form, arena, foreign hosts), page and search links, level boundaries against the bundled table, hand-checked level 53, table shape, counter selection, side stats, `Left` fallback, malformed counters, summary fields, skill filter/sort/elite, control characters, odd shapes in every field (>1000 combinations), huge integers, non-profiles, missing fields, mode aliases, `profile` path. |
 | `test_output.py` (9) | exit-status wording, full rendering (account-wide play time label), text unchanged through the card model (exact string), Markdown (escaping, empty side, skills hidden), no deaths / no raids, skill limit, stale flag, out-of-range timestamps, prestige and notes. |
 | `test_image.py` (15) | exit legend wording, JPEG of the right width and size, byte-stable (also after clearing the grain cache), height follows skills and notes, odd cards (missing values, empty sides, long/foreign names, huge numbers, every mode), long text shrunk to fit, empty sides say so, `safe()`, every non-ASCII character of the code and skill table is in the subset font, listed characters have glyphs, licences shipped and Share Tech Mono unmodified. |
-| `test_names.py` (22) | entry parsing (escapes, whitespace, empty, over-long, control characters), HTML rejected, empty index keeps old db, nickname rule (3-24), build-then-reuse, ETag + 304, replacement, failed refresh keeps serving + retry delay, first-download failure backed off, one download under concurrency, match cap, exact case first + total, corrupt db rebuilt, damaged names table rebuilt, URI characters in the data dir, old leftovers only removed at start, reload during a download, two instances never share a download file, failed build removes its temp file, refresh interval, weekly default. |
+| `test_names.py` (24) | entry parsing (escapes, whitespace, empty, over-long, control characters), HTML rejected, empty index keeps old db, nickname rule (3-24), build-then-reuse, ETag + 304, replacement, failed refresh keeps serving + retry delay, first-download failure backed off, one download under concurrency, match cap, exact case first + total, corrupt db rebuilt, damaged names table rebuilt, URI characters in the data dir, old leftovers only removed at start, reload during a download, two instances never share a download file, failed build removes its temp file, refresh interval, weekly default. |
 | `test_transport.py` (18) | local aiohttp server with `HOST` patched: gzip + agent header, plain body, 404 (Chinese default text), 403/429/500 messages, no redirects, HTML/non-object/invalid JSON, compressed/decoded limits (gzip and plain), wrong content type, truncated and garbage gzip, other encodings, profile parsed off the loop, index limits, index download + 304, connection error text, environment proxy ignored, proxy validation (explicit port). |
-| `test_plugin.py` (64) | (§16) bind then query yourself (same platform, other group, other platform, default mode without a profile), bind by id/name and its failures, unbind, query by player-page link (mode conflict, arena, missing profile), names learned from queries with the index off, renamed player found by an old name, refresh link in text/Markdown/image replies, a failed name record does not fail the query; SDK stubbed like the spark tests: help, id, name, default mode, refresh notices (download vs check, size only for a first PvP download), texts follow the interval, not found, digits missing as id and name, ambiguity (incl. two exact-case hits, "等，共 N 个"), exact case wins, rename note, missing id, digit-name fallback, long generated names, bad input, full-width digits, error messages, index 404 and timeouts in chat, cache on/off and bound, one query per sender (bounded wait), access modes incl. unknown value and list types, empty list rows, infinite settings, proxy with empty address fails closed, proxy/timeout reach transport, default output is a JPEG image (also for an unknown setting), Markdown and text outputs, image failure falls back to text with a note, image drawn off the loop. |
-| `test_accounts.py` (7) | owner key per platform and keyed (HMAC, §17), secret file created once with mode 0600, bind/rebind/unbind, names case-insensitive, old names kept after a rename, exact-case then most recent order, record bounded. |
+| `test_plugin.py` (66) | (§16) bind then query yourself (same platform, other group, other platform, default mode without a profile), bind by id/name and its failures, unbind, query by player-page link (mode conflict, arena, missing profile), names learned from queries with the index off, renamed player found by an old name, refresh link in text/Markdown/image replies, a failed name record does not fail the query; SDK stubbed like the spark tests: help, id, name, default mode, refresh notices (download vs check, size only for a first PvP download), texts follow the interval, not found, digits missing as id and name, ambiguity (incl. two exact-case hits, "等，共 N 个"), exact case wins, rename note, missing id, digit-name fallback, long generated names, bad input, full-width digits, error messages, index 404 and timeouts in chat, cache on/off and bound, one query per sender (bounded wait), access modes incl. unknown value and list types, empty list rows, infinite settings, proxy with empty address fails closed, proxy/timeout reach transport, default output is a JPEG image (also for an unknown setting), Markdown and text outputs, image failure falls back to text with a note, image drawn off the loop. |
+| `test_accounts.py` (8) | owner key per platform and keyed (HMAC, §17), secret file created once with mode 0600, bind/rebind/unbind, names case-insensitive, old names kept after a rename, exact-case then most recent order, record bounded. |
 | `test_arena.py` (12) | arena summary (ranked/unranked split, labels and order, counters), hostile counters and mode keys, odd shapes in `stat`/entries never raise, non-profiles, text (exact lines, no level), Markdown tables and escaping, no games, stale note. |
 | `test_release.py` (5) | version consistency, schema defaults equal code fallbacks, direct imports declared (aiohttp, yarl, pillow), package contents (fonts and licences included, zip under 1 MiB). |
 
@@ -685,3 +685,31 @@ statement "0.1.0 至 0.4.0"); branch `v0.4.0` created next to `v0.3.0`, the same
 commit, the follow-up that removed the reference player's name from the docs, and this version bump into one commit,
 so the name never appears in `v0.4.0`'s history (it still appears in the work branch's history until that branch is
 rewritten, which waits for the maintainer).
+
+## 20. Suggestions for names that differ by '_' and '-' (0.4.1)
+
+Maintainer's live test asked for an Arena player by a name with '_'; the public indexes hold two accounts, one with
+'_' (PvP index only, no Arena profile) and one with '-' (Arena, PVE, season). The maintainer approved suggesting such
+names. (The names and ids are not recorded here, §18.)
+
+- `names.spelling_variants(name)`: every other lower-case spelling with each '_'/'-' swapped; [] with no separator
+  or more than `MAX_SEPARATORS` = 6 (at most 63 variants). `SUGGESTIONS` = 3.
+- `NameIndex.similar(mode_path, name)`: `key IN (variants)` on the index already on disk (indexed column), under the
+  mode's lock; never refreshes or downloads; [] without an index; a damaged names table is logged and gives [].
+- `Accounts.similar(name)`: same on the shared record, most recently seen first.
+- `main.py`: `similar_accounts(mode, target, exclude)` merges the record and (only with `name_index_enabled`) the
+  index, dedupes by account, drops `exclude`, keeps 3. Used (1) when a name is unknown: "你是不是要找：X（账号 ID n）？
+  可以发送 /tarkov [mode] X。如果都不是，" before the usual steps; (2) when a name resolves to an account without a
+  profile in the mode: "名字相近的还有：X（账号 ID n），可以发送 … 试试。" (the live case: the '_' name had been learned
+  from a PvP query); (3) in `bind()` when the record has no such name.
+- Tests: `VariantTests.test_spelling_variants`, `test_similar_names_from_the_index_on_disk_only` (no download, no
+  warning without an index, damaged table), `test_similar_names` (record), plugin tests for the unknown-name, matched-
+  but-missing, bind and index cases; `FakeNames.similar`. 172 -> 177. Mutation check (10): own key excluded from
+  variants, separator cap, index-on-disk guard, damaged-table guard, index only when enabled, suggestion in
+  `by_name`, in `bind`, mode word in the command, record query, excluding the matched account. Three survived the
+  first run (the tests did not reach those branches); tests strengthened, all killed.
+- Live re-run (real network, data in scratchpad only): with the index on, the '_' name gets "你是不是要找" with the
+  '-' account; with the '_' account already learned, the "no Arena profile" reply adds the '-' account.
+- Release 0.4.1 (maintainer: "推送新分支v0.4.1"): version bumped in the usual places; branch `v0.4.1` is one commit
+  on top of `v0.4.0` (whose history never held the reference player's name, §19.7), with the same tree as the work
+  branch.
