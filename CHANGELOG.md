@@ -7,6 +7,21 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## 未发布
+
+> 维护者提出的修改，由 **Claude Opus 5.5**（通过 **Claude Code**）实现。依据与验证见 [handoff.md](handoff.md) §21。
+
+### 新增
+
+- **PMC K/D**：塔科夫档案（竞技场除外）在“击杀 PMC”后面加上 PMC K/D = 击杀 PMC 数 ÷ 死亡数，文字、Markdown、图片都有。
+- 文字和 Markdown 回复（包括竞技场）的最后加上仓库地址和开源声明：“本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系”。
+- **竞技场段位**：最佳 ARP 后面显示段位名称（Marauder、Jackal……Professional）；ARP 高于 7900 时不显示具体数值，改为金色的“竞技场前100名玩家”。图片金币上是“ARP 换行 段位名称”，前100名为黑金配色。
+
+### 变更
+
+- 塔科夫档案图片：标题改为“塔科夫市 · 绝密情报档案”；狗牌上的“{N} ACH”改为“{N} 成就数”；时间写作“GMT+8 {时间}”。
+- 图片页脚：开源声明改为维护者的新写法；插件名、仓库地址和开源声明两行字放大并居中（竞技场图片同样）。
+
 ## 0.4.1 - 2026-10-14
 
 > 由 **Claude Opus 5.5**（通过 **Claude Code**）实现，尚未在聊天平台实测。依据与验证见 [handoff.md](handoff.md) §20。

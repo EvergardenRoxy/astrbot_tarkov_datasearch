@@ -10,7 +10,7 @@ from functools import lru_cache
 
 from PIL import Image, ImageChops, ImageDraw
 
-from .arena import best_arp, kd, losses, record, win_rate
+from .arena import best_arp, kd, losses, rank, record, win_rate
 from .card import refresh_note, stale_note
 from .image import W, fit, font, footer, jpeg, right, safe, wrap
 
@@ -42,7 +42,19 @@ def centered(d, cx, y, text, f, fill):
 
 
 def coin(d, cx, cy, r, value):
-    """A milled medallion like a GP coin, carrying the best ARP."""
+    """A milled medallion like a GP coin, carrying the best ARP and its rank; black and gold for the leaderboard
+    ranks, which show no ARP (maintainer)."""
+    found = rank(value)
+    if found and found[0] == 'TOP':
+        for i in range(72):
+            a = 2*math.pi*i/72
+            d.line([cx+r*math.cos(a), cy+r*math.sin(a), cx+(r-7)*math.cos(a), cy+(r-7)*math.sin(a)], fill=GOLD, width=3)
+        d.ellipse([cx-r+6, cy-r+6, cx+r-6, cy+r-6], fill=INK, outline=GOLD, width=3)
+        d.ellipse([cx-r+16, cy-r+16, cx+r-16, cy+r-16], outline=GOLD_DARK, width=2)
+        centered(d, cx, cy-r*0.56, 'BEST ARP', font('osw', 16, 600), GOLD)
+        centered(d, cx, cy-r*0.26, '竞技场', font('sc', 22, 800), GOLD)
+        centered(d, cx, cy+r*0.06, '前100名玩家', font('sc', 20, 800), GOLD)
+        return
     for i in range(72):
         a = 2*math.pi*i/72
         d.line([cx+r*math.cos(a), cy+r*math.sin(a), cx+(r-7)*math.cos(a), cy+(r-7)*math.sin(a)], fill=GOLD_DARK, width=3)
@@ -51,7 +63,8 @@ def coin(d, cx, cy, r, value):
     centered(d, cx, cy-r*0.56, 'BEST ARP', font('osw', 16, 600), (90, 64, 20))
     text = str(value) if value is not None else '—'
     centered(d, cx, cy-r*0.34, text, fit(d, text, 'osw', int(r*0.46), r*1.3, 700), (70, 48, 14))
-    centered(d, cx, cy+r*0.30, 'REPUTATION', font('osw', 13, 500), (90, 64, 20))
+    name = found[1] if found else 'REPUTATION'
+    centered(d, cx, cy+r*0.28, name, fit(d, name, 'osw', 18, r*1.3, 600), (90, 64, 20))
 
 
 def wax_seal(d, cx, cy, r):

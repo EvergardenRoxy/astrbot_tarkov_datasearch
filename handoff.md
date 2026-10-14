@@ -14,7 +14,7 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
 | Version | 0.4.1 since §20; 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 177, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Tests | 183, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -91,13 +91,13 @@ pve ~1 s / 4.3 MB; pvp-season ~0.6 s / 1.4 MB; an unchanged index refresh (304) 
 | File | Covers |
 |---|---|
 | `test_profile.py` (20) | player-page link parsing (modes, old /player/ form, arena, foreign hosts), page and search links, level boundaries against the bundled table, hand-checked level 53, table shape, counter selection, side stats, `Left` fallback, malformed counters, summary fields, skill filter/sort/elite, control characters, odd shapes in every field (>1000 combinations), huge integers, non-profiles, missing fields, mode aliases, `profile` path. |
-| `test_output.py` (9) | exit-status wording, full rendering (account-wide play time label), text unchanged through the card model (exact string), Markdown (escaping, empty side, skills hidden), no deaths / no raids, skill limit, stale flag, out-of-range timestamps, prestige and notes. |
-| `test_image.py` (15) | exit legend wording, JPEG of the right width and size, byte-stable (also after clearing the grain cache), height follows skills and notes, odd cards (missing values, empty sides, long/foreign names, huge numbers, every mode), long text shrunk to fit, empty sides say so, `safe()`, every non-ASCII character of the code and skill table is in the subset font, listed characters have glyphs, licences shipped and Share Tech Mono unmodified. |
+| `test_output.py` (11) | exit-status wording, full rendering (account-wide play time label), text unchanged through the card model (exact string), Markdown (escaping, empty side, skills hidden), no deaths / no raids, skill limit, stale flag, out-of-range timestamps, prestige and notes. |
+| `test_image.py` (16) | exit legend wording, JPEG of the right width and size, byte-stable (also after clearing the grain cache), height follows skills and notes, odd cards (missing values, empty sides, long/foreign names, huge numbers, every mode), long text shrunk to fit, empty sides say so, `safe()`, every non-ASCII character of the code and skill table is in the subset font, listed characters have glyphs, licences shipped and Share Tech Mono unmodified. |
 | `test_names.py` (24) | entry parsing (escapes, whitespace, empty, over-long, control characters), HTML rejected, empty index keeps old db, nickname rule (3-24), build-then-reuse, ETag + 304, replacement, failed refresh keeps serving + retry delay, first-download failure backed off, one download under concurrency, match cap, exact case first + total, corrupt db rebuilt, damaged names table rebuilt, URI characters in the data dir, old leftovers only removed at start, reload during a download, two instances never share a download file, failed build removes its temp file, refresh interval, weekly default. |
 | `test_transport.py` (18) | local aiohttp server with `HOST` patched: gzip + agent header, plain body, 404 (Chinese default text), 403/429/500 messages, no redirects, HTML/non-object/invalid JSON, compressed/decoded limits (gzip and plain), wrong content type, truncated and garbage gzip, other encodings, profile parsed off the loop, index limits, index download + 304, connection error text, environment proxy ignored, proxy validation (explicit port). |
 | `test_plugin.py` (66) | (§16) bind then query yourself (same platform, other group, other platform, default mode without a profile), bind by id/name and its failures, unbind, query by player-page link (mode conflict, arena, missing profile), names learned from queries with the index off, renamed player found by an old name, refresh link in text/Markdown/image replies, a failed name record does not fail the query; SDK stubbed like the spark tests: help, id, name, default mode, refresh notices (download vs check, size only for a first PvP download), texts follow the interval, not found, digits missing as id and name, ambiguity (incl. two exact-case hits, "等，共 N 个"), exact case wins, rename note, missing id, digit-name fallback, long generated names, bad input, full-width digits, error messages, index 404 and timeouts in chat, cache on/off and bound, one query per sender (bounded wait), access modes incl. unknown value and list types, empty list rows, infinite settings, proxy with empty address fails closed, proxy/timeout reach transport, default output is a JPEG image (also for an unknown setting), Markdown and text outputs, image failure falls back to text with a note, image drawn off the loop. |
 | `test_accounts.py` (8) | owner key per platform and keyed (HMAC, §17), secret file created once with mode 0600, bind/rebind/unbind, names case-insensitive, old names kept after a rename, exact-case then most recent order, record bounded. |
-| `test_arena.py` (12) | arena summary (ranked/unranked split, labels and order, counters), hostile counters and mode keys, odd shapes in `stat`/entries never raise, non-profiles, text (exact lines, no level), Markdown tables and escaping, no games, stale note. |
+| `test_arena.py` (15) | arena summary (ranked/unranked split, labels and order, counters), hostile counters and mode keys, odd shapes in `stat`/entries never raise, non-profiles, text (exact lines, no level), Markdown tables and escaping, no games, stale note. |
 | `test_release.py` (5) | version consistency, schema defaults equal code fallbacks, direct imports declared (aiohttp, yarl, pillow), package contents (fonts and licences included, zip under 1 MiB). |
 
 Mutation check (scratch copy, one change at a time, full suite, 120 s limit each): 24 mutations of the guards
@@ -713,3 +713,27 @@ names. (The names and ids are not recorded here, §18.)
 - Release 0.4.1 (maintainer: "推送新分支v0.4.1"): version bumped in the usual places; branch `v0.4.1` is one commit
   on top of `v0.4.0` (whose history never held the reference player's name, §19.7), with the same tree as the work
   branch.
+
+## 21. PMC K/D, source lines, image wording, Arena ranks (unreleased; maintainer's list)
+
+- `card.side()`: `pmc_kd` = PMC kills / deaths (None without deaths). Text "，PMC K/D x" after "击杀 PMC n"; Markdown
+  column "PMC K/D" after "击杀 PMC"; image combat table gets a ninth column (xs re-spaced: 40, 135, 210, 285, 385,
+  470, 540, 615, 705; headers fitted to their column). Not in Arena (no PMC there).
+- `tarkov_core.NOTICE` = "本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系" (the
+  maintainer's sentence with the plugin's usual CJK/Latin spacing). `output.source_lines()` /
+  `markdown_source_lines()` end every text and Markdown profile reply, Arena included: name + version + repository
+  URL, then NOTICE.
+- `image.py`: title "塔科夫市 · 绝密情报档案"; dog tag "{mode} · {n} 成就数" (the word in the CJK font); footer
+  "档案更新于 GMT+8 {time}"; the two small-print lines are 15 px (was 13) and centred; footer height 96. Both
+  pictures share `footer()`.
+- Arena ranks (`arena.RANKS`, `rank()`, `arp_text()`): the maintainer's table has 100-ARP overlaps between neighbours
+  (promotion above the upper limit, demotion below the next lower limit) and the profile only stores BestArp (the
+  highest ever reached), so a rank counts once BestArp passed the previous rank's upper limit: <=1000 Marauder,
+  <=2000 Jackal, ..., <=7000 Veteran, <=7900 Professional; > 7900 (`TOP_ARP`) the leaderboard ranks cannot be told
+  apart, shown as "竞技场前100名玩家" without the ARP (maintainer). Text/Markdown: "最佳 ARP 1610（Jackal）"; the coin:
+  value, then the rank name; above 7900 a black coin with gold "竞技场 / 前100名玩家".
+- Tests: `test_pmc_kd_is_pmc_kills_per_death`, `test_markdown_ends_with_the_source`, `test_maintainer_wording`,
+  footer test (exact lines, centred, GMT+8, no 北京时间 on the image), `ArenaRankTests` (boundaries, top label, no
+  ARP on the top coin, source lines in Arena outputs); expectations updated. 177 -> 183. Mutation check (13): PMC K/D
+  formula, rank boundary, top threshold, top hides ARP, text/Markdown/Arena source lines, centred footer, GMT+8,
+  title, 成就数, PMC K/D column, rank on the coin — all killed. Fonts rebuilt (character list 1341 bytes).
