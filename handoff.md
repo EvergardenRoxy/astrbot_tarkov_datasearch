@@ -13,7 +13,7 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Inputs | Maintainer's analysis `report.md` of the-hideout/tarkov-dev (not in the tree; key facts restated in §2). Maintainer's own profile JSON downloaded from tarkov.dev, used only for a local comparison (§2.4), not committed. |
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
-| Version | 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
+| Version | 0.4.1 since §20; 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
 | Tests | 177, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
@@ -686,7 +686,7 @@ commit, the follow-up that removed the reference player's name from the docs, an
 so the name never appears in `v0.4.0`'s history (it still appears in the work branch's history until that branch is
 rewritten, which waits for the maintainer).
 
-## 20. Suggestions for names that differ by '_' and '-' (unreleased)
+## 20. Suggestions for names that differ by '_' and '-' (0.4.1)
 
 Maintainer's live test asked for an Arena player by a name with '_'; the public indexes hold two accounts, one with
 '_' (PvP index only, no Arena profile) and one with '-' (Arena, PVE, season). The maintainer approved suggesting such
@@ -710,3 +710,6 @@ names. (The names and ids are not recorded here, §18.)
   first run (the tests did not reach those branches); tests strengthened, all killed.
 - Live re-run (real network, data in scratchpad only): with the index on, the '_' name gets "你是不是要找" with the
   '-' account; with the '_' account already learned, the "no Arena profile" reply adds the '-' account.
+- Release 0.4.1 (maintainer: "推送新分支v0.4.1"): version bumped in the usual places; branch `v0.4.1` is one commit
+  on top of `v0.4.0` (whose history never held the reference player's name, §19.7), with the same tree as the work
+  branch.
