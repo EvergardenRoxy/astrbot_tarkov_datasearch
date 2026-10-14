@@ -195,7 +195,8 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                              output='image')
         with patch.object(self.module, 'render_help_image', spy):
             result = await self.run_command(plugin, Event('/tarkov 帮助'))
-        self.assertEqual(cards, [{'mode': 'season', 'label': 'PVP 赛季',
+        self.assertEqual(cards, [{'command': '@机器人 tarkov', 'note': self.module.COMMAND_STYLES['mention']['note'],
+                                  'mode': 'season', 'label': 'PVP 赛季',
                                   'search': 'https://tarkov.dev/players?gameMode=pvp-season',
                                   'example': 'https://tarkov.dev/players/pvp-season/1234567',
                                   'arena_by_default': True, 'index': '每天'}])
@@ -203,21 +204,50 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any('help image failed' in str(entry[0]) for entry in self.logs))
         self.assertIsNone(self.plugin(output='image').help_card()['index'])
 
-    async def test_commands_are_shown_as_at_the_bot(self):
-        # Maintainer: unverified QQ bots only take "@机器人 tarkov ..." (no slash), so every command the plugin shows is
-        # written that way; what users type works with or without the slash.
+    async def test_command_style_setting(self):
+        # Maintainer: the help and every hint write commands as "@机器人 tarkov" (QQ official bots, called by mention
+        # without a slash; the default, as in 0.4.3) or "/tarkov" (platforms woken by "/"), chosen in the settings.
+        # The strings live only in tarkov_core.COMMAND_STYLES.
         import re
-        slash = re.compile(r'(?<![/:\w.])/(?:tarkov|塔科夫)')
+        written = re.compile(r'(?<![/:\w.])/(?:tarkov|塔科夫)|@机器人')
         for path in [ROOT/'main.py', *(ROOT/'tarkov_core').glob('*.py')]:
-            with self.subTest(path=path.name):
-                self.assertFalse(slash.findall(path.read_text(encoding='utf-8')))
+            if path.name != '__init__.py':
+                with self.subTest(path=path.name):
+                    self.assertFalse(written.findall(path.read_text(encoding='utf-8')))
+        commands = ('tarkov', 'tarkov 帮助', 'tarkov 绑定', 'tarkov pve a b', 'tarkov pve Nobody', 'tarkov Nobody',
+                    'tarkov 2345678', 'tarkov pve player_two', 'tarkov 绑定 player_two', 'tarkov pvp 2345678',
+                    'tarkov 绑定 https://tarkov.dev/players/pve/2345678', 'tarkov 竞技场 2345678')
+        for style, command, other in ((None, '@机器人 tarkov', '/tarkov'), ('mention', '@机器人 tarkov', '/tarkov'),
+                                      ('slash', '/tarkov', '@机器人'), ('unknown', '@机器人 tarkov', '/tarkov')):
+            with self.subTest(style=style):
+                self.profiles[('pve', 2345678)] = profile(aid=2345678, info_nickname='Player-Two')
+                plugin = self.plugin({'command_style': style} if style else {})
+                replies = []
+                for text in commands:
+                    replies += await self.run_command(plugin, Event(text))
+                shown = '\n'.join(replies)
+                hints = [reply for reply in replies if command in reply]
+                self.assertGreaterEqual(len(hints), 9)
+                self.assertNotIn(other, re.sub(r'https?://\S+', '', shown))
+                self.assertIn(f'查别人：{command} [模式]', shown)
+                key = style if style in ('mention', 'slash') else 'mention'
+                self.assertIn('\n'+self.module.COMMAND_STYLES[key]['help']+'\n', shown)
+                self.assertIn(f'{command} 绑定 <tarkov.dev 玩家页网址或账号ID>', shown)
+                self.assertIn(f'可以发送 {command} pve Player-Two', shown)
+                self.assertIn(f'{command} 绑定 Player-Two', shown)
+                self.assertIn(f'PVE 模式（{command} pve 2345678）', shown)
+                self.assertIn(f'之后发送 {command} 即可查询自己', shown)
+                self.assertIn(f'例如 {command} https://tarkov.dev/players/pve/1234567', shown)
+                self.assertIn(f'例如 {command} 绑定 https://tarkov.dev/players/regular/1234567', shown)
+                self.assertIn(f"例如 {command} pve、{command} 赛季", shown)
+                self.assertEqual(plugin.help_card()['command'], command)
+        # What users type works either way.
         self.profiles[('pve', 1234567)] = profile()
-        for text in ('tarkov pve 1234567', '塔科夫 pve 1234567', '/tarkov pve 1234567'):
-            with self.subTest(text=text):
-                result = await self.run_command(self.plugin(), Event(text))
-                self.assertIn('【塔科夫 PVE 档案】Test_Player', result[0])
-        result = await self.run_command(self.plugin(), Event('tarkov'))
-        self.assertIn('@机器人 tarkov 绑定 <跳转后的网址>', result[0])
+        for style in ('mention', 'slash'):
+            for text in ('tarkov pve 1234567', '塔科夫 pve 1234567', '/tarkov pve 1234567'):
+                with self.subTest(style=style, text=text):
+                    result = await self.run_command(self.plugin({'command_style': style}), Event(text))
+                    self.assertIn('【塔科夫 PVE 档案】Test_Player', result[0])
 
     async def test_query_by_id(self):
         self.profiles[('pve', 1234567)] = profile()
