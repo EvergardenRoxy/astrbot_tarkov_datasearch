@@ -14,7 +14,7 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
 | Version | 0.4.2 since §21; 0.4.1 since §20; 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 184, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Tests | 190, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -759,3 +759,24 @@ names. (The names and ids are not recorded here, §18.)
   places; CHANGELOG `## 0.4.2 - 2026-10-14`; checklist reorganised (versions newest first, 0.1.0's audits and 0.3.0's
   second review as subsections of their versions, the real-player cleanup between 0.3.0 and 0.4.0, open questions
   renumbered); §6 items 8-10 added. Branch `v0.4.2` is one commit on top of `v0.4.1` with the work branch's tree.
+
+## 22. Help as an image (unreleased; maintainer: the text help is hard to read in phone chat apps)
+
+- `tarkov_core/help_image.py`, `render_help_image(card)`: the dossier paper of `image.py` (`paper`, `footer`,
+  `jpeg`), W 820, larger type than the profile card (headings 26 px, commands 24 px on dark "label tape", body 20 px)
+  because it is read on phones. Sections: commands (`help_rows`), modes (`MODE_CHIPS`, the default one framed red with
+  a "默认" tab), first query in three numbered steps (search page, example `/tarkov <player page>`, names remembered
+  [+ name lists]), notes (snapshots do not refresh; `_`/`-` suggestions). Stamp "使用指南 / FIELD MANUAL". The canvas
+  is 2400 px and cropped at the footer.
+- `image.footer()` takes an optional `line` replacing the data/update line (the help has no update time).
+- `main.py`: `help_card()` (default mode key and label, `search_url`, `page_url(mode, 1234567)`, `arena_by_default`,
+  index interval or None) and `help_reply()`: with output "image" the picture (drawn in a thread) plus
+  `Plain('tarkov.dev 玩家搜索：<search url>')`; text for text/Markdown output or when drawing fails (logged
+  "help image failed"). Both help paths (`help`/`帮助` and too many arguments) use it. `help_text()` is unchanged and
+  stays the single text wording; the image wording mirrors it and must be kept in step.
+- `_conf_schema.json` output-mode hint, README (reply section, example list, `docs/help_preview.jpg` from
+  `tools/build_preview.py`), CHANGELOG "未发布", checklist. Fonts rebuilt.
+- Tests: `tests/test_help_image.py` (JPEG, deterministic, every command drawn, default mode / arena rule / index
+  interval follow the card, exactly one "默认" mark on the right chip, footer last), plugin tests
+  `test_help_follows_the_output_mode`, `test_help_image_settings_and_failure`. 184 -> 190. Mutation check (6): always
+  text, arena flag, index interval, default mark, arena rule, search link — all killed.

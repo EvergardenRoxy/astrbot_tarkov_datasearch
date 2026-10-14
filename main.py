@@ -17,6 +17,7 @@ from .tarkov_core.names import NAME, SUGGESTIONS, NameIndex
 from .tarkov_core.arena import build_arena_card, render_arena_markdown, render_arena_text, summarize_arena
 from .tarkov_core.arena_image import render_arena_image
 from .tarkov_core.card import build_card
+from .tarkov_core.help_image import render_help_image
 from .tarkov_core.image import render_image
 from .tarkov_core.output import render_markdown, render_text
 from .tarkov_core.profile import summarize
@@ -148,6 +149,25 @@ class TarkovPlugin(Star):
                 '再把跳转后的网址发给我；之后就能直接用名字查（按 ID 或网址查到过的名字会被记住' + index + '）。\n'
                 '档案不会自动更新：要看最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面。')
 
+    def help_card(self):
+        """What the help image shows; the same settings as help_text."""
+        mode = self.default_mode()
+        return {'mode': mode, 'label': label_of(mode), 'search': search_url(mode), 'example': page_url(mode, 1234567),
+                'arena_by_default': self.arena_by_default(),
+                'index': every(self.names.refresh_seconds) if self.index_enabled() else None}
+
+    async def help_reply(self, event):
+        """The help in the configured output: an image (maintainer: the text is hard to read on phones) followed by
+        the search page as a clickable link, or the text when the output is text or Markdown or drawing fails."""
+        if self.output_mode() == 'image':
+            try:
+                data = await asyncio.to_thread(render_help_image, self.help_card())
+                return event.chain_result([Image.fromBytes(data),
+                                           Plain(f'tarkov.dev 玩家搜索：{search_url(self.default_mode())}')])
+            except Exception as exc:
+                logger.warning('Tarkov help image failed, sending text: %s', type(exc).__name__)
+        return event.plain_result(self.help_text())
+
     @filter.command('tarkov', alias={'塔科夫'})
     async def tarkov_command(self, event: AstrMessageEvent):
         text = COMMAND.sub('', event.message_str.strip(), count=1).strip()
@@ -164,7 +184,7 @@ class TarkovPlugin(Star):
         words = text.split()
         action = 'query'
         if words and words[0].lower() in HELP_WORDS:
-            yield event.plain_result(self.help_text())
+            yield await self.help_reply(event)
             return
         if words and words[0].lower() in UNBIND_WORDS and len(words) == 1:
             action, words = 'unbind', []
@@ -174,7 +194,7 @@ class TarkovPlugin(Star):
         if mode:
             words = words[1:]
         if len(words) > 1:
-            yield event.plain_result(self.help_text())
+            yield await self.help_reply(event)
             return
         target = words[0] if words else None
         if action == 'bind' and target is None:
