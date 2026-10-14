@@ -285,8 +285,10 @@ def render_image(card):
 def footer(d, y, updated, fill, small_fill):
     """The data-source line and the plugin's small print, from `y`; the y where the picture ends."""
     updated = f'档案更新于 GMT+8 {updated}' if updated else '时间为 GMT+8'
-    d.text((40, y+10), f'数据来自 tarkov.dev 公开快照（非实时） · {updated}', font=font('sc', 14, 400), fill=fill)
-    # Plugin name, repository and the open-source statement, centred and a little larger (maintainer).
+    line = f'数据来自 tarkov.dev 公开快照（非实时） · {updated}'
+    d.text((W/2-d.textlength(line, font=font('sc', 14, 400))/2, y+10), line, font=font('sc', 14, 400), fill=fill)
+    # Plugin name, repository and the open-source statement, centred like the line above and a little larger
+    # (maintainer).
     small = font('sc', 15, 400)
     for i, text in enumerate((f"{NAME} v{VERSION} · {REPO.removeprefix('https://')}", NOTICE)):
         d.text((W/2-d.textlength(text, font=small)/2, y+38+i*24), text, font=small, fill=small_fill)

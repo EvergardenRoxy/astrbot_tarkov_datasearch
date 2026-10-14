@@ -137,13 +137,35 @@ class ArenaImageTests(unittest.TestCase):
         self.assertIn('排位  RANKED · 计入 ARP', drawn)
         self.assertIn('95 W  ·  105 L', drawn)
         self.assertIn('TEAM FIGHT', drawn)
-        self.assertIn('60 – 40', drawn)
+        self.assertIn('60 / 40', drawn)  # counts under the win / loss bar
+        self.assertIn('ARENA MASTERS · 竞技场主办方存档', drawn)
+        self.assertFalse([text for text in drawn if '登记人' in text])
         self.assertIn('这个账号在 PVE 模式下也有档案', drawn)
         self.assertTrue(any('数据不会自动更新' in text for text in drawn))
         # Maintainer: no level; the footer is the last thing on the page.
         self.assertFalse([text for text in drawn if '等级' in text or 'LVL' in text])
         self.assertIn('Jackal', drawn)  # rank under the ARP on the coin
         self.assertEqual(drawn[-1], '本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系')
+
+    def test_win_loss_bar(self):
+        # Maintainer: wins green, losses red, as one bar; counts in small print under it.
+        img = Image.new('RGB', (200, 60), (255, 255, 255))
+        d = ImageDraw.Draw(img)
+        arena_image.win_bar(d, 10, 0, 100, 3, 1)
+        self.assertEqual(img.getpixel((30, 15)), arena_image.WIN)
+        self.assertEqual(img.getpixel((100, 15)), arena_image.LOSS)
+        img = Image.new('RGB', (200, 60), (255, 255, 255))
+        d = ImageDraw.Draw(img)
+        arena_image.win_bar(d, 10, 0, 100, 0, 0)  # no games: an empty frame, no division by zero
+        self.assertEqual(img.getpixel((50, 15)), (255, 255, 255))
+        drawn = []
+        real = ImageDraw.ImageDraw.text
+        def record_text(self, xy, text, *args, **kwargs):
+            drawn.append(text)
+            return real(self, xy, text, *args, **kwargs)
+        with patch.object(ImageDraw.ImageDraw, 'text', record_text):
+            arena_image.win_bar(ImageDraw.Draw(img), 10, 0, 100, None, None)
+        self.assertEqual(drawn, ['—'])
 
     def test_odd_cards_still_render(self):
         raw = arena_profile(stat={'arenaOverAllCounters': {f'UnrankedMode{chr(65+i)}': {'Counters': {'Kills': 10**15, 'GamesCount': 3, 'ArenaWins': 9}}

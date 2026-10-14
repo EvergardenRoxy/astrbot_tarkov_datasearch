@@ -16,6 +16,8 @@ from .image import W, fit, font, footer, jpeg, right, safe, wrap
 
 LEATHER, PAGE, INK, BROWN, GOLD, GOLD_DARK, WAX = (52, 34, 26), (226, 214, 186), (40, 30, 24), (120, 90, 50), (190, 156, 76), (150, 118, 50), (128, 26, 30)
 RULE = (150, 120, 80)
+# Win / loss bar colours (the main card's survived and KIA colours).
+WIN, LOSS = (86, 122, 64), (150, 46, 38)
 # Table columns: (title, x).
 COLUMNS = (('赛事 EVENT', 40), ('出场', 240), ('胜 – 负', 300), ('胜率', 425), ('击杀', 500), ('K/D', 570), ('MVP', 630))
 
@@ -76,6 +78,21 @@ def wax_seal(d, cx, cy, r):
     centered(d, cx, cy-14, 'HOST', font('osw', 24, 700), (230, 190, 180))
 
 
+def win_bar(d, x, y, width, wins, lost):
+    """Wins in green and losses in red as one bar, the counts in small print under it (maintainer)."""
+    if wins is None:
+        d.text((x, y+6), '—', font=font('mono', 20), fill=INK)
+        return
+    total = wins+(lost or 0)
+    if total:
+        split = x+width*wins/total
+        d.rectangle([x, y+9, split, y+21], fill=WIN)
+        d.rectangle([split, y+9, x+width, y+21], fill=LOSS)
+    d.rectangle([x, y+9, x+width, y+21], outline=INK, width=1)
+    counts = f'{wins} / {lost}'
+    d.text((x, y+23), counts, font=fit(d, counts, 'mono', 12, width), fill=BROWN)
+
+
 def notes_of(card):
     return (([stale_note(card['stale_days'])] if card['stale_days'] else [])+card['notes']
             + ([refresh_note(card['refresh_url'])] if card['refresh_url'] else []))
@@ -133,9 +150,12 @@ def render_arena_image(card):
             wins, lost = stats.get('wins'), losses(stats)
             label = safe(label.upper(), latin=True)
             d.text((40, y+6), label, font=fit(d, label, 'osw', 22, 190, 500), fill=INK)
-            values = [stats.get('games', 0), f'{wins} – {lost}' if wins is not None else '—', win_rate(stats) or '—',
-                      stats.get('kills', 0), kd(stats) or '—', stats.get('mvp', 0)]
+            values = [stats.get('games', 0), None, win_rate(stats) or '—', stats.get('kills', 0), kd(stats) or '—',
+                      stats.get('mvp', 0)]
             for (_, x), (_, next_x), value in zip(COLUMNS[1:], COLUMNS[2:]+(('', pw-66),), values):
+                if value is None:
+                    win_bar(d, x, y, next_x-x-12, wins, lost)
+                    continue
                 text = str(value)
                 d.text((x, y+6), text, font=fit(d, text, 'mono', 20, next_x-x-8), fill=INK)
             if wins is not None and lost is not None and wins > lost:
@@ -148,9 +168,14 @@ def render_arena_image(card):
         for line in wrap(d, safe(note), font('sc', 15, 400), pw-80):
             d.text((40, y), line, font=font('sc', 15, 400), fill=INK)
             y += 24
-    y += 10
-    d.text((40, y), '登记人：THE HOST', font=font('sc', 16, 600), fill=BROWN)
-    d.line([150, y+24, 330, y+24], fill=INK, width=1)
+    y += 14
+    # The register's closing rule (replaces the "登记人：THE HOST" signature, maintainer).
+    closing = 'ARENA MASTERS · 竞技场主办方存档'
+    gap = d.textlength(closing, font=font('sc', 15, 600))/2+16
+    for x0, x1 in ((40, pw/2-gap), (pw/2+gap, pw-40)):
+        d.line([x0, y+10, x1, y+10], fill=INK, width=2)
+        d.line([x0, y+15, x1, y+15], fill=INK, width=1)
+    centered(d, pw/2, y+1, closing, font('sc', 15, 600), BROWN)
     page_h = y+70
     height = 40+page_h+14+84+20
     img = texture(LEATHER, 21, 14, W, height)
