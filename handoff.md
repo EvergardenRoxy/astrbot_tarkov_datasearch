@@ -13,8 +13,8 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Inputs | Maintainer's analysis `report.md` of the-hideout/tarkov-dev (not in the tree; key facts restated in §2). Maintainer's own profile JSON downloaded from tarkov.dev, used only for a local comparison (§2.4), not committed. |
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
-| Version | 0.4.2 since §21; 0.4.1 since §20; 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 191, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Version | 0.4.3 since §22-§23; 0.4.2 since §21; 0.4.1 since §20; 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
+| Tests | 192, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -80,7 +80,7 @@ not present in any profile seen; it is not used.
 | Card | `tarkov_core/card.py` | `build_card(summary, mode_label, skill_limit, notes, now)`: the one content model for every output (formatted rates/K/D, Beijing-time strings, stale days, skills shown = all elite + `skill_limit` others, notes). |
 | Output | `tarkov_core/output.py` | `render_text(card)` (unchanged text format; `render(summary, …)` wraps it) and `render_markdown(card)` (escapes Markdown in third-party text). |
 | Image | `tarkov_core/image.py`, `tarkov_core/fonts/` | `render_image(card)` -> JPEG bytes (q85, 4:4:4), 820 px wide, height from content. Bundled OFL fonts; characters outside `NotoSansSC-Subset.chars.txt`/ASCII drawn as `?`. Seeded paper grain, so output is byte-stable. |
-| Plugin | `main.py` | `/tarkov` (alias `/塔科夫`). Flow: access check → parse `[mode] target` → digits: fetch by id, on 404 fall back to the name index if the digits are a valid name → name: refresh notice if needed, lookup, disambiguate (one exact-case hit wins; otherwise >1 hit lists ids) → fetch → `reply()`: card, then image (`asyncio.to_thread`, `Image.fromBytes`, text on any failure), text or Markdown per `output_mode` (unknown value -> image). One in-flight query per sender (`self.active`, sha256 of origin + sender like spark). Profile summaries cached in memory (TTL `profile_cache_minutes`, at most `CACHE_ENTRIES` = 128, oldest-inserted evicted). |
+| Plugin | `main.py` | command `tarkov` (alias `塔科夫`), shown to users as `@机器人 tarkov` (§23); `/tarkov` works too. Flow: access check → parse `[mode] target` → digits: fetch by id, on 404 fall back to the name index if the digits are a valid name → name: refresh notice if needed, lookup, disambiguate (one exact-case hit wins; otherwise >1 hit lists ids) → fetch → `reply()`: card, then image (`asyncio.to_thread`, `Image.fromBytes`, text on any failure), text or Markdown per `output_mode` (unknown value -> image). One in-flight query per sender (`self.active`, sha256 of origin + sender like spark). Profile summaries cached in memory (TTL `profile_cache_minutes`, at most `CACHE_ENTRIES` = 128, oldest-inserted evicted). |
 | Accounts | `tarkov_core/accounts.py` | Since §16 the main way to resolve names. One SQLite file: `bindings(owner, aid, nickname, bound_at)` with `owner` = sha256(platform id NUL sender id); `names(key, aid, name, seen_at)` shared by everyone, fed by every fetched profile (`TarkovPlugin.profile()`), lookups exact-case first then most recently seen, capped at `MAX_NAMES` = 200,000 (least recently seen dropped). |
 
 Measured (this container, 2026-10-13): PVP index download + build 23-26 s, db 97 MB, process max RSS ~106 MB;
@@ -440,7 +440,7 @@ second for that reason.
 Implement B (query by player-page link) and D (remember name -> id); remind users that data must be refreshed by hand;
 the plugin returns to "bind identity + query", with names supplied by the users. Then (AskUserQuestion): the downloaded
 index stays as an option, **off by default**; a binding holds across all chats of one platform; the name record is
-shared by everyone; `/tarkov` without arguments queries the caller's own binding (help moves to `/tarkov 帮助`).
+shared by everyone; `@机器人 tarkov` without arguments queries the caller's own binding (help moves to `@机器人 tarkov 帮助`).
 
 ### 16.3 Changes
 
@@ -453,8 +453,8 @@ shared by everyone; `/tarkov` without arguments queries the caller's own binding
 | Config | `name_index_enabled` (bool, default false, schema = code fallback); `name_index_refresh_hours` and the timeout hint now say they apply only with the index. |
 | Fonts | Subset rebuilt for the new text (character list 1242 bytes, 196 KB). |
 
-Live run (real network, SDK stubbed, data dir fresh, not uploaded): unbound `/tarkov` -> guidance; bind by B's
-link; `/tarkov pve` -> image + link line; `/tarkov` (PVP, no profile) -> guidance with the PVP search link; A by
+Live run (real network, SDK stubbed, data dir fresh, not uploaded): unbound `@机器人 tarkov` -> guidance; bind by B's
+link; `@机器人 tarkov pve` -> image + link line; `@机器人 tarkov` (PVP, no profile) -> guidance with the PVP search link; A by
 name -> unknown + steps; by link -> image; then A's name in lower case -> image (learned); unbind. The data dir held only
 `accounts.sqlite3` (no index download).
 
@@ -483,9 +483,9 @@ record failure tolerated, link host check. All killed. 115 -> 131 tests.
   131 -> 137. Mutation check (9): explicit mode kept, fallback, explicit flag, main-mode error, "also has" note,
   bind in any mode, not-found TTL, not-found cached, rename note. All killed.
 - Fonts: subset rebuilt for the new messages (character list 1248 bytes, 196 KB).
-- Live run after the push: `/tarkov pvp <A's id>` (PVE profile only) answered "no profile, unknown name": an id of 5+
+- Live run after the push: `@机器人 tarkov pvp <A's id>` (PVE profile only) answered "no profile, unknown name": an id of 5+
   digits is also a valid nickname, so the name lookup ran and its "unknown" text replaced the id's. Now, when no name
-  matches, the id's own answer is given ("PVP 模式下还没有…但 PVE 模式（/tarkov pve <id>）下有档案").
+  matches, the id's own answer is given ("PVP 模式下还没有…但 PVE 模式（@机器人 tarkov pve <id>）下有档案").
   `test_digits_with_a_profile_in_another_mode`; 137 -> 138; reverting the fix fails 2 tests.
 
 ## 17. Second independent review (after §16.4) and fixes
@@ -596,7 +596,7 @@ players.tarkov.dev with the plugin's own User-Agent (static files only; no playe
 
 ### 19.3 Arena implemented (maintainer's decisions)
 
-Decisions: query with `/tarkov 竞技场 <...>` and reserve a setting to query Arena by default; mode names stay English
+Decisions: query with `@机器人 tarkov 竞技场 <...>` and reserve a setting to query Arena by default; mode names stay English
 ("官方和游戏里也是英文"); ranked and unranked kept apart; three new picture proposals; no level.
 
 - `modes.py`: `MODES['arena'] = ('arena', '竞技场', 'arena')`, aliases `arena`/`竞技场`, `GAME_MODES = ('pvp', 'pve',
@@ -707,7 +707,7 @@ names. (The names and ids are not recorded here, §18.)
 - `Accounts.similar(name)`: same on the shared record, most recently seen first.
 - `main.py`: `similar_accounts(mode, target, exclude)` merges the record and (only with `name_index_enabled`) the
   index, dedupes by account, drops `exclude`, keeps 3. Used (1) when a name is unknown: "你是不是要找：X（账号 ID n）？
-  可以发送 /tarkov [mode] X。如果都不是，" before the usual steps; (2) when a name resolves to an account without a
+  可以发送 @机器人 tarkov [mode] X。如果都不是，" before the usual steps; (2) when a name resolves to an account without a
   profile in the mode: "名字相近的还有：X（账号 ID n），可以发送 … 试试。" (the live case: the '_' name had been learned
   from a PvP query); (3) in `bind()` when the record has no such name.
 - Tests: `VariantTests.test_spelling_variants`, `test_similar_names_from_the_index_on_disk_only` (no download, no
@@ -756,12 +756,12 @@ names. (The names and ids are not recorded here, §18.)
   second review as subsections of their versions, the real-player cleanup between 0.3.0 and 0.4.0, open questions
   renumbered); §6 items 8-10 added. Branch `v0.4.2` is one commit on top of `v0.4.1` with the work branch's tree.
 
-## 22. Help as an image (unreleased; maintainer: the text help is hard to read in phone chat apps)
+## 22. Help as an image (0.4.3; maintainer: the text help is hard to read in phone chat apps)
 
 - `tarkov_core/help_image.py`, `render_help_image(card)`: the dossier paper of `image.py` (`paper`, `footer`,
   `jpeg`), W 820, larger type than the profile card (headings 26 px, commands 24 px on dark "label tape", body 20 px)
   because it is read on phones. Sections: commands (`help_rows`), modes (`MODE_CHIPS`, the default one framed red with
-  a "默认" tab), first query in three numbered steps (search page, example `/tarkov <player page>`, names remembered
+  a "默认" tab), first query in three numbered steps (search page, example `@机器人 tarkov <player page>`, names remembered
   [+ name lists]), notes (snapshots do not refresh; `_`/`-` suggestions). Stamp "使用指南 / FIELD MANUAL". The canvas
   is 2400 px and cropped at the footer.
 - `image.footer()` takes an optional `line` replacing the data/update line (the help has no update time).
@@ -783,3 +783,24 @@ names. (The names and ids are not recorded here, §18.)
   fallback). Invariant added to §7. Test `test_links_are_always_given_as_text`: output image/text/markdown x drawing
   ok/failing x help/profile/Arena. 190 -> 191. Mutation check (2): link line after the help image, last line of the
   text help — both killed.
+
+## 23. Commands shown as "@机器人 tarkov" (0.4.3)
+
+Maintainer: Tencent only lets unverified QQ bots be invoked by mentioning them, "@机器人 + 指令" without a slash; every
+document and image should show commands that way.
+
+- Matching is unchanged: AstrBot routes `tarkov`/`塔科夫` (`filter.command`), and `COMMAND` strips an optional leading
+  `/`, so `@机器人 tarkov ...` (the mention is not part of `message_str`), `tarkov ...` and `/tarkov ...` all work.
+- Every command the plugin shows was rewritten from `/tarkov` to `@机器人 tarkov` (literal text in `main.py` and
+  `help_image.py`: help text, bind usage, first-time steps, other-mode hints, suggestions, `command_for`). The text help
+  gains a second line "群里先 @机器人，再发送下面的命令（不加 /）"; the help image's footnote under the command table says
+  the same. "@机器人" is a placeholder for the bot's mention, not its name.
+- Docs: README (usage note in "开始使用", aligned command block, all inline commands), CHANGELOG, checklist and this file
+  use the same form (`/tarkov` kept only where the doc says it also works). Fonts rebuilt; help preview redrawn.
+- Test `test_commands_are_shown_as_at_the_bot`: no `/tarkov` or `/塔科夫` command (URLs excluded) in `main.py` or
+  `tarkov_core/*.py`; `tarkov ...`, `塔科夫 ...` and `/tarkov ...` all query; the unbound reply shows `@机器人 tarkov 绑定`.
+  Expectations in other tests updated. 191 -> 192. Mutation check (2): one hint put back to `/tarkov` in `main.py` and
+  in `help_image.py` — both killed.
+- Release 0.4.3 (maintainer: "推送v0.4.3"): version bumped (`tarkov_core.VERSION`, `@register`, `metadata.yaml`, tests,
+  README), the maintainer's `logo.png` from `main` added to the tree. Branch `v0.4.3` is one commit on top of `main`
+  (= `v0.4.2` + logo) with the work branch's tree, so `main` can fast-forward to it.

@@ -140,7 +140,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(text=text):
                 event = Event(text)
                 result = await self.run_command(self.plugin(), event)
-                self.assertIn('绑定自己：/tarkov 绑定', result[0])
+                self.assertIn('绑定自己：@机器人 tarkov 绑定', result[0])
                 self.assertIn('档案不会自动更新', result[0])
                 self.assertNotIn('昵称名单', result[0])
                 self.assertTrue(event.stopped)
@@ -159,7 +159,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         for output in ('text', 'markdown'):
             with self.subTest(output=output):
                 result = await self.run_command(self.plugin({'output_mode': output}, output=None), Event('/tarkov 帮助'))
-                self.assertIn('绑定自己：/tarkov 绑定', result[0])
+                self.assertIn('绑定自己：@机器人 tarkov 绑定', result[0])
 
     async def test_links_are_always_given_as_text(self):
         # Maintainer: whatever the output, the link is also sent as text (an image cannot be tapped or copied).
@@ -199,9 +199,25 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                                   'search': 'https://tarkov.dev/players?gameMode=pvp-season',
                                   'example': 'https://tarkov.dev/players/pvp-season/1234567',
                                   'arena_by_default': True, 'index': '每天'}])
-        self.assertIn('绑定自己：/tarkov 绑定', result[0])
+        self.assertIn('绑定自己：@机器人 tarkov 绑定', result[0])
         self.assertTrue(any('help image failed' in str(entry[0]) for entry in self.logs))
         self.assertIsNone(self.plugin(output='image').help_card()['index'])
+
+    async def test_commands_are_shown_as_at_the_bot(self):
+        # Maintainer: unverified QQ bots only take "@机器人 tarkov ..." (no slash), so every command the plugin shows is
+        # written that way; what users type works with or without the slash.
+        import re
+        slash = re.compile(r'(?<![/:\w.])/(?:tarkov|塔科夫)')
+        for path in [ROOT/'main.py', *(ROOT/'tarkov_core').glob('*.py')]:
+            with self.subTest(path=path.name):
+                self.assertFalse(slash.findall(path.read_text(encoding='utf-8')))
+        self.profiles[('pve', 1234567)] = profile()
+        for text in ('tarkov pve 1234567', '塔科夫 pve 1234567', '/tarkov pve 1234567'):
+            with self.subTest(text=text):
+                result = await self.run_command(self.plugin(), Event(text))
+                self.assertIn('【塔科夫 PVE 档案】Test_Player', result[0])
+        result = await self.run_command(self.plugin(), Event('tarkov'))
+        self.assertIn('@机器人 tarkov 绑定 <跳转后的网址>', result[0])
 
     async def test_query_by_id(self):
         self.profiles[('pve', 1234567)] = profile()
@@ -241,7 +257,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
             result = await self.run_command(plugin, Event('/tarkov pve Nobody_Here'))
         self.assertIn('还不知道 Nobody_Here 的账号 ID', result[0])
         self.assertIn('https://tarkov.dev/players?gameMode=pve', result[0])
-        self.assertIn('/tarkov https://tarkov.dev/players/pve/1234567', result[0])
+        self.assertIn('@机器人 tarkov https://tarkov.dev/players/pve/1234567', result[0])
         self.assertEqual(self.fetched, [])
 
     async def test_ambiguous_names_are_listed(self):
@@ -291,7 +307,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.profiles[('pve', 7654321)] = profile(aid=7654321)
         result = await self.run_command(self.plugin(), Event('/tarkov pvp 7654321'))
         self.assertEqual(len(result), 1)
-        self.assertIn('PVP 模式下还没有账号 ID 7654321 的档案，但 PVE 模式（/tarkov pve 7654321）下有档案', result[0])
+        self.assertIn('PVP 模式下还没有账号 ID 7654321 的档案，但 PVE 模式（@机器人 tarkov pve 7654321）下有档案', result[0])
         self.assertNotIn('还不知道', result[0])
 
     async def test_refresh_notice_mentions_size_only_for_a_first_pvp_download(self):
@@ -329,7 +345,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         names = FakeNames(refresh=True, indexed=False)
         result = await self.run_command(self.plugin(names=names), Event('/tarkov pvp 7654321'))
         self.assertEqual(len(result), 1)
-        self.assertIn('但 PVE 模式（/tarkov pve 7654321）下有档案', result[0])
+        self.assertIn('但 PVE 模式（@机器人 tarkov pve 7654321）下有档案', result[0])
         self.assertEqual(names.lookups, [])
 
     async def test_bad_input(self):
@@ -562,16 +578,16 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('tarkov.dev 上还没有这个账号的 PVP 档案（要有的话，请在 tarkov.dev 用 PVP 模式搜索一次：https://tarkov.dev/players?gameMode=regular），下面是 PVE 模式的档案', result[0])
         # An explicit mode without a profile says where there is one.
         result = await self.run_command(plugin, Event('/tarkov pvp'))
-        self.assertIn('你绑定的账号 Player_Two：PVP 模式下还没有账号 ID 2345678 的档案，但 PVE 模式（/tarkov pve 2345678）下有档案', result[0])
+        self.assertIn('你绑定的账号 Player_Two：PVP 模式下还没有账号 ID 2345678 的档案，但 PVE 模式（@机器人 tarkov pve 2345678）下有档案', result[0])
         self.assertIn('https://tarkov.dev/players?gameMode=regular', result[0])
 
     async def test_bind_by_id_by_name_and_failures(self):
         self.profiles[('pvp-season', 7)] = profile(aid=7, info_nickname='Seven')
         plugin = self.plugin()
-        self.assertIn('用法：/tarkov 绑定', (await self.run_command(plugin, Event('/tarkov 绑定')))[0])
+        self.assertIn('用法：@机器人 tarkov 绑定', (await self.run_command(plugin, Event('/tarkov 绑定')))[0])
         result = await self.run_command(plugin, Event('/tarkov 绑定 赛季 9'))
         self.assertIn('tarkov.dev 上还没有账号 ID 9 的档案（PVP、PVE、赛季都没有）', result[0])
-        self.assertIn('/tarkov 绑定 https://tarkov.dev/players/pvp-season/1234567', result[0])
+        self.assertIn('@机器人 tarkov 绑定 https://tarkov.dev/players/pvp-season/1234567', result[0])
         self.assertIn('不能确定 Seven 是哪个账号', (await self.run_command(plugin, Event('/tarkov 绑定 赛季 Seven')))[0])
         self.assertIn('已绑定：Seven', (await self.run_command(plugin, Event('/tarkov bind season 7')))[0])
         # The name is now known, so binding by name works too.
@@ -642,7 +658,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         result = await self.run_command(self.plugin(), Event('/tarkov 7'))
         self.assertTrue(result[0].startswith('【塔科夫 PVE 档案】Seven'))
         self.assertIn('tarkov.dev 上还没有这个账号的 PVP 档案（要有的话，请在 tarkov.dev 用 PVP 模式搜索一次：https://tarkov.dev/players?gameMode=regular），下面是 PVE 模式的档案', result[0])
-        self.assertIn('这个账号在 PVP 赛季 模式下也有档案，查询时写上模式即可（例如 /tarkov 赛季 7）', result[0])
+        self.assertIn('这个账号在 PVP 赛季 模式下也有档案，查询时写上模式即可（例如 @机器人 tarkov 赛季 7）', result[0])
         self.assertEqual(sorted(self.fetched), [('profile', 7), ('pve', 7), ('pvp-season', 7)])
 
     async def test_a_chosen_mode_is_kept(self):
@@ -653,7 +669,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('下面是', result[0])
         self.assertIn('这个账号在 PVP 模式下也有档案', result[0])
         result = await self.run_command(self.plugin(), Event('/tarkov pve 7'))
-        self.assertIn('PVE 模式下还没有账号 ID 7 的档案，但 PVP 模式（/tarkov pvp 7）、PVP 赛季 模式（/tarkov 赛季 7）下有档案', result[0])
+        self.assertIn('PVE 模式下还没有账号 ID 7 的档案，但 PVP 模式（@机器人 tarkov pvp 7）、PVP 赛季 模式（@机器人 tarkov 赛季 7）下有档案', result[0])
 
     async def test_names_work_in_every_mode(self):
         self.profiles[('pvp-season', 7)] = profile(aid=7, info_nickname='Seven')
@@ -706,7 +722,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('PVE 模式这次没有查到（tarkov.dev 限制了访问频率（HTTP 429），请稍后再试），请稍后再试', result[0])
             # Explicit mode without a profile while another mode failed: "has a profile in" plus the failure.
             result = [r async for r in plugin.tarkov_command(Event('/tarkov pvp 7'))]
-            self.assertIn('但 PVP 赛季 模式（/tarkov 赛季 7）下有档案；PVE 模式这次没有查到', result[0])
+            self.assertIn('但 PVP 赛季 模式（@机器人 tarkov 赛季 7）下有档案；PVE 模式这次没有查到', result[0])
             self.assertNotIn('都没有', result[0])
 
     async def test_a_failed_default_mode_falls_back_with_a_note(self):
@@ -793,7 +809,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         names = FakeNames({'pve': [(5, 'PveOnly')]})
         result = await self.run_command(self.plugin(names=names), Event('/tarkov PveOnly'))
         self.assertIn('tarkov.dev 的 PVP 昵称名单', result[0])
-        self.assertIn('其他模式的名单要写上模式查询，例如 /tarkov pve PveOnly', result[0])
+        self.assertIn('其他模式的名单要写上模式查询，例如 @机器人 tarkov pve PveOnly', result[0])
         result = await self.run_command(self.plugin(names=names), Event('/tarkov pvp PveOnly'))
         self.assertNotIn('其他模式的名单', result[0])
 
@@ -838,7 +854,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         plugin.cache.clear()
         result = await self.run_command(plugin, Event('/tarkov 7'))
         self.assertTrue(result[0].startswith('【塔科夫 PVE 档案】'))
-        self.assertIn('这个账号在 竞技场 模式下也有档案，查询时写上模式即可（例如 /tarkov 竞技场 7）', result[0])
+        self.assertIn('这个账号在 竞技场 模式下也有档案，查询时写上模式即可（例如 @机器人 tarkov 竞技场 7）', result[0])
         del self.profiles[('pve', 7)], self.profiles[('arena', 7)]
         plugin.cache.clear()
         result = await self.run_command(plugin, Event('/tarkov 7'))
@@ -895,13 +911,13 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         await self.run_command(plugin, Event('/tarkov 竞技场 5'))
         self.fetched.clear()
         result = await self.run_command(plugin, Event('/tarkov 竞技场 arena_fan'))
-        self.assertIn('还不知道 arena_fan 的账号 ID。你是不是要找：Arena-Fan（账号 ID 5）？可以发送 /tarkov 竞技场 Arena-Fan。'
+        self.assertIn('还不知道 arena_fan 的账号 ID。你是不是要找：Arena-Fan（账号 ID 5）？可以发送 @机器人 tarkov 竞技场 Arena-Fan。'
                       '如果都不是，请先在 tarkov.dev 用 竞技场 模式搜索一次这名玩家', result[0])
         self.assertEqual(self.fetched, [])
         result = await self.run_command(plugin, Event('/tarkov arena_fan'))
-        self.assertIn('可以发送 /tarkov Arena-Fan。', result[0])
+        self.assertIn('可以发送 @机器人 tarkov Arena-Fan。', result[0])
         result = await self.run_command(plugin, Event('/tarkov 绑定 arena_fan'))
-        self.assertIn('不能确定 arena_fan 是哪个账号。你是不是要找：Arena-Fan（账号 ID 5）？可以发送 /tarkov 绑定 Arena-Fan。', result[0])
+        self.assertIn('不能确定 arena_fan 是哪个账号。你是不是要找：Arena-Fan（账号 ID 5）？可以发送 @机器人 tarkov 绑定 Arena-Fan。', result[0])
         result = await self.run_command(plugin, Event('/tarkov 竞技场 nobody_here'))
         self.assertNotIn('你是不是要找', result[0])
         # Maintainer's live case: the name belongs to a known account without an Arena profile, and an account spelled
@@ -910,7 +926,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         await self.run_command(plugin, Event('/tarkov 6'))
         result = await self.run_command(plugin, Event('/tarkov 竞技场 arena_fan'))
         self.assertIn('arena_fan 的账号 ID 是 6。tarkov.dev 上还没有账号 ID 6 的竞技场档案。', result[0])
-        self.assertIn('名字相近的还有：Arena-Fan（账号 ID 5），可以发送 /tarkov 竞技场 Arena-Fan 试试。', result[0])
+        self.assertIn('名字相近的还有：Arena-Fan（账号 ID 5），可以发送 @机器人 tarkov 竞技场 Arena-Fan 试试。', result[0])
         # The account itself is never suggested, even when it was once seen under a near spelling.
         await asyncio.to_thread(plugin.accounts.remember, 6, 'ARENA-FAN')
         result = await self.run_command(plugin, Event('/tarkov 竞技场 arena_fan'))
@@ -926,7 +942,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('你是不是要找', result[0])
         names.table['pve'] = [(7, 'Some-Player-x')]
         result = await self.run_command(plugin, Event('/tarkov pve Some_Player_x'))
-        self.assertIn('你是不是要找：Some-Player-x（账号 ID 7）？可以发送 /tarkov pve Some-Player-x。', result[0])
+        self.assertIn('你是不是要找：Some-Player-x（账号 ID 7）？可以发送 @机器人 tarkov pve Some-Player-x。', result[0])
         self.assertEqual(names.similar_calls[-1], ('pve', 'Some_Player_x'))
         # With the index off, the downloaded index is not consulted.
         calls = len(names.similar_calls)
