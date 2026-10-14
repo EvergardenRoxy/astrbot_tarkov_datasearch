@@ -13,7 +13,7 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Inputs | Maintainer's analysis `report.md` of the-hideout/tarkov-dev (not in the tree; key facts restated in §2). Maintainer's own profile JSON downloaded from tarkov.dev, used only for a local comparison (§2.4), not committed. |
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
-| Version | 0.4.1 since §20; 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
+| Version | 0.4.2 since §21; 0.4.1 since §20; 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
 | Tests | 184, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
@@ -130,6 +130,12 @@ tests were added or bounded for each, and one survivor was a no-op mutation (it 
    the README example and `docs/preview.jpg` use invented values only (§18; before §18 the fixture numbers had been
    copied from the maintainer's PVE profile).
 7. `report.md` is not committed; §2 restates what this code depends on.
+8. "预留默认查询竞技场的设置" read as the `arena_by_default` switch (Arena joins queries without a mode), not as an
+   Arena option for `default_mode` (§19.3).
+9. Arena ranks from BestArp with the maintainer's overlapping table cut at each rank's upper limit; the profile has
+   no current ARP, so the rank shown is the highest reached (§21).
+10. The maintainer's open-source sentence is spaced like the other chat texts (a space between CJK and Latin); the
+    image footer says "GMT+8 {time}", the text and Markdown replies still say "（北京时间）" (§21).
 
 ## 7. Invariants for future changes
 
@@ -536,7 +542,7 @@ The subset now holds 484 characters (character list 1263 bytes, font 197,760 byt
   Copies cloned or forked before the rewrite, and GitHub's cache of the old commits, are outside this repository's
   control.
 
-## 19. After the maintainer's closed test (unreleased)
+## 19. After the maintainer's closed test (0.4.0)
 
 Feedback: the maintainer wants the plugin name, the GitHub repository and the open-source licence in small print at
 the foot of the generated content; testers liked the image but asked for Tarkov Arena.
@@ -714,7 +720,7 @@ names. (The names and ids are not recorded here, §18.)
   on top of `v0.4.0` (whose history never held the reference player's name, §19.7), with the same tree as the work
   branch.
 
-## 21. PMC K/D, source lines, image wording, Arena ranks (unreleased; maintainer's list)
+## 21. PMC K/D, source lines, image wording, Arena ranks (0.4.2; maintainer's list)
 
 - `card.side()`: `pmc_kd` = PMC kills / deaths (None without deaths). Text "，PMC K/D x" after "击杀 PMC n"; Markdown
   column "PMC K/D" after "击杀 PMC"; image combat table gets a ninth column (xs re-spaced: 40, 135, 210, 285, 385,
@@ -743,3 +749,7 @@ names. (The names and ids are not recorded here, §18.)
   "登记人：THE HOST" signature is replaced by a closing double rule broken around "ARENA MASTERS · 竞技场主办方存档"
   (the wax seal stays). Tests: `test_win_loss_bar`, registry content, centred data line. 183 -> 184. Mutation check
   (5): centred data line, bar colours, zero-games guard, counts, closing line — all killed.
+- Release 0.4.2 (maintainer: "整理changelog handoff checklist文件后，推送分支v0.4.2"): version bumped in the usual
+  places; CHANGELOG `## 0.4.2 - 2026-10-14`; checklist reorganised (versions newest first, 0.1.0's audits and 0.3.0's
+  second review as subsections of their versions, the real-player cleanup between 0.3.0 and 0.4.0, open questions
+  renumbered); §6 items 8-10 added. Branch `v0.4.2` is one commit on top of `v0.4.1` with the work branch's tree.
