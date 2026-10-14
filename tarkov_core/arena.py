@@ -89,6 +89,27 @@ def kd(stats):
     return f"{stats.get('kills', 0)/deaths:.2f}" if deaths else None
 
 
+def losses(stats):
+    """Losses of a mode: the counter when the document has it, else games minus wins; None without wins."""
+    if stats.get('losses') is not None:
+        return stats['losses']
+    return max(0, stats.get('games', 0)-stats['wins']) if stats.get('wins') is not None else None
+
+
+def record(section):
+    """(wins, losses) summed over a section's modes, or None when no mode counts wins."""
+    counted = [(stats['wins'], losses(stats)) for _, stats in section['modes'] if stats.get('wins') is not None]
+    return (sum(w for w, _ in counted), sum(l for _, l in counted)) if counted else None
+
+
+def best_arp(card):
+    """The highest ARP in any section or mode, or None."""
+    values = [stats.get('best_arp') for section in card['sections']
+              for stats in [section['overall'] or {}]+[stats for _, stats in section['modes']]]
+    values = [value for value in values if value]
+    return max(values) if values else None
+
+
 def win_rate(stats):
     games, wins = stats.get('games'), stats.get('wins')
     return f'{wins/games*100:.1f}%' if games and wins is not None else None

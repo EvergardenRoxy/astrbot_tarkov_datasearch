@@ -811,10 +811,17 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         result = await self.run_command(self.plugin(output='markdown'), Event('/tarkov 竞技场 7'))
         self.assertIn('## 塔科夫竞技场档案', result[0])
         self.assertIn('**账号 ID** 7', result[0])
-        # Image output: text until the Arena picture style is chosen.
+        # Image output (the default): the Arena Masters' registry picture, then the refresh link.
         result = await self.run_command(self.plugin(output=None), Event('/tarkov 竞技场 7'))
-        self.assertIsInstance(result[0], str)
-        self.assertIn('竞技场的图片样式还在设计中，暂以文字回复', result[0])
+        image, line = result[0]
+        self.assertEqual(image.data[:2], b'\xff\xd8')
+        self.assertEqual(line.text, '刷新数据：在 tarkov.dev 打开 https://tarkov.dev/players/arena/7')
+        def broken(card):
+            raise OSError('font missing')
+        with patch.object(self.module, 'render_arena_image', broken):
+            result = await self.run_command(self.plugin(output=None), Event('/tarkov 竞技场 7', sender='x'))
+        self.assertTrue(result[0].startswith('【塔科夫竞技场档案】'))
+        self.assertIn('（图片生成失败，已改为文字）', result[0])
 
     async def test_bind_accepts_a_profile_in_any_mode(self):
         self.profiles[('pve', 7)] = profile(aid=7, info_nickname='Seven')

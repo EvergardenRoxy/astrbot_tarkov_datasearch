@@ -276,12 +276,21 @@ def render_image(card):
             y += 26
     y += 16
     d.line([40, y, W-40, y], fill=INK)
-    updated = f"档案更新于 {card['updated']}（北京时间）" if card['updated'] else '时间为北京时间'
-    d.text((40, y+10), f'数据来自 tarkov.dev 公开快照（非实时） · {updated}', font=font('sc', 14, 400), fill=FADED)
+    return jpeg(img.crop((0, 0, W, footer(d, y, card['updated'], FADED, FADED))))
+
+
+def footer(d, y, updated, fill, small_fill):
+    """The data-source line and the plugin's small print, from `y`; the y where the picture ends."""
+    updated = f'档案更新于 {updated}（北京时间）' if updated else '时间为北京时间'
+    d.text((40, y+10), f'数据来自 tarkov.dev 公开快照（非实时） · {updated}', font=font('sc', 14, 400), fill=fill)
     # Plugin name, repository and licence in small print at the very foot (maintainer, after the closed test).
     small = font('sc', 13, 400)
-    d.text((40, y+34), f"{NAME} v{VERSION} · {REPO.removeprefix('https://')}", font=small, fill=FADED)
-    d.text((40, y+54), f'开源插件，{LICENSE} 许可；与 tarkov.dev 和 Battlestate Games 无关', font=small, fill=FADED)
+    d.text((40, y+34), f"{NAME} v{VERSION} · {REPO.removeprefix('https://')}", font=small, fill=small_fill)
+    d.text((40, y+54), f'开源插件，{LICENSE} 许可；与 tarkov.dev 和 Battlestate Games 无关', font=small, fill=small_fill)
+    return y+84
+
+
+def jpeg(img):
     out = io.BytesIO()
-    img.crop((0, 0, W, y+84)).save(out, 'JPEG', quality=JPEG_QUALITY, subsampling=0, optimize=True)
+    img.save(out, 'JPEG', quality=JPEG_QUALITY, subsampling=0, optimize=True)
     return out.getvalue()
