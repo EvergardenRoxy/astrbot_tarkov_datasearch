@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import arena_profile, profile
+from tarkov_core.names import spelling_variants
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -52,10 +53,16 @@ class FakeNames:
         self.indexed = indexed
         self.refresh_seconds = refresh_seconds
         self.lookups = []
+        self.similar_calls = []
 
     def needs_refresh(self, mode_path): return self.refresh
 
     def has_index(self, mode_path): return self.indexed
+
+    async def similar(self, mode_path, name):
+        self.similar_calls.append((mode_path, name))
+        variants = spelling_variants(name)
+        return [entry for entry in self.table.get(mode_path, []) if entry[1].lower() in variants][:3]
 
     async def lookup(self, mode_path, name):
         self.lookups.append((mode_path, name))
@@ -822,6 +829,52 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
             result = await self.run_command(self.plugin(output=None), Event('/tarkov 竞技场 7', sender='x'))
         self.assertTrue(result[0].startswith('【塔科夫竞技场档案】'))
         self.assertIn('（图片生成失败，已改为文字）', result[0])
+
+    async def test_names_differing_by_underscore_or_hyphen_are_suggested(self):
+        # Maintainer's live test: a name with '_' was asked for; the Arena player's name has '-' instead.
+        self.profiles[('arena', 5)] = arena_profile(aid=5, info_nickname='Arena-Fan')
+        plugin = self.plugin()
+        await self.run_command(plugin, Event('/tarkov 竞技场 5'))
+        self.fetched.clear()
+        result = await self.run_command(plugin, Event('/tarkov 竞技场 arena_fan'))
+        self.assertIn('还不知道 arena_fan 的账号 ID。你是不是要找：Arena-Fan（账号 ID 5）？可以发送 /tarkov 竞技场 Arena-Fan。'
+                      '如果都不是，请先在 tarkov.dev 用 竞技场 模式搜索一次这名玩家', result[0])
+        self.assertEqual(self.fetched, [])
+        result = await self.run_command(plugin, Event('/tarkov arena_fan'))
+        self.assertIn('可以发送 /tarkov Arena-Fan。', result[0])
+        result = await self.run_command(plugin, Event('/tarkov 绑定 arena_fan'))
+        self.assertIn('不能确定 arena_fan 是哪个账号。你是不是要找：Arena-Fan（账号 ID 5）？可以发送 /tarkov 绑定 Arena-Fan。', result[0])
+        result = await self.run_command(plugin, Event('/tarkov 竞技场 nobody_here'))
+        self.assertNotIn('你是不是要找', result[0])
+        # Maintainer's live case: the name belongs to a known account without an Arena profile, and an account spelled
+        # with '-' has one.
+        self.profiles[('profile', 6)] = profile(aid=6, info_nickname='arena_fan')
+        await self.run_command(plugin, Event('/tarkov 6'))
+        result = await self.run_command(plugin, Event('/tarkov 竞技场 arena_fan'))
+        self.assertIn('arena_fan 的账号 ID 是 6。tarkov.dev 上还没有账号 ID 6 的竞技场档案。', result[0])
+        self.assertIn('名字相近的还有：Arena-Fan（账号 ID 5），可以发送 /tarkov 竞技场 Arena-Fan 试试。', result[0])
+        # The account itself is never suggested, even when it was once seen under a near spelling.
+        await asyncio.to_thread(plugin.accounts.remember, 6, 'ARENA-FAN')
+        result = await self.run_command(plugin, Event('/tarkov 竞技场 arena_fan'))
+        self.assertNotIn('（账号 ID 6），', result[0])
+        self.assertIn('名字相近的还有：Arena-Fan（账号 ID 5）', result[0])
+
+    async def test_suggestions_from_the_downloaded_index(self):
+        names = FakeNames({'pve': [(7, 'Some-Player'), (8, 'some_player')], 'profile': [(9, 'Some-Player')]})
+        plugin = self.plugin(names=names)
+        result = await self.run_command(plugin, Event('/tarkov pve SOME-PLAYER-'))
+        self.assertNotIn('你是不是要找', result[0])
+        result = await self.run_command(plugin, Event('/tarkov pve Some_Player-x'))
+        self.assertNotIn('你是不是要找', result[0])
+        names.table['pve'] = [(7, 'Some-Player-x')]
+        result = await self.run_command(plugin, Event('/tarkov pve Some_Player_x'))
+        self.assertIn('你是不是要找：Some-Player-x（账号 ID 7）？可以发送 /tarkov pve Some-Player-x。', result[0])
+        self.assertEqual(names.similar_calls[-1], ('pve', 'Some_Player_x'))
+        # With the index off, the downloaded index is not consulted.
+        calls = len(names.similar_calls)
+        result = await self.run_command(self.plugin({'name_index_enabled': False}, names=names), Event('/tarkov pve Some_Player_x'))
+        self.assertNotIn('你是不是要找', result[0])
+        self.assertEqual(len(names.similar_calls), calls)
 
     async def test_bind_accepts_a_profile_in_any_mode(self):
         self.profiles[('pve', 7)] = profile(aid=7, info_nickname='Seven')
