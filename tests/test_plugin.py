@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from fixtures import profile
+from fixtures import arena_profile, profile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -738,6 +738,83 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         result = await self.run_command(self.plugin(), Event('/tarkov 绑定 7'))
         self.assertIn('PVP、PVP 赛季 模式的档案要在 tarkov.dev 用该模式搜索一次自己才会出现', result[0])
         self.assertIn('档案不会自动更新', result[0])
+
+    async def test_arena_is_asked_for_by_name(self):
+        # Maintainer: Arena is queried with "/tarkov 竞技场 <...>"; it is not looked at otherwise by default.
+        self.profiles[('arena', 7)] = arena_profile(aid=7)
+        self.profiles[('pve', 7)] = profile(aid=7)
+        plugin = self.plugin()
+        for text in ('/tarkov 竞技场 7', '/tarkov arena 7', '/塔科夫 竞技场 7'):
+            with self.subTest(text=text):
+                self.fetched.clear()
+                result = await self.run_command(plugin, Event(text, sender=text))
+                self.assertTrue(result[0].startswith('【塔科夫竞技场档案】Test_Player（账号 ID 7）'), result[0])
+                self.assertIn('非排位：对局 200', result[0])
+                self.assertIn('https://tarkov.dev/players/arena/7', result[0])
+        plugin.cache.clear()
+        self.fetched.clear()
+        result = await self.run_command(plugin, Event('/tarkov 竞技场 7'))
+        self.assertEqual(self.fetched, [('arena', 7)])
+        self.fetched.clear()
+        result = await self.run_command(plugin, Event('/tarkov 7'))
+        self.assertEqual(sorted(self.fetched), [('profile', 7), ('pve', 7), ('pvp-season', 7)])
+        self.assertNotIn('竞技场', result[0])
+
+    async def test_arena_by_default_setting(self):
+        self.profiles[('arena', 7)] = arena_profile(aid=7)
+        plugin = self.plugin({'arena_by_default': True})
+        self.assertIn('（也会看竞技场）', plugin.help_text())
+        self.assertIn('竞技场要写明', self.plugin().help_text())
+        result = await self.run_command(plugin, Event('/tarkov 7'))
+        self.assertEqual(sorted(self.fetched), [('arena', 7), ('profile', 7), ('pve', 7), ('pvp-season', 7)])
+        self.assertTrue(result[0].startswith('【塔科夫竞技场档案】'))
+        self.assertIn('tarkov.dev 上还没有这个账号的 PVP 档案', result[0])
+        self.profiles[('pve', 7)] = profile(aid=7)
+        plugin.cache.clear()
+        result = await self.run_command(plugin, Event('/tarkov 7'))
+        self.assertTrue(result[0].startswith('【塔科夫 PVE 档案】'))
+        self.assertIn('这个账号在 竞技场 模式下也有档案，查询时写上模式即可（例如 /tarkov 竞技场 7）', result[0])
+        del self.profiles[('pve', 7)], self.profiles[('arena', 7)]
+        plugin.cache.clear()
+        result = await self.run_command(plugin, Event('/tarkov 7'))
+        self.assertIn('（PVP、PVE、赛季、竞技场都没有）', result[0])
+
+    async def test_arena_is_not_a_default_mode(self):
+        # The schema offers only the game modes; a hand-edited "arena" default falls back to PVP.
+        self.assertEqual(self.plugin({'default_mode': 'arena'}).default_mode(), 'pvp')
+        self.assertEqual(self.plugin({'default_mode': 'pve'}).default_mode(), 'pve')
+
+    async def test_arena_links_binding_and_names(self):
+        self.profiles[('arena', 7)] = arena_profile(aid=7, info_nickname='Arena_Only')
+        plugin = self.plugin()
+        result = await self.run_command(plugin, Event('/tarkov https://tarkov.dev/players/arena/7'))
+        self.assertTrue(result[0].startswith('【塔科夫竞技场档案】Arena_Only'))
+        result = await self.run_command(plugin, Event('/tarkov pve https://tarkov.dev/players/arena/7'))
+        self.assertIn('网址里的模式是 竞技场，和你写的 PVE 不一致', result[0])
+        # The name learned from the Arena profile works like any other.
+        result = await self.run_command(plugin, Event('/tarkov 竞技场 arena_only'))
+        self.assertTrue(result[0].startswith('【塔科夫竞技场档案】Arena_Only'))
+        result = await self.run_command(plugin, Event('/tarkov 绑定 https://tarkov.dev/players/arena/7'))
+        self.assertIn('已绑定：Arena_Only（账号 ID 7），目前在 竞技场 模式下有档案', result[0])
+        result = await self.run_command(plugin, Event('/tarkov 竞技场'))
+        self.assertTrue(result[0].startswith('【塔科夫竞技场档案】Arena_Only'))
+        result = await self.run_command(plugin, Event('/tarkov https://tarkov.dev/players/unknown-mode/7'))
+        self.assertIn('插件不认识这个网址里的模式', result[0])
+
+    async def test_arena_missing_and_outputs(self):
+        result = await self.run_command(self.plugin(), Event('/tarkov 竞技场 8'))
+        self.assertIn('tarkov.dev 上还没有账号 ID 8 的竞技场档案', result[0])
+        self.assertIn('请先在 tarkov.dev 用 竞技场 模式搜索一次这名玩家（https://tarkov.dev/players?gameMode=arena）', result[0])
+        result = await self.run_command(self.plugin(), Event('/tarkov 绑定 8'))
+        self.assertNotIn('竞技场', result[0])
+        self.profiles[('arena', 7)] = arena_profile(aid=999)
+        result = await self.run_command(self.plugin(output='markdown'), Event('/tarkov 竞技场 7'))
+        self.assertIn('## 塔科夫竞技场档案', result[0])
+        self.assertIn('**账号 ID** 7', result[0])
+        # Image output: text until the Arena picture style is chosen.
+        result = await self.run_command(self.plugin(output=None), Event('/tarkov 竞技场 7'))
+        self.assertIsInstance(result[0], str)
+        self.assertIn('竞技场的图片样式还在设计中，暂以文字回复', result[0])
 
     async def test_bind_accepts_a_profile_in_any_mode(self):
         self.profiles[('pve', 7)] = profile(aid=7, info_nickname='Seven')
