@@ -145,6 +145,39 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn('昵称名单', result[0])
                 self.assertTrue(event.stopped)
 
+    async def test_help_follows_the_output_mode(self):
+        # Maintainer: the text help is hard to read on phones; with image output it is a picture plus the search link.
+        from PIL import Image as PILImage
+        result = await self.run_command(self.plugin({'default_mode': 'pve'}, output=None), Event('/tarkov 帮助'))
+        image, link = result[0]
+        self.assertIsInstance(image, ImageStub)
+        self.assertEqual(PILImage.open(io.BytesIO(image.data)).width, 820)
+        self.assertIsInstance(link, PlainStub)
+        self.assertEqual(link.text, 'tarkov.dev 玩家搜索：https://tarkov.dev/players?gameMode=pve')
+        result = await self.run_command(self.plugin(output=None), Event('/tarkov pve a b'))
+        self.assertIsInstance(result[0][0], ImageStub)
+        for output in ('text', 'markdown'):
+            with self.subTest(output=output):
+                result = await self.run_command(self.plugin({'output_mode': output}, output=None), Event('/tarkov 帮助'))
+                self.assertIn('绑定自己：/tarkov 绑定', result[0])
+
+    async def test_help_image_settings_and_failure(self):
+        cards = []
+        def spy(card):
+            cards.append(card)
+            raise OSError('font missing')
+        plugin = self.plugin({'default_mode': 'season', 'arena_by_default': True}, names=FakeNames(refresh_seconds=24*3600),
+                             output='image')
+        with patch.object(self.module, 'render_help_image', spy):
+            result = await self.run_command(plugin, Event('/tarkov 帮助'))
+        self.assertEqual(cards, [{'mode': 'season', 'label': 'PVP 赛季',
+                                  'search': 'https://tarkov.dev/players?gameMode=pvp-season',
+                                  'example': 'https://tarkov.dev/players/pvp-season/1234567',
+                                  'arena_by_default': True, 'index': '每天'}])
+        self.assertIn('绑定自己：/tarkov 绑定', result[0])
+        self.assertTrue(any('help image failed' in str(entry[0]) for entry in self.logs))
+        self.assertIsNone(self.plugin(output='image').help_card()['index'])
+
     async def test_query_by_id(self):
         self.profiles[('pve', 1234567)] = profile()
         result = await self.run_command(self.plugin(), Event('/tarkov pve 1234567'))
