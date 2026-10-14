@@ -13,7 +13,7 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Inputs | Maintainer's analysis `report.md` of the-hideout/tarkov-dev (not in the tree; key facts restated in §2). Maintainer's own profile JSON downloaded from tarkov.dev, used only for a local comparison (§2.4), not committed. |
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
-| Version | 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
+| Version | 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
 | Tests | 172, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
@@ -551,8 +551,8 @@ the foot of the generated content; testers liked the image but asked for Tarkov 
 - Tests: `test_footer_names_the_plugin_source_and_licence` (exact lines, drawn last, inside the picture, also with long
   notes), `test_footer_facts_match_the_repository` (`metadata.yaml` `repo` == `REPO`, LICENSE is the GPL, README names
   the licence). 153 -> 155. Font subset rebuilt (character list 1272 bytes, font 199,048 bytes). `docs/preview.jpg`
-  regenerated with `tools/build_preview.py`. Version left at 0.3.0 with an "未发布" CHANGELOG section, so the
-  `v0.3.0` branch the maintainer tested stays as tested; only the work branch was pushed.
+  regenerated with `tools/build_preview.py`. Version left at 0.3.0 with an "未发布" CHANGELOG section at first, so the
+  `v0.3.0` branch the maintainer tested stayed as tested; released as 0.4.0 with the Arena work (§19.7).
 
 ### 19.2 Arena: feasibility (research only, not implemented)
 
@@ -677,3 +677,11 @@ superseded unless the maintainer prefers one of them.
   and the image-failure fallback. 168 -> 172. Mutation check (8): best-ARP max, `ArenaLoses` first, losses floor,
   record without wins, image fallback note, link line, footer, row cap — all killed. Fonts rebuilt (character list
   1317 bytes, font 204,020 bytes).
+
+### 19.7 Release 0.4.0 (maintainer: "提交到新仓库v0.4.0")
+
+Version 0.4.0 (`VERSION`, `metadata.yaml`, `@register`, CHANGELOG `## 0.4.0 - 2026-10-14`, README/CHANGELOG AI
+statement "0.1.0 至 0.4.0"); branch `v0.4.0` created next to `v0.3.0`, the same way. Its history folds the proposal-B
+commit, the follow-up that removed the reference player's name from the docs, and this version bump into one commit,
+so the name never appears in `v0.4.0`'s history (it still appears in the work branch's history until that branch is
+rewritten, which waits for the maintainer).
