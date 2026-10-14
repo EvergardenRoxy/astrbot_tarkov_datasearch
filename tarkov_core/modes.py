@@ -9,12 +9,18 @@ MODES = {
     'pvp': ('profile', 'PVP', 'regular'),
     'pve': ('pve', 'PVE', 'pve'),
     'season': ('pvp-season', 'PVP 赛季', 'pvp-season'),
+    # Tarkov Arena: a separate game with the same account ids (handoff §19.2); looked at only when asked for, or when
+    # the "arena_by_default" setting adds it to queries without a mode.
+    'arena': ('arena', '竞技场', 'arena'),
 }
+# The main game's modes, looked at together when a query names no mode.
+GAME_MODES = ('pvp', 'pve', 'season')
 
 ALIASES = {
     'pvp': 'pvp', 'regular': 'pvp', '常规': 'pvp', '普通': 'pvp',
     'pve': 'pve',
     'season': 'season', 'pvp-season': 'season', '赛季': 'season',
+    'arena': 'arena', '竞技场': 'arena',
 }
 
 # A tarkov.dev player page: /players/<mode>/<account id>, or the older /player/<account id> (regular mode).
@@ -48,7 +54,7 @@ def search_url(mode):
 def parse_player_url(text):
     """(mode key or None, account id) for a tarkov.dev player page link, or None when `text` is not one.
 
-    The mode is None for a page mode the plugin does not support (arena)."""
+    The mode is None for a page mode the plugin does not know."""
     match = PLAYER_URL.fullmatch(str(text).strip())
     if not match:
         return None

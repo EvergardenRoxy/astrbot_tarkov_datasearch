@@ -154,7 +154,8 @@ class ModeTests(unittest.TestCase):
             'tarkov.dev/players/pvp-season/1': ('season', 1),
             'https://www.tarkov.dev/player/42': ('pvp', 42),
             'HTTPS://TARKOV.DEV/PLAYERS/PVE/7': ('pve', 7),
-            'https://tarkov.dev/players/arena/9': (None, 9),
+            'https://tarkov.dev/players/arena/9': ('arena', 9),
+            'https://tarkov.dev/players/unknown-mode/9': (None, 9),
         }
         for url, expected in cases.items():
             with self.subTest(url=url):

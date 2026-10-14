@@ -59,3 +59,37 @@ def profile(**changes):
         else:
             data[key] = value
     return data
+
+
+ARENA = {
+    'aid': 1234567,
+    'info': {'nickname': 'Test_Player', 'side': 'Usec', 'experience': 500000, 'battlePassesLevels': None,
+             'memberCategory': 2, 'selectedMemberCategory': 2, 'registrationDate': 1700000000},
+    'presetCustomization': {}, 'profileCustomization': {},
+    'achievements': {'b1': 1785000000, 'b2': 1789000000},
+    'stat': {'totalInGameTime': 360000, 'arenaOverAllCounters': {
+        'UnrankedOverall': {'Counters': {'GamesCount': 200, 'Kills': 1500, 'Deaths': 600, 'BestArp': 1200,
+                                         'MaxKillsWithoutDeaths': 12, 'LongestWinStreak': 7, 'KillsWithoutDeaths': 3,
+                                         'LoseStreak': 1, 'LongestLoseStreak': 5}},
+        'UnrankedShootOutDuo': {'Counters': {'GamesCount': 10, 'ArenaWins': 5, 'Kills': 50, 'Deaths': 20}},
+        'UnrankedTeamFight': {'Counters': {'GamesCount': 100, 'ArenaWins': 60, 'Kills': 800, 'Deaths': 300, 'MatchMvpCount': 10}},
+        'UnrankedLastHero': {'Counters': {'GamesCount': 50, 'ArenaWins': 10, 'Kills': 400, 'Deaths': 200, 'MatchMvpCount': 4}},
+        'UnrankedCheckPoint': {'Counters': {'GamesCount': 40, 'ArenaWins': 20, 'Kills': 250, 'Deaths': 80, 'MatchMvpCount': 3}},
+        'Overall': {'Counters': {'GamesCount': 30, 'Kills': 200, 'Deaths': 100, 'BestArp': 1500}},
+        'TeamFight': {'Counters': {'GamesCount': 20, 'ArenaWins': 12, 'ArenaLoses': 8, 'Kills': 150, 'Deaths': 70, 'MatchMvpCount': 2}},
+        'ShootOutDuo': {'Counters': {'GamesCount': 10, 'ArenaWins': 4, 'ArenaLoses': 6, 'Kills': 50, 'Deaths': 30}},
+    }},
+    'equipment': {'Id': 'e', 'Items': []},
+    'updated': 1791000000000,
+}
+
+
+def arena_profile(**changes):
+    """A copy of ARENA (invented values, shaped like players.tarkov.dev's arena/<aid>.json); same rules as profile()."""
+    data = copy.deepcopy(ARENA)
+    for key, value in changes.items():
+        if key.startswith('info_'):
+            data['info'][key[5:]] = value
+        else:
+            data[key] = value
+    return data

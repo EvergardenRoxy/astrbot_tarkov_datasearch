@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 
 from tarkov_core import VERSION
-from tarkov_core.modes import MODES
+from tarkov_core.modes import GAME_MODES, MODES
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,7 +36,8 @@ class ReleaseTests(unittest.TestCase):
                 fallback = re.search(rf"'{key}', ([^,)]+)", main)
                 if fallback and spec['type'] in ('int', 'string', 'bool'):
                     self.assertEqual(fallback.group(1).strip(), repr(spec['default']))
-        self.assertEqual(set(schema['default_mode']['options']), set(MODES))
+        # Arena is not a default mode; the separate "arena_by_default" switch adds it (maintainer).
+        self.assertEqual(set(schema['default_mode']['options']), set(GAME_MODES))
         for spec in schema.values():
             if 'labels' in spec:
                 self.assertEqual(len(spec['labels']), len(spec['options']))

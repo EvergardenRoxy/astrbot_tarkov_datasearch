@@ -12,8 +12,9 @@ from astrbot.api.star import Context, Star, StarTools, register
 
 from .tarkov_core import transport
 from .tarkov_core.accounts import Accounts, load_secret, owner_key
-from .tarkov_core.modes import MODES, label_of, page_url, parse_mode, parse_player_url, path_of, search_url
+from .tarkov_core.modes import GAME_MODES, MODES, label_of, page_url, parse_mode, parse_player_url, path_of, search_url
 from .tarkov_core.names import NAME, NameIndex
+from .tarkov_core.arena import build_arena_card, render_arena_markdown, render_arena_text, summarize_arena
 from .tarkov_core.card import build_card
 from .tarkov_core.image import render_image
 from .tarkov_core.output import render_markdown, render_text
@@ -114,7 +115,18 @@ class TarkovPlugin(Star):
 
     def default_mode(self):
         mode = parse_mode(self.config.get('default_mode', 'pvp'))
-        return mode or 'pvp'
+        return mode if mode in GAME_MODES else 'pvp'
+
+    def arena_by_default(self):
+        return bool(self.config.get('arena_by_default', False))
+
+    def looked_at(self, mode):
+        """The modes a query about `mode` fetches, `mode` first. Arena is a separate game: asked for, it is fetched
+        alone; it joins the main game's modes only with the "arena_by_default" setting (maintainer)."""
+        if mode == 'arena':
+            return ['arena']
+        modes = list(GAME_MODES)+(['arena'] if self.arena_by_default() else [])
+        return [mode]+[other for other in modes if other != mode]
 
     def index_enabled(self):
         return bool(self.config.get('name_index_enabled', False))
@@ -129,7 +141,8 @@ class TarkovPlugin(Star):
                 '绑定自己：/tarkov 绑定 <tarkov.dev 玩家页网址或账号ID>　解绑：/tarkov 解绑\n'
                 '查自己：/tarkov [模式]\n'
                 '查别人：/tarkov [模式] <昵称、账号ID 或玩家页网址>\n'
-                f'模式：pvp、pve、赛季（pvp-season）；不写时先看 {label_of(self.default_mode())}，没有档案就自动换成有档案的模式\n'
+                f'模式：pvp、pve、赛季（pvp-season）、竞技场（arena）；不写时先看 {label_of(self.default_mode())}，没有档案就自动换成有档案的模式'
+                + ('（也会看竞技场）' if self.arena_by_default() else '（竞技场要写明：/tarkov 竞技场 <昵称、账号ID 或网址>）') + '\n'
                 f'第一次查某个玩家前，请先在 tarkov.dev 用对应模式搜索他一次（{search_url(self.default_mode())}），'
                 '再把跳转后的网址发给我；之后就能直接用名字查（按 ID 或网址查到过的名字会被记住' + index + '）。\n'
                 '档案不会自动更新：要看最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面。')
@@ -169,7 +182,7 @@ class TarkovPlugin(Star):
         url = parse_player_url(target) if target else None
         if url:
             if url[0] is None:
-                yield event.plain_result('插件不支持竞技场（arena）模式的档案，请发送 PVP、PVE 或赛季模式的玩家页网址。')
+                yield event.plain_result('插件不认识这个网址里的模式，请发送 PVP、PVE、赛季或竞技场模式的玩家页网址。')
                 return
             if mode and mode != url[0]:
                 yield event.plain_result(f'网址里的模式是 {label_of(url[0])}，和你写的 {label_of(mode)} 不一致，请只保留一个。')
@@ -223,7 +236,7 @@ class TarkovPlugin(Star):
         """({mode: summary}, {mode: error}) for account `aid`, `first` first. The modes are fetched together; "no
         profile" is in neither. A failed request is kept apart from "no profile", so a 429 is never reported as
         "this player has no profile" (review R-01). `fresh` skips the cache (the user just came from the website)."""
-        order = [first]+[mode for mode in MODES if mode != first]
+        order = self.looked_at(first)
         results = await asyncio.gather(*(self.profile(mode, aid, fresh) for mode in order), return_exceptions=True)
         found, failed = {}, {}
         for mode, result in zip(order, results):
@@ -253,7 +266,15 @@ class TarkovPlugin(Star):
 
     @staticmethod
     def mode_word(mode):
-        return {'pvp': 'pvp', 'pve': 'pve', 'season': '赛季'}[mode]
+        return {'pvp': 'pvp', 'pve': 'pve', 'season': '赛季', 'arena': '竞技场'}[mode]
+
+    def none_found(self, aid, mode):
+        """"No profile in any mode looked at", one sentence."""
+        modes = self.looked_at(mode)
+        if modes == ['arena']:
+            return f'tarkov.dev 上还没有账号 ID {aid} 的竞技场档案。'
+        words = '、'.join({'pvp': 'PVP', 'pve': 'PVE', 'season': '赛季', 'arena': '竞技场'}[m] for m in MODES if m in modes)
+        return f'tarkov.dev 上还没有账号 ID {aid} 的档案（{words}都没有）。'
 
     async def show(self, event, aid, mode, explicit, trace, who='这名玩家', asked=None, where='记录', fresh=False):
         """(reply, None) for account `aid`: the profile in `mode`, or (mode not chosen by the user) in the first other
@@ -279,8 +300,8 @@ class TarkovPlugin(Star):
                 others = '、'.join(f'{label_of(m)} 模式（/tarkov {self.mode_word(m)} {aid}）' for m in found)
                 return None, (f'{label_of(mode)} 模式下还没有账号 ID {aid} 的档案，但 {others}下有档案{unknown}。'
                               f'要看 {label_of(mode)} 模式，' + self.search_hint(mode, who) + '，几分钟后再查。')
-            return None, (f'tarkov.dev 上还没有账号 ID {aid} 的档案（PVP、PVE、赛季都没有）。'
-                          'tarkov.dev 只保存在网站上被搜索过的玩家，' + self.search_hint(mode, who, explicit) + '，几分钟后再查。')
+            return None, (self.none_found(aid, mode) + 'tarkov.dev 只保存在网站上被搜索过的玩家，'
+                          + self.search_hint(mode, who, explicit or mode == 'arena') + '，几分钟后再查。')
         summary = found[shown]
         nickname = summary['nickname']
         if asked and nickname.lower() != asked.lower():
@@ -319,11 +340,11 @@ class TarkovPlugin(Star):
         if not found and failed:
             raise next(iter(failed.values()))
         if not found:
-            return event.plain_result(f'tarkov.dev 上还没有账号 ID {aid} 的档案（PVP、PVE、赛季都没有）。'
-                                      + self.first_time(mode, '自己', '/tarkov 绑定', explicit=False))
+            return event.plain_result(self.none_found(aid, mode)
+                                      + self.first_time(mode, '自己', '/tarkov 绑定', explicit=mode == 'arena'))
         nickname = (found.get(mode) or next(iter(found.values())))['nickname']
         await asyncio.to_thread(self.accounts.bind, self.binding_key(event), aid, nickname)
-        missing = [m for m in MODES if m not in found]
+        missing = [m for m in self.looked_at(mode) if m not in found]
         later = (f'{self.modes_text(missing)} 模式的档案要在 tarkov.dev 用该模式搜索一次自己才会出现。' if missing else '')
         unknown = f'{self.failure_text(failed)}。' if failed else ''
         return event.plain_result(f'已绑定：{nickname}（账号 ID {aid}），目前在 {self.modes_text(found)} 模式下有档案。'
@@ -405,6 +426,8 @@ class TarkovPlugin(Star):
         """The profile in the configured output: an image (text if drawing fails), plain text or Markdown.
         Every reply says the data is a snapshot and links the player's page, where it can be refreshed."""
         refresh = page_url(game_mode, aid)
+        if game_mode == 'arena':
+            return self.arena_reply(event, summary, aid, notes, refresh, trace)
         card = build_card(summary, label_of(game_mode), self.skill_count(), notes, refresh_url=refresh)
         # The account asked for, not the document's own "aid" field, so the id and the link always agree (review R-06).
         if card['aid'] != aid:
@@ -423,6 +446,18 @@ class TarkovPlugin(Star):
         if mode == 'markdown':
             return event.plain_result(render_markdown(card))
         return event.plain_result(render_text(card))
+
+    def arena_reply(self, event, summary, aid, notes, refresh, trace):
+        card = build_arena_card(summary, notes, refresh_url=refresh)
+        if card['aid'] != aid:
+            logger.warning('Tarkov [%s] arena profile %s names account %s', trace, aid, card['aid'])
+            card['aid'] = aid
+        if self.output_mode() == 'markdown':
+            return event.plain_result(render_arena_markdown(card))
+        if self.output_mode() == 'image':
+            # The Arena picture is being designed (three proposals, handoff §19.3); text until one is chosen.
+            card['notes'].append('（竞技场的图片样式还在设计中，暂以文字回复）')
+        return event.plain_result(render_arena_text(card))
 
     def skill_count(self):
         return self.int_setting('skill_count', 10, 0, 49)
@@ -457,7 +492,7 @@ class TarkovPlugin(Star):
         except NotFound:
             self.remember_profile(key, None, ttl)
             raise
-        summary = summarize(raw)
+        summary = summarize_arena(raw) if mode == 'arena' else summarize(raw)
         summary['fetched'] = time.time()
         # Every profile fetched teaches the shared name record (maintainer: names come from the users).
         try:
