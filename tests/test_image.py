@@ -93,6 +93,8 @@ class ImageTests(unittest.TestCase):
                 self.assertLess(y2+20, picture.height)
                 self.assertGreater(min(x1, x2), 60)
                 self.assertTrue(any('GMT+8 ' in text for _, text in drawn))
+                (x0, _), data_line = next((xy, text) for xy, text in drawn if text.startswith('数据来自 tarkov.dev 公开快照'))
+                self.assertGreater(x0, 60)  # centred too (maintainer)
                 self.assertFalse([text for _, text in drawn if '北京时间' in text])
 
     def test_maintainer_wording(self):
