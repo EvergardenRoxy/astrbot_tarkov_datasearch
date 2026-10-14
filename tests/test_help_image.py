@@ -4,12 +4,12 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
-from tarkov_core import help_image, image
+from tarkov_core import COMMAND_STYLES, help_image, image
 from tarkov_core.modes import page_url, search_url
 
 
-def card(mode='pve', label='PVE', arena=False, index=None):
-    return {'mode': mode, 'label': label, 'search': search_url(mode), 'example': page_url(mode, 1234567),
+def card(mode='pve', label='PVE', arena=False, index=None, style='mention'):
+    return {'command': COMMAND_STYLES[style]['command'], 'note': COMMAND_STYLES[style]['note'], 'mode': mode, 'label': label, 'search': search_url(mode), 'example': page_url(mode, 1234567),
             'arena_by_default': arena, 'index': index}
 
 
@@ -65,3 +65,14 @@ class HelpImageTests(unittest.TestCase):
                 chip = next(i for i, (key, *_) in enumerate(help_image.MODE_CHIPS) if key == mode)
                 at = texts.index('默认')
                 self.assertEqual(texts[at-2], help_image.MODE_CHIPS[chip][1])
+
+    def test_command_style(self):
+        # Maintainer: the help shows "@机器人 tarkov" (QQ official bots) or "/tarkov" (platforms woken by "/").
+        _, texts = drawn_texts(card(style='slash'))
+        for command in ('/tarkov [模式]', '/tarkov 竞技场 <昵称、账号ID 或网址>', '/tarkov 帮助',
+                        '/tarkov https://tarkov.dev/players/pve/1234567', COMMAND_STYLES['slash']['note']):
+            self.assertIn(command, texts)
+        self.assertFalse([text for text in texts if '@机器人' in text])
+        _, texts = drawn_texts(card(style='mention'))
+        self.assertIn(COMMAND_STYLES['mention']['note'], texts)
+        self.assertFalse([text for text in texts if text.startswith('/tarkov')])

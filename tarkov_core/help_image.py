@@ -15,13 +15,14 @@ LABEL_X, TAPE_X = 40, 196
 def help_rows(card):
     """(what, command, remark) of the command table."""
     arena = '不写名字时查自己' + ('；不写模式的查询也会看竞技场' if card['arena_by_default'] else '')
+    command = card['command']
     return [
-        ('查自己', '@机器人 tarkov [模式]', '需要先绑定'),
-        ('查别人', '@机器人 tarkov [模式] <昵称、账号ID 或网址>', ''),
-        ('竞技场', '@机器人 tarkov 竞技场 <昵称、账号ID 或网址>', arena),
-        ('绑定', '@机器人 tarkov 绑定 <玩家页网址或账号ID>', ''),
-        ('解绑', '@机器人 tarkov 解绑', ''),
-        ('帮助', '@机器人 tarkov 帮助', ''),
+        ('查自己', f'{command} [模式]', '需要先绑定'),
+        ('查别人', f'{command} [模式] <昵称、账号ID 或网址>', ''),
+        ('竞技场', f'{command} 竞技场 <昵称、账号ID 或网址>', arena),
+        ('绑定', f'{command} 绑定 <玩家页网址或账号ID>', ''),
+        ('解绑', f'{command} 解绑', ''),
+        ('帮助', f'{command} 帮助', ''),
     ]
 
 
@@ -68,7 +69,8 @@ def guide_stamp(img):
 
 
 def render_help_image(card):
-    """JPEG bytes of the help page. card: mode (key of the default mode), label (its name), search (the tarkov.dev
+    """JPEG bytes of the help page. card: command (how a command starts, per the command style), note (the line under
+    the command table), mode (key of the default mode), label (its name), search (the tarkov.dev
     search page in that mode), example (a player page in that mode), arena_by_default, index (how often the name
     lists are refreshed, or None without the name lists)."""
     img = paper(2400)
@@ -91,7 +93,7 @@ def render_help_image(card):
         if remark:
             y = paragraph(d, y+8, remark, x=TAPE_X, size=18, fill=FADED)-4
         y += 18
-    d.text((40, y), '群里先 @机器人 再发命令，不加 /；tarkov 也可写作 塔科夫；[ ] 可不写，< > 换成实际内容。', font=font('sc', 18, 400), fill=FADED)
+    d.text((40, y), safe(card['note']), font=fit(d, card['note'], 'sc', 18, W-80, 400), fill=FADED)
     y += 46
     d.line([40, y, W-40, y], fill=LINE)
 
@@ -119,7 +121,7 @@ def render_help_image(card):
         remembered += f"，也会查昵称名单（{card['index']}更新一次）"
     steps = [
         ('在 tarkov.dev 选好模式，搜索这名玩家的游戏名：', card['search'].removeprefix('https://')),
-        ('把跳转后的玩家页网址发给我，例如：', '@机器人 tarkov '+card['example']),
+        ('把跳转后的玩家页网址发给我，例如：', f"{card['command']} {card['example']}"),
         ('之后就能直接用名字查（'+remembered+'）。', None),
     ]
     for i, (text, command) in enumerate(steps, 1):

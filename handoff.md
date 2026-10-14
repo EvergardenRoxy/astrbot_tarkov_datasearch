@@ -13,8 +13,8 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Inputs | Maintainer's analysis `report.md` of the-hideout/tarkov-dev (not in the tree; key facts restated in §2). Maintainer's own profile JSON downloaded from tarkov.dev, used only for a local comparison (§2.4), not committed. |
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
-| Version | 0.4.3 since §22-§23; 0.4.2 since §21; 0.4.1 since §20; 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 192, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Version | 0.4.4 since §24; 0.4.3 since §22-§23; 0.4.2 since §21; 0.4.1 since §20; 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
+| Tests | 193, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -149,6 +149,8 @@ tests were added or bounded for each, and one survivor was a no-op mutation (it 
 - When upstream game data changes (new levels or skills), re-run `python tools/build_static.py` and commit the diff.
 - Never render through AstrBot's `text_to_image`/`html_render` (they post content to a remote renderer by default). After adding Chinese text to the code or new skill names, re-run `python tools/build_fonts.py`; `test_font_covers_every_character_of_the_code` fails until then.
 - Never subset or otherwise modify `ShareTechMono-Regular.ttf` (Reserved Font Name 'Share').
+- Commands shown to users are built only through `TarkovPlugin.cmd()` from `tarkov_core.COMMAND_STYLES` (§24); no
+  other file may write `@机器人` or a `/tarkov` command (`test_command_style_setting` checks it).
 - Every help and profile reply carries its link as text, whatever the output and whether drawing worked (maintainer,
   §22): images are followed by a `Plain` line; `test_links_are_always_given_as_text` pins it.
 
@@ -810,3 +812,30 @@ document and image should show commands that way.
 - Release 0.4.3 (maintainer: "推送v0.4.3"): version bumped (`tarkov_core.VERSION`, `@register`, `metadata.yaml`, tests,
   README), the maintainer's `logo.png` from `main` added to the tree. Branch `v0.4.3` is one commit on top of `main`
   (= `v0.4.2` + logo) with the work branch's tree, so `main` can fast-forward to it.
+
+## 24. "Command style" setting (0.4.4)
+
+Maintainer: "需要实现从设置页切换两种不同的帮助和全部的操作提示 — 类型1：如QQ官方机器人等 @机器人 指令；类型2：支持 / 唤醒的平台上
+/指令 直接调用".
+
+- `tarkov_core.COMMAND_STYLES`: `mention` (`@机器人 tarkov`, the 0.4.3 wording, default) and `slash` (`/tarkov`), each
+  with `command`, `help` (second line of the text help) and `note` (line under the help image's command table). The only
+  place these strings are written.
+- Setting `command_style` in `_conf_schema.json` (string, options mention/slash, default mention; labels name the
+  platforms). `main.py`: `style()` (unknown value -> mention) and `cmd(*words)`; every former literal goes through
+  `cmd()`: help text, bind usage, unbound reply, bind success, first-time steps (`first_time(command=None)` defaults
+  to `cmd()`), other-mode hints, name-list hint, `command_for`, suggestions. `help_card()` passes `command` and `note`;
+  `help_image.help_rows()` and the example step use `card['command']`, the footnote is `card['note']` fitted to the
+  width. Matching is unchanged (`tarkov`/`塔科夫`, optional `/`).
+- Docs: README (usage note and settings list), CHANGELOG, checklist; docs examples keep the default (mention) form.
+- Tests: `test_command_style_setting` replaces `test_commands_are_shown_as_at_the_bot`: no `@机器人`/`/tarkov` outside
+  `tarkov_core/__init__.py`; for style unset/mention/slash/unknown, 12 commands (help, unbound, bind usage, too many
+  words, unknown names with and without a mode, other-mode hint, suggestions for query and bind, bind success, Arena
+  miss) — at least 9 replies carry the style's command, the other style never appears outside URLs, and each hint kind
+  is checked by its exact wording; typed `tarkov`/`塔科夫`/`/tarkov` all query under both styles.
+  `test_help_image.test_command_style`: slash commands, note and example; no `@机器人`. 192 -> 193 (one test replaced, one
+  added). Mutation check (9): setting ignored, a literal in `command_for`, a literal in
+  the help text, help line dropped, slash help line swapped, `help_card` command, image note, image example, bind
+  suggestion command — all killed.
+- Release 0.4.4 (maintainer: "实现功能后检测无问题则自行推送分支v0.4.4"): version bumped in the usual places. Branch
+  `v0.4.4` is one commit on top of `v0.4.3` with the work branch's tree.
