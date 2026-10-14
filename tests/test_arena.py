@@ -1,9 +1,14 @@
 import copy
+import io
 import itertools
 import unittest
+from unittest.mock import patch
+
+from PIL import Image, ImageDraw
 
 from fixtures import arena_profile
-from tarkov_core.arena import MAX_MODES, build_arena_card, render_arena_markdown, render_arena_text, summarize_arena
+from tarkov_core import arena_image
+from tarkov_core.arena import MAX_MODES, best_arp, losses, record, build_arena_card, render_arena_markdown, render_arena_text, summarize_arena
 from tarkov_core.transport import QueryError
 
 NOW = 1791000000 + 3600
@@ -100,3 +105,61 @@ class ArenaOutputTests(unittest.TestCase):
 
     def test_stale(self):
         self.assertIn('天没有更新', render_arena_text(build_arena_card(summarize_arena(arena_profile()), now=NOW+40*86400)))
+
+
+def picture(c):
+    data = arena_image.render_arena_image(c)
+    img = Image.open(io.BytesIO(data))
+    img.load()
+    return data, img
+
+
+class ArenaImageTests(unittest.TestCase):
+    def test_renders_a_stable_jpeg(self):
+        data, img = picture(card(refresh_url='https://tarkov.dev/players/arena/1234567'))
+        self.assertEqual((img.format, img.width), ('JPEG', arena_image.W))
+        self.assertTrue(800 < img.height < 2000)
+        self.assertLess(len(data), 1024*1024)
+        self.assertEqual(data, picture(card(refresh_url='https://tarkov.dev/players/arena/1234567'))[0])
+
+    def test_registry_content(self):
+        drawn = []
+        real = ImageDraw.ImageDraw.text
+        def record_text(self, xy, text, *args, **kwargs):
+            drawn.append(text)
+            return real(self, xy, text, *args, **kwargs)
+        with patch.object(ImageDraw.ImageDraw, 'text', record_text):
+            picture(card(notes=('这个账号在 PVE 模式下也有档案',), refresh_url='https://tarkov.dev/players/arena/1'))
+        self.assertIn('ARENA MASTERS', drawn)
+        self.assertIn('Test_Player', drawn)
+        self.assertIn('1500', drawn)  # best ARP on the coin: the highest of all sections
+        self.assertIn('非排位  UNRANKED · 不计 ARP', drawn)
+        self.assertIn('排位  RANKED · 计入 ARP', drawn)
+        self.assertIn('95 W  ·  105 L', drawn)
+        self.assertIn('TEAM FIGHT', drawn)
+        self.assertIn('60 – 40', drawn)
+        self.assertIn('这个账号在 PVE 模式下也有档案', drawn)
+        self.assertTrue(any('数据不会自动更新' in text for text in drawn))
+        # Maintainer: no level; the footer is the last thing on the page.
+        self.assertFalse([text for text in drawn if '等级' in text or 'LVL' in text])
+        self.assertTrue(drawn[-1].startswith('开源插件，GPL-3.0-or-later 许可'))
+
+    def test_odd_cards_still_render(self):
+        raw = arena_profile(stat={'arenaOverAllCounters': {f'UnrankedMode{chr(65+i)}': {'Counters': {'Kills': 10**15, 'GamesCount': 3, 'ArenaWins': 9}}
+                                                            for i in range(20)}}, info_nickname='名字\u202e'+'W'*40)
+        _, img = picture(card(raw))
+        self.assertLess(img.height, 2000)  # at most MAX_MODES rows per section
+        for raw in (arena_profile(stat={}), arena_profile(aid=None, updated=None, achievements=None)):
+            with self.subTest(raw=list(raw)):
+                picture(card(raw))
+
+    def test_helpers(self):
+        self.assertEqual(losses({'games': 10, 'wins': 4}), 6)
+        self.assertEqual(losses({'games': 10, 'wins': 4, 'losses': 5}), 5)
+        self.assertIsNone(losses({'games': 10}))
+        self.assertEqual(losses({'games': 3, 'wins': 9}), 0)
+        c = card()
+        self.assertEqual([record(section) for section in c['sections']], [(95, 105), (16, 14)])
+        self.assertIsNone(record({'modes': [('X', {'games': 1})]}))
+        self.assertEqual(best_arp(c), 1500)
+        self.assertIsNone(best_arp(card(arena_profile(stat={}))))

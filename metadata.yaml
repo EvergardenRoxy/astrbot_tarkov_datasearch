@@ -1,7 +1,7 @@
 name: astrbot_tarkov_datasearch
 display_name: 塔科夫玩家数据查询
 desc: 在聊天中绑定逃离塔科夫账号，查询自己或其他玩家的档案（等级、阵营、K/D、存活率、技能），以情报档案风格的图片、文字或 Markdown 回复，数据来自 tarkov.dev。
-version: v0.3.0
+version: v0.4.0
 author: Evergarden_Roxy
 astrbot_version: '>=4.16.0'
 repo: https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch

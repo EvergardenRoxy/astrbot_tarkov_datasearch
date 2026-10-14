@@ -15,6 +15,7 @@ from .tarkov_core.accounts import Accounts, load_secret, owner_key
 from .tarkov_core.modes import GAME_MODES, MODES, label_of, page_url, parse_mode, parse_player_url, path_of, search_url
 from .tarkov_core.names import NAME, NameIndex
 from .tarkov_core.arena import build_arena_card, render_arena_markdown, render_arena_text, summarize_arena
+from .tarkov_core.arena_image import render_arena_image
 from .tarkov_core.card import build_card
 from .tarkov_core.image import render_image
 from .tarkov_core.output import render_markdown, render_text
@@ -52,7 +53,7 @@ def every(seconds):
     return f'每 {hours} 小时'
 
 
-@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.3.0')
+@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.4.0')
 class TarkovPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -427,7 +428,7 @@ class TarkovPlugin(Star):
         Every reply says the data is a snapshot and links the player's page, where it can be refreshed."""
         refresh = page_url(game_mode, aid)
         if game_mode == 'arena':
-            return self.arena_reply(event, summary, aid, notes, refresh, trace)
+            return await self.arena_reply(event, summary, aid, notes, refresh, trace)
         card = build_card(summary, label_of(game_mode), self.skill_count(), notes, refresh_url=refresh)
         # The account asked for, not the document's own "aid" field, so the id and the link always agree (review R-06).
         if card['aid'] != aid:
@@ -447,16 +448,21 @@ class TarkovPlugin(Star):
             return event.plain_result(render_markdown(card))
         return event.plain_result(render_text(card))
 
-    def arena_reply(self, event, summary, aid, notes, refresh, trace):
+    async def arena_reply(self, event, summary, aid, notes, refresh, trace):
         card = build_arena_card(summary, notes, refresh_url=refresh)
         if card['aid'] != aid:
             logger.warning('Tarkov [%s] arena profile %s names account %s', trace, aid, card['aid'])
             card['aid'] = aid
-        if self.output_mode() == 'markdown':
+        mode = self.output_mode()
+        if mode == 'image':
+            try:
+                data = await asyncio.to_thread(render_arena_image, card)
+                return event.chain_result([Image.fromBytes(data), Plain(f'刷新数据：在 tarkov.dev 打开 {refresh}')])
+            except Exception as exc:
+                logger.warning('Tarkov [%s] arena image failed, sending text: %s', trace, type(exc).__name__)
+                card['notes'].append('（图片生成失败，已改为文字）')
+        if mode == 'markdown':
             return event.plain_result(render_arena_markdown(card))
-        if self.output_mode() == 'image':
-            # The Arena picture is being designed (three proposals, handoff §19.3); text until one is chosen.
-            card['notes'].append('（竞技场的图片样式还在设计中，暂以文字回复）')
         return event.plain_result(render_arena_text(card))
 
     def skill_count(self):
