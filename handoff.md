@@ -671,8 +671,8 @@ superseded unless the maintainer prefers one of them.
 - `main.py`: `arena_reply()` is async; image output renders off the loop and sends the picture plus the refresh link
   line, falling back to text with "（图片生成失败，已改为文字）" (same as the main card).
 - `tools/build_preview.py` also writes `docs/arena_preview.jpg` from the invented fixture (README shows it).
-- Reference run the maintainer asked for: Bili_Harandot (public profile; account in the PvP, PVE, season and Arena
-  indexes), by Arena link, then by the learned name, then without a mode; real network, images kept in
+- Reference run the maintainer asked for, on a real public profile named by the maintainer (name and id deliberately
+  not recorded, §18; the account is in the PvP, PVE, season and Arena indexes): by Arena link, then by the learned name, then without a mode; real network, images kept in
   `/home/user/test_output` only (not committed). It showed three-digit W – L and MVP values crowding their columns;
   columns re-spaced (games 240, W – L 300, win rate 425, kills 500, K/D 570, MVP 630, tick at the right edge).
 - Tests: `ArenaImageTests` (stable JPEG of the right width, registry content incl. coin value, both section bands,
