@@ -34,9 +34,9 @@ class HelpImageTests(unittest.TestCase):
 
     def test_shows_every_command_and_the_settings(self):
         _, texts = drawn_texts(card())
-        for command in ('/tarkov [模式]', '/tarkov [模式] <昵称、账号ID 或网址>', '/tarkov 竞技场 <昵称、账号ID 或网址>',
-                        '/tarkov 绑定 <玩家页网址或账号ID>', '/tarkov 解绑', '/tarkov 帮助',
-                        'tarkov.dev/players?gameMode=pve', '/tarkov https://tarkov.dev/players/pve/1234567'):
+        for command in ('@机器人 tarkov [模式]', '@机器人 tarkov [模式] <昵称、账号ID 或网址>', '@机器人 tarkov 竞技场 <昵称、账号ID 或网址>',
+                        '@机器人 tarkov 绑定 <玩家页网址或账号ID>', '@机器人 tarkov 解绑', '@机器人 tarkov 帮助',
+                        'tarkov.dev/players?gameMode=pve', '@机器人 tarkov https://tarkov.dev/players/pve/1234567'):
             self.assertIn(command, texts)
         joined = '\n'.join(texts)
         self.assertIn('DEFAULT: PVE', joined)
@@ -51,7 +51,7 @@ class HelpImageTests(unittest.TestCase):
         _, texts = drawn_texts(card('pvp', 'PVP', arena=True, index='每 3 天'))
         joined = ''.join(texts)
         self.assertIn('DEFAULT: PVP', joined)
-        self.assertIn('/tarkov https://tarkov.dev/players/regular/1234567', texts)
+        self.assertIn('@机器人 tarkov https://tarkov.dev/players/regular/1234567', texts)
         self.assertIn('也会看竞技场', joined)
         self.assertNotIn('竞技场要写明', joined)
         self.assertIn('昵称名单（每 3 天更新一次）', joined)

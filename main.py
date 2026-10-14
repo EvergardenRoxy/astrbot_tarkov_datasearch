@@ -54,7 +54,7 @@ def every(seconds):
     return f'每 {hours} 小时'
 
 
-@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.4.2')
+@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.4.3')
 class TarkovPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -140,11 +140,12 @@ class TarkovPlugin(Star):
     def help_text(self):
         index = f'；另外会查 tarkov.dev 的昵称名单（{every(self.names.refresh_seconds)}更新一次）' if self.index_enabled() else ''
         return ('塔科夫玩家档案查询（数据来自 tarkov.dev）\n'
-                '绑定自己：/tarkov 绑定 <tarkov.dev 玩家页网址或账号ID>　解绑：/tarkov 解绑\n'
-                '查自己：/tarkov [模式]\n'
-                '查别人：/tarkov [模式] <昵称、账号ID 或玩家页网址>\n'
+                '群里先 @机器人，再发送下面的命令（不加 /）\n'
+                '绑定自己：@机器人 tarkov 绑定 <tarkov.dev 玩家页网址或账号ID>　解绑：@机器人 tarkov 解绑\n'
+                '查自己：@机器人 tarkov [模式]\n'
+                '查别人：@机器人 tarkov [模式] <昵称、账号ID 或玩家页网址>\n'
                 f'模式：pvp、pve、赛季（pvp-season）、竞技场（arena）；不写时先看 {label_of(self.default_mode())}，没有档案就自动换成有档案的模式'
-                + ('（也会看竞技场）' if self.arena_by_default() else '（竞技场要写明：/tarkov 竞技场 <昵称、账号ID 或网址>）') + '\n'
+                + ('（也会看竞技场）' if self.arena_by_default() else '（竞技场要写明：@机器人 tarkov 竞技场 <昵称、账号ID 或网址>）') + '\n'
                 '第一次查某个玩家前，请先在 tarkov.dev 用对应模式搜索他一次（链接见最后一行），'
                 '再把跳转后的网址发给我；之后就能直接用名字查（按 ID 或网址查到过的名字会被记住' + index + '）。\n'
                 '档案不会自动更新：要看最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面。\n'
@@ -204,7 +205,7 @@ class TarkovPlugin(Star):
             return
         target = words[0] if words else None
         if action == 'bind' and target is None:
-            yield event.plain_result('用法：/tarkov 绑定 <tarkov.dev 玩家页网址或账号ID>，例如 /tarkov 绑定 https://tarkov.dev/players/pve/1234567')
+            yield event.plain_result('用法：@机器人 tarkov 绑定 <tarkov.dev 玩家页网址或账号ID>，例如 @机器人 tarkov 绑定 https://tarkov.dev/players/pve/1234567')
             return
         url = parse_player_url(target) if target else None
         if url:
@@ -256,7 +257,7 @@ class TarkovPlugin(Star):
         return (f'请先在 tarkov.dev 搜索一次{who}（{search_url(mode)}，页面上可以切换 PVP / PVE / 赛季，'
                 '请选对应的模式）')
 
-    def first_time(self, mode, who='这名玩家', command='/tarkov', explicit=True):
+    def first_time(self, mode, who='这名玩家', command='@机器人 tarkov', explicit=True):
         return self.search_hint(mode, who, explicit) + f'，再把跳转后的网址发给我（例如 {command} {page_url(mode, 1234567)}）。'
 
     async def profiles(self, aid, first, trace, fresh=False):
@@ -324,7 +325,7 @@ class TarkovPlugin(Star):
         else:
             unknown = f'；{self.failure_text(failed)}，请稍后再试' if failed else ''
             if found:
-                others = '、'.join(f'{label_of(m)} 模式（/tarkov {self.mode_word(m)} {aid}）' for m in found)
+                others = '、'.join(f'{label_of(m)} 模式（@机器人 tarkov {self.mode_word(m)} {aid}）' for m in found)
                 return None, (f'{label_of(mode)} 模式下还没有账号 ID {aid} 的档案，但 {others}下有档案{unknown}。'
                               f'要看 {label_of(mode)} 模式，' + self.search_hint(mode, who) + '，几分钟后再查。')
             return None, (self.none_found(aid, mode) + 'tarkov.dev 只保存在网站上被搜索过的玩家，'
@@ -336,7 +337,7 @@ class TarkovPlugin(Star):
         others = [m for m in found if m != shown]
         if others:
             notes.append(f'这个账号在 {self.modes_text(others)} 模式下也有档案，查询时写上模式即可'
-                         f'（例如 /tarkov {self.mode_word(others[0])} {aid}）。')
+                         f'（例如 @机器人 tarkov {self.mode_word(others[0])} {aid}）。')
         if failed:
             notes.append(self.failure_text(failed)+'，请稍后再试。')
         age = time.time()-summary.get('fetched', time.time())
@@ -359,9 +360,9 @@ class TarkovPlugin(Star):
             rows, _ = await asyncio.to_thread(self.accounts.lookup, target)
             exact = [row for row in rows if row[1] == target]
             if len(rows) != 1 and len(exact) != 1:
-                hint = await self.suggestion(mode, True, target, command='/tarkov 绑定') if not rows else ''
+                hint = await self.suggestion(mode, True, target, command='@机器人 tarkov 绑定') if not rows else ''
                 return event.plain_result(f'不能确定 {target} 是哪个账号。' + hint
-                                          + self.first_time(mode, '自己', '/tarkov 绑定', explicit=False))
+                                          + self.first_time(mode, '自己', '@机器人 tarkov 绑定', explicit=False))
             aid = (exact or rows)[0][0]
         # A binding is for the account, whatever the mode: a profile in any mode confirms the account exists.
         found, failed = await self.profiles(aid, mode, trace, fresh=True)
@@ -369,7 +370,7 @@ class TarkovPlugin(Star):
             raise next(iter(failed.values()))
         if not found:
             return event.plain_result(self.none_found(aid, mode)
-                                      + self.first_time(mode, '自己', '/tarkov 绑定', explicit=mode == 'arena'))
+                                      + self.first_time(mode, '自己', '@机器人 tarkov 绑定', explicit=mode == 'arena'))
         nickname = (found.get(mode) or next(iter(found.values())))['nickname']
         await asyncio.to_thread(self.accounts.bind, self.binding_key(event), aid, nickname)
         missing = [m for m in self.looked_at(mode) if m not in found]
@@ -377,16 +378,16 @@ class TarkovPlugin(Star):
         unknown = f'{self.failure_text(failed)}。' if failed else ''
         return event.plain_result(f'已绑定：{nickname}（账号 ID {aid}），目前在 {self.modes_text(found)} 模式下有档案。'
                                   f'{unknown}{later}'
-                                  f'之后发送 /tarkov 即可查询自己（先看 {label_of(self.default_mode())}，没有时自动换成有档案的模式），'
-                                  '也可以写模式，例如 /tarkov pve、/tarkov 赛季。'
+                                  f'之后发送 @机器人 tarkov 即可查询自己（先看 {label_of(self.default_mode())}，没有时自动换成有档案的模式），'
+                                  '也可以写模式，例如 @机器人 tarkov pve、@机器人 tarkov 赛季。'
                                   '档案不会自动更新：要看最新数据，请先在 tarkov.dev 上重新搜索或打开自己的页面。')
 
     async def query(self, event, mode, explicit, target, url, trace):
         if target is None:
             bound = await asyncio.to_thread(self.accounts.bound, self.binding_key(event))
             if not bound:
-                yield event.plain_result('你还没有绑定账号。先在 tarkov.dev 搜索自己的游戏名，再发送：/tarkov 绑定 <跳转后的网址>。\n'
-                                         '查别人：/tarkov [模式] <昵称、账号ID 或网址>；完整用法：/tarkov 帮助')
+                yield event.plain_result('你还没有绑定账号。先在 tarkov.dev 搜索自己的游戏名，再发送：@机器人 tarkov 绑定 <跳转后的网址>。\n'
+                                         '查别人：@机器人 tarkov [模式] <昵称、账号ID 或网址>；完整用法：@机器人 tarkov 帮助')
                 return
             aid, nickname = bound
             reply, missing = await self.show(event, aid, mode, explicit, trace, who='自己')
@@ -431,7 +432,7 @@ class TarkovPlugin(Star):
             return
         if not matches:
             # The index is per mode and only the chosen (or default) mode's was searched (review R-04).
-            other = '' if explicit else f'其他模式的名单要写上模式查询，例如 /tarkov pve {target}。'
+            other = '' if explicit else f'其他模式的名单要写上模式查询，例如 @机器人 tarkov pve {target}。'
             unknown = (f'记录和 tarkov.dev 的 {label} 昵称名单（{every(self.names.refresh_seconds)}更新一次）里都没有 {target}。{other}'
                        if self.index_enabled() else f'还不知道 {target} 的账号 ID。')
             hint = await self.suggestion(mode, explicit, target)
@@ -466,7 +467,7 @@ class TarkovPlugin(Star):
         return unique[:SUGGESTIONS]
 
     def command_for(self, mode, explicit):
-        return '/tarkov '+self.mode_word(mode) if explicit else '/tarkov'
+        return '@机器人 tarkov '+self.mode_word(mode) if explicit else '@机器人 tarkov'
 
     async def suggestion(self, mode, explicit, target, command=None):
         """A "did you mean" sentence for a name nobody knows, or ''."""
