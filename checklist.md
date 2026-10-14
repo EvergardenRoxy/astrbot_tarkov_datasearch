@@ -10,7 +10,7 @@
 
 ## 当前状态
 
-- 当前版本 **0.4.0**：0.3.0 改为“绑定身份 + 查询”，0.4.0 加入图片页脚和塔科夫竞技场查询；尚未在聊天平台实测（维护者对 0.3.0 做过小范围封闭测试）。
+- 当前版本 **0.4.1**：0.3.0 改为“绑定身份 + 查询”，0.4.0 加入图片页脚和塔科夫竞技场查询，0.4.1 加入名字相近的提示；尚未在聊天平台实测（维护者对 0.3.0 做过小范围封闭测试）。
 - 已用真实网络把插件的查询流程完整跑过一遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID 和昵称各查了 PVE、PVP、赛季模式。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
 - 自动测试共 177 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
 
@@ -21,7 +21,7 @@
 ```bash
 pip install -r requirements.txt
 python -m unittest discover -s tests   # 应显示 Ran 177 tests ... OK
-python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.4.0.zip
+python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.4.1.zip
 ```
 
 在聊天中核对：
@@ -271,7 +271,7 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
    - 图片（维护者选定方案 B）：竞技场主办方的选手名册，皮面上的登记页，GP 币样式的最佳 ARP 徽章，非排位 / 排位两段，胜场多于负场的模式打勾，落款“登记人：THE HOST”和火漆印，最下方是数据时间和插件信息。示例见 `docs/arena_preview.jpg`。已按维护者要求用一名公开玩家的真实档案生成参考图核对效果（玩家名和图片都不写入仓库）。
    - 怎么核对：发送 `/tarkov 竞技场 <在 tarkov.dev 用竞技场模式搜索过的玩家ID>`；测试 `tests/test_arena.py`（档案读取、排位/非排位、畸形数据、文字和 Markdown、无等级）和 `tests/test_plugin.py` 中的 `test_arena_*`（命令、网址、绑定、名字、默认设置、各输出方式）。已用真实网络查过 3 个公开的竞技场档案，读取正常。
 
-### 名字相近的提示（未发布）
+### 0.4.1：名字相近的提示
 
 1. **为什么**：维护者测试竞技场查询时输入的名字带下划线 `_`，而有竞技场档案的玩家名字是同样的拼写、但用的是连字符 `-`。两者是不同的账号，下划线和连字符很容易记混。（玩家名不写入仓库。）
 2. **做了什么**（维护者同意）：

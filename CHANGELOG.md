@@ -1,23 +1,27 @@
 [![AI Co-created](https://img.shields.io/badge/AI-Claude%20Opus%205.5%20%2B%20Claude%20Code-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](README.md#ai-制作声明)
 
 > [!IMPORTANT]
-> **AI 共创声明：本更新日志所记录的修改与日志本身，由项目维护者与生成式 AI 共同完成。** **Claude Opus 5.5**（通过 **Claude Code**）参与 0.1.0 至 0.4.0 版本的数据源调研、方案制定、编码、测试、图片回复的设计与绘制，以及本日志与交接文档 `handoff.md` 的编写。AI 生成或修改的内容由项目维护者审阅、验证并承担最终维护责任。完整声明见 [README](README.md#ai-制作声明)。
+> **AI 共创声明：本更新日志所记录的修改与日志本身，由项目维护者与生成式 AI 共同完成。** **Claude Opus 5.5**（通过 **Claude Code**）参与 0.1.0 至 0.4.1 版本的数据源调研、方案制定、编码、测试、图片回复的设计与绘制，以及本日志与交接文档 `handoff.md` 的编写。AI 生成或修改的内容由项目维护者审阅、验证并承担最终维护责任。完整声明见 [README](README.md#ai-制作声明)。
 
 # 更新日志
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## 未发布
+## 0.4.1 - 2026-10-14
 
-> 由 **Claude Opus 5.5**（通过 **Claude Code**）实现，依据与验证见 [handoff.md](handoff.md) §20。
+> 由 **Claude Opus 5.5**（通过 **Claude Code**）实现，尚未在聊天平台实测。依据与验证见 [handoff.md](handoff.md) §20。
 
 ### 新增
 
 - **名字相近的提示**（维护者测试中发现 `_` 和 `-` 容易记混）：按名字查不到时，提示只差 `_`/`-` 的名字和账号 ID，并给出可以直接发送的命令；名字对上了但这个模式没有档案时，也提示名字相近的账号；按名字绑定找不到时同样提示。只在插件记录和已下载的昵称名单里找，不下载、不多发请求。
 
+### 变更
+
+- 版本号升至 0.4.1。
+
 ### 测试
 
-- 单元测试 177 项。
+- 单元测试 177 项（新增名字相近提示的测试）。
 
 ## 0.4.0 - 2026-10-14
 
