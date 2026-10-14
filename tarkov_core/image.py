@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-from . import LICENSE, NAME, REPO, VERSION
+from . import NAME, NOTICE, REPO, VERSION
 from .card import EXITS, SURVIVED, refresh_note, stale_note
 
 FONTS = Path(__file__).with_name('fonts')
@@ -122,7 +122,10 @@ def dog_tag(img, card, mode_en, x, y, angle=-4):
     td.text((60, 68), line, font=fit(td, line, 'osw', 26, tw-80, 500), fill=TAG_TEXT)
     ident = f"ID {card['aid']}" if card['aid'] is not None else 'ID —'
     td.text((60, 106), ident, font=fit(td, ident, 'osw', 24, tw-80, 400), fill=TAG_TEXT)
-    td.text((60, 142), f"{mode_en}  ·  {card['achievements']} ACH", font=font('osw', 19, 400), fill=(84, 86, 82))
+    # "{n} 成就数" (maintainer); the Chinese word needs the CJK font.
+    head = f"{mode_en}  ·  {card['achievements']} "
+    td.text((60, 142), head, font=font('osw', 19, 400), fill=(84, 86, 82))
+    td.text((60+td.textlength(head, font=font('osw', 19, 400)), 144), '成就数', font=font('sc', 17, 500), fill=(84, 86, 82))
     tag = tag.filter(ImageFilter.SMOOTH)
     turned = tag.rotate(angle, expand=True, resample=Image.BICUBIC)
     shadow = Image.new('RGBA', turned.size, (0, 0, 0, 0))
@@ -200,7 +203,7 @@ def render_image(card):
     # header
     d.rectangle([40, 30, 300, 70], fill=(186, 172, 136))
     d.text((56, 38), f"FILE NO. {card['aid'] if card['aid'] is not None else '—'}", font=font('mono', 22), fill=INK)
-    d.text((40, 90), '塔科夫 · 人员情报档案', font=font('sc', 34, 800), fill=INK)
+    d.text((40, 90), '塔科夫市 · 绝密情报档案', font=font('sc', 34, 800), fill=INK)
     d.text((42, 138), 'TARKOV INTELLIGENCE DOSSIER  /  MODE: '+mode_en, font=font('mono', 18), fill=FADED)
     d.line([40, 170, W-40, 170], fill=INK, width=2)
     d.line([40, 175, W-40, 175], fill=INK, width=1)
@@ -222,10 +225,10 @@ def render_image(card):
     y = 460
     d.text((40, y), f'{next(number)}、作战记录', font=font('sc', 22, 800), fill=INK)
     y += 40
-    head = ['', '战局', SURVIVED, '存活率', '击杀', '死亡', 'K/D', '击杀 PMC']
-    xs = [40, 160, 245, 330, 445, 545, 620, 705, W-40]
+    head = ['', '战局', SURVIVED, '存活率', '击杀', '死亡', 'K/D', '击杀 PMC', 'PMC K/D']
+    xs = [40, 135, 210, 285, 385, 470, 540, 615, 705, W-40]
     for x, h in zip(xs, head):
-        d.text((x, y), h, font=font('sc', 16, 700), fill=INK)
+        d.text((x, y), h, font=fit(d, h, 'sc', 16, xs[xs.index(x)+1]-x-6, 700), fill=INK)
     y += 30
     d.line([40, y, W-40, y], fill=INK)
     for card_side in card['sides']:
@@ -236,7 +239,7 @@ def render_image(card):
             d.text((xs[1], y+2), '暂无记录', font=font('sc', 18, 400), fill=FADED)
         else:
             values = [stats['raids'], stats['survived'], card_side['rate'], stats['kills'], stats['deaths'],
-                      card_side['kd'] or '—', stats['pmc_kills']]
+                      card_side['kd'] or '—', stats['pmc_kills'], card_side['pmc_kd'] or '—']
             for i, value in enumerate(values, 1):
                 text = str(value)
                 d.text((xs[i], y), text, font=fit(d, text, 'mono', 22, xs[i+1]-xs[i]-8), fill=INK)
@@ -281,13 +284,15 @@ def render_image(card):
 
 def footer(d, y, updated, fill, small_fill):
     """The data-source line and the plugin's small print, from `y`; the y where the picture ends."""
-    updated = f'档案更新于 {updated}（北京时间）' if updated else '时间为北京时间'
-    d.text((40, y+10), f'数据来自 tarkov.dev 公开快照（非实时） · {updated}', font=font('sc', 14, 400), fill=fill)
-    # Plugin name, repository and licence in small print at the very foot (maintainer, after the closed test).
-    small = font('sc', 13, 400)
-    d.text((40, y+34), f"{NAME} v{VERSION} · {REPO.removeprefix('https://')}", font=small, fill=small_fill)
-    d.text((40, y+54), f'开源插件，{LICENSE} 许可；与 tarkov.dev 和 Battlestate Games 无关', font=small, fill=small_fill)
-    return y+84
+    updated = f'档案更新于 GMT+8 {updated}' if updated else '时间为 GMT+8'
+    line = f'数据来自 tarkov.dev 公开快照（非实时） · {updated}'
+    d.text((W/2-d.textlength(line, font=font('sc', 14, 400))/2, y+10), line, font=font('sc', 14, 400), fill=fill)
+    # Plugin name, repository and the open-source statement, centred like the line above and a little larger
+    # (maintainer).
+    small = font('sc', 15, 400)
+    for i, text in enumerate((f"{NAME} v{VERSION} · {REPO.removeprefix('https://')}", NOTICE)):
+        d.text((W/2-d.textlength(text, font=small)/2, y+38+i*24), text, font=small, fill=small_fill)
+    return y+96
 
 
 def jpeg(img):

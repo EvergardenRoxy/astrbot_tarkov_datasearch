@@ -84,13 +84,32 @@ class ImageTests(unittest.TestCase):
                 drawn.clear()
                 with patch.object(ImageDraw.ImageDraw, 'text', record):
                     _, picture = draw(summarize(profile()), notes=notes)
-                (_, y1), plugin = drawn[-2]
-                (_, y2), licence = drawn[-1]
-                self.assertEqual(plugin, 'astrbot_tarkov_datasearch v0.4.1 · github.com/EvergardenRoxy/astrbot_tarkov_datasearch')
-                self.assertEqual(licence, '开源插件，GPL-3.0-or-later 许可；与 tarkov.dev 和 Battlestate Games 无关')
-                # Last on the page and inside it.
+                (x1, y1), plugin = drawn[-2]
+                (x2, y2), licence = drawn[-1]
+                self.assertEqual(plugin, 'astrbot_tarkov_datasearch v0.4.2 · github.com/EvergardenRoxy/astrbot_tarkov_datasearch')
+                self.assertEqual(licence, '本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系')
+                # Last on the page, inside it, and centred (maintainer: they were crowded on the left).
                 self.assertGreater(y1, max(xy[1] for xy, _ in drawn[:-2]))
                 self.assertLess(y2+20, picture.height)
+                self.assertGreater(min(x1, x2), 60)
+                self.assertTrue(any('GMT+8 ' in text for _, text in drawn))
+                (x0, _), data_line = next((xy, text) for xy, text in drawn if text.startswith('数据来自 tarkov.dev 公开快照'))
+                self.assertGreater(x0, 60)  # centred too (maintainer)
+                self.assertFalse([text for _, text in drawn if '北京时间' in text])
+
+    def test_maintainer_wording(self):
+        drawn = []
+        real = ImageDraw.ImageDraw.text
+        def record(self, xy, text, *args, **kwargs):
+            drawn.append(text)
+            return real(self, xy, text, *args, **kwargs)
+        with patch.object(ImageDraw.ImageDraw, 'text', record):
+            draw(summarize(profile()))
+        self.assertIn('塔科夫市 · 绝密情报档案', drawn)
+        self.assertIn('成就数', drawn)
+        self.assertFalse([text for text in drawn if 'ACH' in text])
+        self.assertIn('PMC K/D', drawn)
+        self.assertEqual(drawn.count('9.00'), 1)  # PMC K/D of the PMC side
 
     def test_height_follows_skills_and_notes(self):
         s = summarize(profile())
