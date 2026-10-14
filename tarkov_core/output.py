@@ -2,7 +2,7 @@
 import re
 
 from . import NAME, NOTICE, REPO, VERSION
-from .card import EXITS, SURVIVED, build_card, refresh_note, stale_note
+from .card import BOT_LIMIT, EXITS, SURVIVED, build_card, refresh_note, stale_note
 
 
 def side_lines(card_side):
@@ -78,7 +78,7 @@ def md(text):
 
 def markdown_refresh(url):
     # The link is built by the plugin from a mode and a number, so it is not escaped.
-    return f"数据不会自动更新：在 tarkov.dev 用该模式搜索一次这名玩家，或打开[这名玩家的页面]({url})，即可刷新档案，几分钟后再查。"
+    return f"由于 {BOT_LIMIT}，数据不会自动更新：在 tarkov.dev 用该模式搜索一次这名玩家，或打开[这名玩家的页面]({url})，即可刷新档案，几分钟后再查。"
 
 
 def render_markdown(card):

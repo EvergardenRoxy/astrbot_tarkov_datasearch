@@ -28,10 +28,13 @@ def stale_note(days):
     return f'这份档案已有 {days} 天没有更新：可能是该玩家很久没玩这个模式，也可能是 tarkov.dev 很久没有刷新过他的档案。'
 
 
+BOT_LIMIT = 'tarkov.dev 和 Battlestate Games 目前都不向机器人开放玩家档案的查询'
+
+
 def refresh_note(url):
     # Searching the player on the website was observed to rewrite the snapshot (handoff §16); opening the page by
     # account id runs the same live lookup in the site's code.
-    return f'数据不会自动更新：在 tarkov.dev 用该模式搜索一次这名玩家，或打开 {url}，即可刷新档案，几分钟后再查。'
+    return f'由于 {BOT_LIMIT}，数据不会自动更新：在 tarkov.dev 用该模式搜索一次这名玩家，或打开 {url}，即可刷新档案，几分钟后再查。'
 
 
 def side(title, stats):
