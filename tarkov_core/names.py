@@ -22,11 +22,33 @@ ENTRY = re.compile(rb'"(\d{1,12})"\s*:\s*"((?:[^"\\]|\\.){0,64})"')
 # but generated ones (TarkovCitizen1019349) are longer: up to 21 in the 2026-10-13 indexes.
 NAME = re.compile(r'[A-Za-z0-9_-]{3,24}')
 MAX_MATCHES = 6
+# "Did you mean" suggestions: names that differ only by '_' and '-' (players mix them up). Names with more separators
+# than this get no suggestions, so the variants stay few (2**6 at most).
+MAX_SEPARATORS = 6
+SUGGESTIONS = 3
 # After a failed refresh, wait this long before downloading again, with or without an older index to fall back on.
 RETRY_SECONDS = 600
 # Temporary files older than this at start-up are leftovers of a crash; younger ones may belong to an instance that
 # AstrBot is still running after a reload (a config save reloads the plugin without cancelling running queries).
 LEFTOVER_SECONDS = 3600
+
+
+def spelling_variants(name):
+    """The other lower-case spellings of `name` with each '_' or '-' swapped for the other; [] when there are none or
+    too many separators."""
+    key = name.strip().lower()
+    spots = [i for i, char in enumerate(key) if char in '_-']
+    if not spots or len(spots) > MAX_SEPARATORS:
+        return []
+    variants = []
+    for mask in range(2**len(spots)):
+        chars = list(key)
+        for bit, i in enumerate(spots):
+            chars[i] = '-' if mask >> bit & 1 else '_'
+        variant = ''.join(chars)
+        if variant != key:
+            variants.append(variant)
+    return variants
 
 
 def unique_suffix():
@@ -159,6 +181,28 @@ class NameIndex:
                 self.db_path(mode_path).unlink(missing_ok=True)
                 await self.refresh(mode_path)
                 return await asyncio.to_thread(self.query, mode_path, name)
+
+    async def similar(self, mode_path, name):
+        """[(account id, nickname)] whose name differs from `name` only by '_' and '-', from the index already on
+        disk: never downloads, [] without an index."""
+        variants = spelling_variants(name)
+        if not variants or not self.has_index(mode_path):
+            return []
+        async with self.locks.setdefault(mode_path, asyncio.Lock()):
+            try:
+                return await asyncio.to_thread(self.query_similar, mode_path, variants)
+            except sqlite3.DatabaseError as exc:
+                logger.warning('Tarkov name index %s unreadable for suggestions: %s', mode_path, type(exc).__name__)
+                return []
+
+    def query_similar(self, mode_path, variants):
+        db = read_only(self.db_path(mode_path))
+        try:
+            marks = ','.join('?'*len(variants))
+            return db.execute(f'SELECT aid, name FROM names WHERE key IN ({marks}) ORDER BY aid LIMIT ?',
+                              (*variants, SUGGESTIONS)).fetchall()
+        finally:
+            db.close()
 
     def query(self, mode_path, name):
         key = name.strip().lower()

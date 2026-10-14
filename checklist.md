@@ -12,7 +12,7 @@
 
 - 当前版本 **0.4.0**：0.3.0 改为“绑定身份 + 查询”，0.4.0 加入图片页脚和塔科夫竞技场查询；尚未在聊天平台实测（维护者对 0.3.0 做过小范围封闭测试）。
 - 已用真实网络把插件的查询流程完整跑过一遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID 和昵称各查了 PVE、PVP、赛季模式。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
-- 自动测试共 172 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
+- 自动测试共 177 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
 
 修改由 Claude Opus 5.5（通过 Claude Code）完成，经项目维护者审阅。做法与 spark 项目相同：先写测试，再改代码，最后跑完全部测试。另外用“故意改坏代码”的方式检查测试：把关键保护逐一从代码里去掉，确认每一项都会被测试发现（每一轮修改都做，数量见下文各节）。
 
@@ -20,7 +20,7 @@
 
 ```bash
 pip install -r requirements.txt
-python -m unittest discover -s tests   # 应显示 Ran 172 tests ... OK
+python -m unittest discover -s tests   # 应显示 Ran 177 tests ... OK
 python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.4.0.zip
 ```
 
@@ -270,6 +270,16 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
    - 为什么这样设计：竞技场是另一个游戏，默认不混进“三种模式一起看”，也不让每次查询多一个请求；需要时由管理员打开设置。
    - 图片（维护者选定方案 B）：竞技场主办方的选手名册，皮面上的登记页，GP 币样式的最佳 ARP 徽章，非排位 / 排位两段，胜场多于负场的模式打勾，落款“登记人：THE HOST”和火漆印，最下方是数据时间和插件信息。示例见 `docs/arena_preview.jpg`。已按维护者要求用一名公开玩家的真实档案生成参考图核对效果（玩家名和图片都不写入仓库）。
    - 怎么核对：发送 `/tarkov 竞技场 <在 tarkov.dev 用竞技场模式搜索过的玩家ID>`；测试 `tests/test_arena.py`（档案读取、排位/非排位、畸形数据、文字和 Markdown、无等级）和 `tests/test_plugin.py` 中的 `test_arena_*`（命令、网址、绑定、名字、默认设置、各输出方式）。已用真实网络查过 3 个公开的竞技场档案，读取正常。
+
+### 名字相近的提示（未发布）
+
+1. **为什么**：维护者测试竞技场查询时输入的名字带下划线 `_`，而有竞技场档案的玩家名字是同样的拼写、但用的是连字符 `-`。两者是不同的账号，下划线和连字符很容易记混。（玩家名不写入仓库。）
+2. **做了什么**（维护者同意）：
+   - 按名字查不到时，回复里加上“你是不是要找：X（账号 ID …）？可以发送 /tarkov … X。如果都不是，……”；
+   - 名字对上了一个账号、但这个账号在这个模式下没有档案时，加上“名字相近的还有：X（账号 ID …）”；
+   - 按名字绑定找不到时也给出提示；
+   - 只找只差 `_`/`-` 的写法（不区分大小写），最多 3 个；只查插件记录和已经下载的昵称名单，不会为此下载名单或访问 tarkov.dev。名字里 `_`/`-` 超过 6 个时不提示。
+3. **怎么核对**：发送一个只把 `-` 写成 `_` 的名字，应收到提示；测试 `test_names_differing_by_underscore_or_hyphen_are_suggested`、`test_suggestions_from_the_downloaded_index`、`test_similar_names`、`test_spelling_variants`、`test_similar_names_from_the_index_on_disk_only`。把这些保护逐一从代码里去掉（共 10 处），每一处都会被测试发现。已用真实数据重现维护者的那次查询，两种情况都给出了正确提示。
 
 ## 需要维护者决定或确认的事
 

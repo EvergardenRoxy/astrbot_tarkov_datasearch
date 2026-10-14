@@ -6,8 +6,10 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from tarkov_core.names import MAX_MATCHES, NAME, RETRY_SECONDS, NameIndex, build, parse_entries
+from tarkov_core.names import MAX_MATCHES, MAX_SEPARATORS, NAME, RETRY_SECONDS, NameIndex, build, parse_entries, spelling_variants
+from tarkov_core import names as names_module
 from tarkov_core.transport import QueryError
 
 INDEX = {'15': 'Buhaus', '16': 'buhaus', '18': 'Vladimir-Karpov', '20': 'Sniper\n', '21': 'quote"name', '22': '',
@@ -69,6 +71,15 @@ class ParseTests(unittest.TestCase):
                          ('x'*24, True), ('x'*25, False), ('名字', False), ('a b', False)):
             with self.subTest(name=name):
                 self.assertEqual(bool(NAME.fullmatch(name)), ok)
+
+
+class VariantTests(unittest.TestCase):
+    def test_spelling_variants(self):
+        self.assertEqual(spelling_variants('demo_player'), ['demo-player'])
+        self.assertEqual(sorted(spelling_variants(' A-b_C ')), ['a-b-c', 'a_b-c', 'a_b_c'])
+        self.assertEqual(spelling_variants('NoSeparators'), [])
+        self.assertEqual(len(spelling_variants('a'+'_b'*MAX_SEPARATORS)), 2**MAX_SEPARATORS-1)
+        self.assertEqual(spelling_variants('a'+'_b'*(MAX_SEPARATORS+1)), [])
 
 
 class IndexTests(unittest.IsolatedAsyncioTestCase):
@@ -240,6 +251,27 @@ class IndexTests(unittest.IsolatedAsyncioTestCase):
         rows, total = await index.lookup('pve', 'Same')
         self.assertEqual(rows[0], (99, 'Same'))
         self.assertEqual((len(rows), total), (MAX_MATCHES, 10))
+
+    async def test_similar_names_from_the_index_on_disk_only(self):
+        download = FakeDownload([document({'5': 'demo-player', '6': 'Demo_Player', '7': 'other_name', '8': 'demo-play-er'})])
+        index = NameIndex(self.root, download)
+        # No index yet: nothing is downloaded or opened for a suggestion.
+        with patch.object(names_module.logger, 'warning') as warning:
+            self.assertEqual(await index.similar('arena', 'demo_player'), [])
+        warning.assert_not_called()
+        self.assertEqual(download.calls, [])
+        await index.lookup('arena', 'nobody')
+        self.assertEqual(await index.similar('arena', 'demo_player'), [(5, 'demo-player')])
+        self.assertEqual(await index.similar('arena', 'DEMO-PLAYER'), [(6, 'Demo_Player')])
+        self.assertEqual(await index.similar('arena', 'nounderscore'), [])
+        self.assertEqual(len(download.calls), 1)
+        # The meta table still reads (so the index counts as present) but the names table is gone: no suggestion, no error.
+        db = sqlite3.connect(index.db_path('arena'))
+        db.execute('DROP TABLE names')
+        db.commit()
+        db.close()
+        self.assertTrue(index.has_index('arena'))
+        self.assertEqual(await index.similar('arena', 'demo_player'), [])
 
     def test_default_check_is_weekly(self):
         self.assertEqual(NameIndex(self.root, FakeDownload([])).refresh_seconds, 7*24*3600)

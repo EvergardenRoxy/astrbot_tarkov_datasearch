@@ -54,6 +54,15 @@ class AccountsTests(unittest.TestCase):
         self.store.remember(1, '  ')
         self.assertEqual(self.store.lookup(''), ([], 0))
 
+    def test_similar_names(self):
+        self.store.remember(5, 'demo-player')
+        self.store.remember(6, 'Other_Name')
+        self.assertEqual(self.store.similar('demo_player'), [(5, 'demo-player')])
+        self.assertEqual(self.store.similar('OTHER-NAME'), [(6, 'Other_Name')])
+        # The exact name is a match, not a suggestion; names without separators have no variants.
+        self.assertEqual(self.store.similar('demo-player'), [])
+        self.assertEqual(self.store.similar('nobody'), [])
+
     def test_old_names_survive_a_rename(self):
         self.store.remember(5, 'OldName')
         self.store.remember(5, 'NewName')
