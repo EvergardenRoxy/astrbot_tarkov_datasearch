@@ -12,7 +12,7 @@
 
 - 当前版本 **0.4.2**：0.3.0 改为“绑定身份 + 查询”，0.4.0 加入图片页脚和塔科夫竞技场查询，0.4.1 加入名字相近的提示，0.4.2 加入 PMC K/D、竞技场段位，并按维护者意见调整了图片文字和回复末尾的开源声明。尚未在聊天平台实测（维护者对 0.3.0 做过小范围封闭测试）。
 - 已用真实网络把插件的查询流程完整跑过多遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID、昵称和网址查过 PVP、PVE、赛季和竞技场。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
-- 自动测试共 190 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
+- 自动测试共 191 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
 
 修改由 Claude Opus 5.5（通过 Claude Code）完成，经项目维护者审阅。做法与 spark 项目相同：先写测试，再改代码，最后跑完全部测试。另外用“故意改坏代码”的方式检查测试：把关键保护逐一从代码里去掉，确认每一项都会被测试发现（每一轮修改都做，数量见下文各节）。
 
@@ -20,7 +20,7 @@
 
 ```bash
 pip install -r requirements.txt
-python -m unittest discover -s tests   # 应显示 Ran 190 tests ... OK
+python -m unittest discover -s tests   # 应显示 Ran 191 tests ... OK
 python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.4.2.zip
 ```
 
@@ -67,8 +67,9 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
 
 1. **帮助图片**：输出方式为图片时，`/tarkov 帮助` 回复一张“档案查询指南”图片，风格与档案图片一致（同样的纸张、页脚三行）。内容与文字版相同：常用命令（深色标签带）、模式写法（默认模式用红框标出）、第一次查询的三个步骤、注意事项。字号比档案图片大（正文约 20 像素、命令约 24 像素），因为这张图主要在手机上看。
 2. **链接**：图片里的网址点不了，所以图片后面附一行“tarkov.dev 玩家搜索：网址”，和档案图片后附刷新链接的做法相同。
-3. **跟随设置**：默认模式、“不写模式时也查竞技场”、昵称名单的更新间隔都会反映在图片上，和文字版一致。输出方式为文字或 Markdown，或画图失败时，仍发文字版。
-4. **怎么核对**：测试 `tests/test_help_image.py` 和 `test_help_follows_the_output_mode`、`test_help_image_settings_and_failure`；把关键逻辑逐一从代码里去掉（共 6 处），每一处都会被测试发现。示例图片见 README（`docs/help_preview.jpg`）。
+3. **链接总是以文字发出**（维护者：“无论如何情况下都要保留链接的文字输出，方便使用”）：图片、文字、Markdown 三种输出方式，以及画图失败改发文字时，帮助的最后一行都是“tarkov.dev 玩家搜索：网址”，档案回复（包括竞技场）都带这名玩家的 tarkov.dev 页面链接。测试 `test_links_are_always_given_as_text` 把三种输出方式 × 画图成功 / 失败 × 帮助 / 档案 / 竞技场逐一检查。
+4. **跟随设置**：默认模式、“不写模式时也查竞技场”、昵称名单的更新间隔都会反映在图片上，和文字版一致。输出方式为文字或 Markdown，或画图失败时，仍发文字版。
+5. **怎么核对**：测试 `tests/test_help_image.py` 和 `test_help_follows_the_output_mode`、`test_help_image_settings_and_failure`、`test_links_are_always_given_as_text`；把关键逻辑逐一从代码里去掉（共 8 处），每一处都会被测试发现。示例图片见 README（`docs/help_preview.jpg`）。
 
 ### 0.4.2：PMC K/D、开源声明、图片文字和竞技场段位（维护者检查参考图片后提出）
 
