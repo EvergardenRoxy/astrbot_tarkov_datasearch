@@ -86,7 +86,7 @@ class ImageTests(unittest.TestCase):
                     _, picture = draw(summarize(profile()), notes=notes)
                 (_, y1), plugin = drawn[-2]
                 (_, y2), licence = drawn[-1]
-                self.assertEqual(plugin, 'astrbot_tarkov_datasearch v0.3.0 · github.com/EvergardenRoxy/astrbot_tarkov_datasearch')
+                self.assertEqual(plugin, 'astrbot_tarkov_datasearch v0.4.0 · github.com/EvergardenRoxy/astrbot_tarkov_datasearch')
                 self.assertEqual(licence, '开源插件，GPL-3.0-or-later 许可；与 tarkov.dev 和 Battlestate Games 无关')
                 # Last on the page and inside it.
                 self.assertGreater(y1, max(xy[1] for xy, _ in drawn[:-2]))

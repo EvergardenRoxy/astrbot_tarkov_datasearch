@@ -10,7 +10,7 @@
 
 ## 当前状态
 
-- 当前版本 **0.3.0**，改为“绑定身份 + 查询”，尚未在聊天平台实测。
+- 当前版本 **0.4.0**：0.3.0 改为“绑定身份 + 查询”，0.4.0 加入图片页脚和塔科夫竞技场查询；尚未在聊天平台实测（维护者对 0.3.0 做过小范围封闭测试）。
 - 已用真实网络把插件的查询流程完整跑过一遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID 和昵称各查了 PVE、PVP、赛季模式。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
 - 自动测试共 172 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
 
@@ -21,7 +21,7 @@
 ```bash
 pip install -r requirements.txt
 python -m unittest discover -s tests   # 应显示 Ran 172 tests ... OK
-python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.3.0.zip
+python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.4.0.zip
 ```
 
 在聊天中核对：
@@ -260,7 +260,7 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
 3. **改写了提交历史**（维护者决定）：所有 17 个提交里的这些信息都换成了同样的虚构数据，旧的示例图片也全部替换，然后强制推送了两个分支。改写后每个提交的测试都能通过，最新代码与改写前完全相同，整个历史里已搜不到真实玩家名、账号 ID 和真实战绩。所有提交的编号（哈希）都变了。改写前别人已经克隆或 fork 的副本，以及 GitHub 对旧提交的缓存，不在仓库能控制的范围内。
 4. **怎么核对**：`git log --all -p | grep -i -E "<真实玩家名>|<真实账号ID>"` 应没有结果；全部测试通过。
 
-### 封闭测试后的修改与竞技场调研（未发布）
+### 0.4.0：封闭测试后的修改与竞技场查询
 
 1. **图片页脚**（维护者意见）：图片最下方加两行小字，写明插件名称和版本、GitHub 仓库地址、开源许可（GPL-3.0-or-later），并注明与 tarkov.dev 和 Battlestate Games 无关。
    - 怎么核对：看 `docs/preview.jpg` 的最下方；测试 `test_footer_names_the_plugin_source_and_licence`（页脚是图上最后画的内容，而且在图片范围内）、`test_footer_facts_match_the_repository`（仓库地址与 metadata.yaml 一致）。
