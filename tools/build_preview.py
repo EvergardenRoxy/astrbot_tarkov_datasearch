@@ -18,6 +18,7 @@ sys.modules.setdefault('astrbot', types.ModuleType('astrbot'))
 sys.modules.setdefault('astrbot.api', api)
 
 from fixtures import arena_profile, profile  # noqa: E402
+from tarkov_core import COMMAND_STYLES  # noqa: E402
 from tarkov_core.arena import build_arena_card, summarize_arena  # noqa: E402
 from tarkov_core.arena_image import render_arena_image  # noqa: E402
 from tarkov_core.card import build_card  # noqa: E402
@@ -46,7 +47,8 @@ if __name__ == '__main__':
     arena = summarize_arena(arena_profile())
     arena_card = build_arena_card(arena, now=arena['updated']+3600, refresh_url=page_url('arena', arena['aid']))
     (ROOT/'docs'/'arena_preview.jpg').write_bytes(render_arena_image(arena_card))
-    help_card = {'mode': 'pve', 'label': 'PVE', 'search': search_url('pve'), 'example': page_url('pve', 1234567),
+    style = COMMAND_STYLES['mention']
+    help_card = {'command': style['command'], 'note': style['note'], 'mode': 'pve', 'label': 'PVE', 'search': search_url('pve'), 'example': page_url('pve', 1234567),
                  'arena_by_default': False, 'index': None}
     (ROOT/'docs'/'help_preview.jpg').write_bytes(render_help_image(help_card))
     print(render_text(card))
