@@ -13,7 +13,7 @@ from astrbot.api.star import Context, Star, StarTools, register
 from .tarkov_core import transport
 from .tarkov_core.accounts import Accounts, load_secret, owner_key
 from .tarkov_core.modes import GAME_MODES, MODES, label_of, page_url, parse_mode, parse_player_url, path_of, search_url
-from .tarkov_core.names import NAME, NameIndex
+from .tarkov_core.names import NAME, SUGGESTIONS, NameIndex
 from .tarkov_core.arena import build_arena_card, render_arena_markdown, render_arena_text, summarize_arena
 from .tarkov_core.arena_image import render_arena_image
 from .tarkov_core.card import build_card
@@ -53,7 +53,7 @@ def every(seconds):
     return f'每 {hours} 小时'
 
 
-@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.4.0')
+@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.4.1')
 class TarkovPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -333,7 +333,8 @@ class TarkovPlugin(Star):
             rows, _ = await asyncio.to_thread(self.accounts.lookup, target)
             exact = [row for row in rows if row[1] == target]
             if len(rows) != 1 and len(exact) != 1:
-                return event.plain_result(f'不能确定 {target} 是哪个账号。'
+                hint = await self.suggestion(mode, True, target, command='/tarkov 绑定') if not rows else ''
+                return event.plain_result(f'不能确定 {target} 是哪个账号。' + hint
                                           + self.first_time(mode, '自己', '/tarkov 绑定', explicit=False))
             aid = (exact or rows)[0][0]
         # A binding is for the account, whatever the mode: a profile in any mode confirms the account exists.
@@ -407,7 +408,8 @@ class TarkovPlugin(Star):
             other = '' if explicit else f'其他模式的名单要写上模式查询，例如 /tarkov pve {target}。'
             unknown = (f'记录和 tarkov.dev 的 {label} 昵称名单（{every(self.names.refresh_seconds)}更新一次）里都没有 {target}。{other}'
                        if self.index_enabled() else f'还不知道 {target} 的账号 ID。')
-            yield event.plain_result(unknown+self.first_time(mode, explicit=explicit)+'查到一次后，之后就能直接用名字查询。')
+            hint = await self.suggestion(mode, explicit, target)
+            yield event.plain_result(unknown+hint+self.first_time(mode, explicit=explicit)+'查到一次后，之后就能直接用名字查询。')
             return
         exact = [match for match in matches if match[1] == target]
         if len(exact) != 1 and len(matches) > 1:
@@ -417,7 +419,36 @@ class TarkovPlugin(Star):
             return
         aid = (exact or matches)[0][0]
         reply, missing = await self.show(event, aid, mode, explicit, trace, asked=target, where=where)
-        yield reply or event.plain_result(f'{target} 的账号 ID 是 {aid}。'+missing)
+        if reply:
+            yield reply
+            return
+        # The name is someone else's than the player meant, perhaps: name the accounts spelled almost the same.
+        others = await self.similar_accounts(mode, target, exclude=aid)
+        hint = ''
+        if others:
+            listed = '、'.join(f'{name}（账号 ID {other}）' for other, name in others)
+            hint = f'名字相近的还有：{listed}，可以发送 {self.command_for(mode, explicit)} {others[0][1]} 试试。'
+        yield event.plain_result(f'{target} 的账号 ID 是 {aid}。'+missing+hint)
+
+    async def similar_accounts(self, mode, target, exclude=None):
+        """[(aid, name)] whose name differs from `target` only by '_' and '-' (players mix them up), from the shared
+        record and, when it is on, the index already downloaded for the mode (nothing is fetched)."""
+        found = await asyncio.to_thread(self.accounts.similar, target)
+        if self.index_enabled():
+            found += await self.names.similar(path_of(mode), target)
+        unique = list({aid: (aid, name) for aid, name in reversed(found) if aid != exclude}.values())[::-1]
+        return unique[:SUGGESTIONS]
+
+    def command_for(self, mode, explicit):
+        return '/tarkov '+self.mode_word(mode) if explicit else '/tarkov'
+
+    async def suggestion(self, mode, explicit, target, command=None):
+        """A "did you mean" sentence for a name nobody knows, or ''."""
+        found = await self.similar_accounts(mode, target)
+        if not found:
+            return ''
+        listed = '、'.join(f'{name}（账号 ID {aid}）' for aid, name in found)
+        return f'你是不是要找：{listed}？可以发送 {command or self.command_for(mode, explicit)} {found[0][1]}。如果都不是，'
 
     def output_mode(self):
         mode = str(self.config.get('output_mode', 'image'))

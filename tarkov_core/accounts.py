@@ -11,6 +11,8 @@ import secrets
 import sqlite3
 import time
 
+from .names import SUGGESTIONS, spelling_variants
+
 # Recorded names kept at most; the least recently seen are dropped beyond this.
 MAX_NAMES = 200000
 MAX_MATCHES = 6
@@ -97,6 +99,19 @@ class Accounts:
                 if count > MAX_NAMES:
                     db.execute('DELETE FROM names WHERE rowid IN (SELECT rowid FROM names ORDER BY seen_at LIMIT ?)',
                                (count-MAX_NAMES,))
+        finally:
+            db.close()
+
+    def similar(self, name):
+        """[(aid, nickname)] recorded under a name that differs from `name` only by '_' and '-', most recent first."""
+        variants = spelling_variants(name)
+        if not variants:
+            return []
+        db = self.connect()
+        try:
+            marks = ','.join('?'*len(variants))
+            return db.execute(f'SELECT aid, name FROM names WHERE key IN ({marks}) ORDER BY seen_at DESC LIMIT ?',
+                              (*variants, SUGGESTIONS)).fetchall()
         finally:
             db.close()
 
