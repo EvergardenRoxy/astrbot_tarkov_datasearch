@@ -145,9 +145,15 @@ class TarkovPlugin(Star):
                 '查别人：/tarkov [模式] <昵称、账号ID 或玩家页网址>\n'
                 f'模式：pvp、pve、赛季（pvp-season）、竞技场（arena）；不写时先看 {label_of(self.default_mode())}，没有档案就自动换成有档案的模式'
                 + ('（也会看竞技场）' if self.arena_by_default() else '（竞技场要写明：/tarkov 竞技场 <昵称、账号ID 或网址>）') + '\n'
-                f'第一次查某个玩家前，请先在 tarkov.dev 用对应模式搜索他一次（{search_url(self.default_mode())}），'
+                '第一次查某个玩家前，请先在 tarkov.dev 用对应模式搜索他一次（链接见最后一行），'
                 '再把跳转后的网址发给我；之后就能直接用名字查（按 ID 或网址查到过的名字会被记住' + index + '）。\n'
-                '档案不会自动更新：要看最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面。')
+                '档案不会自动更新：要看最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面。\n'
+                + self.search_line())
+
+    def search_line(self):
+        """The search page as a text line. Every help reply ends with it, the image included (maintainer: the link
+        is always given as text, whatever the output)."""
+        return f'tarkov.dev 玩家搜索：{search_url(self.default_mode())}'
 
     def help_card(self):
         """What the help image shows; the same settings as help_text."""
@@ -158,12 +164,12 @@ class TarkovPlugin(Star):
 
     async def help_reply(self, event):
         """The help in the configured output: an image (maintainer: the text is hard to read on phones) followed by
-        the search page as a clickable link, or the text when the output is text or Markdown or drawing fails."""
+        the search page as a text line (`search_line`), or the text, which ends with the same line, when the output is
+        text or Markdown or drawing fails."""
         if self.output_mode() == 'image':
             try:
                 data = await asyncio.to_thread(render_help_image, self.help_card())
-                return event.chain_result([Image.fromBytes(data),
-                                           Plain(f'tarkov.dev 玩家搜索：{search_url(self.default_mode())}')])
+                return event.chain_result([Image.fromBytes(data), Plain(self.search_line())])
             except Exception as exc:
                 logger.warning('Tarkov help image failed, sending text: %s', type(exc).__name__)
         return event.plain_result(self.help_text())

@@ -14,7 +14,7 @@ changes. The layout and conventions follow the maintainer's earlier plugin `astr
 | Maintainer decisions | Personal data only (no item/price/task queries). Any nickname may be queried, as "mode + name". Data source: players.tarkov.dev static snapshots. Plain-text output first; image rendering later. v0.1 fields: level, side, K/D, survival rate, skills; lookup by nickname or account id. License GPL-3.0-or-later. Name index checked weekly (§9). AI statement names Claude Opus 5.5 (§9). |
 | Branch | `claude/amazing-clarke-eu3xue` (repo was empty). No PR. |
 | Version | 0.4.2 since §21; 0.4.1 since §20; 0.4.0 since §19; 0.3.0 since §16; 0.2.0 since §15; 0.1.0 before (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). |
-| Tests | 190, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
+| Tests | 191, `python -m unittest discover -s tests`, Python 3.13 locally; CI on 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read (not executed): `register_command(command_name, sub_command, alias: set, **kwargs)` in `astrbot/core/star/register/star_handler.py`. Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. **No live AstrBot run.** |
 
 Maintainer's working rule (carried over from the spark plugin): before changing behaviour, propose a plan with its
@@ -149,6 +149,8 @@ tests were added or bounded for each, and one survivor was a no-op mutation (it 
 - When upstream game data changes (new levels or skills), re-run `python tools/build_static.py` and commit the diff.
 - Never render through AstrBot's `text_to_image`/`html_render` (they post content to a remote renderer by default). After adding Chinese text to the code or new skill names, re-run `python tools/build_fonts.py`; `test_font_covers_every_character_of_the_code` fails until then.
 - Never subset or otherwise modify `ShareTechMono-Regular.ttf` (Reserved Font Name 'Share').
+- Every help and profile reply carries its link as text, whatever the output and whether drawing worked (maintainer,
+  §22): images are followed by a `Plain` line; `test_links_are_always_given_as_text` pins it.
 
 ## 8. Ideas recorded for later (not requested for v0.1)
 
@@ -780,3 +782,10 @@ names. (The names and ids are not recorded here, §18.)
   interval follow the card, exactly one "默认" mark on the right chip, footer last), plugin tests
   `test_help_follows_the_output_mode`, `test_help_image_settings_and_failure`. 184 -> 190. Mutation check (6): always
   text, arena flag, index interval, default mark, arena rule, search link — all killed.
+- Follow-up (maintainer: "无论如何情况下都要保留链接的文字输出，方便使用"): `search_line()` ("tarkov.dev 玩家搜索：<url>")
+  is the last line of `help_text()` (the URL moved out of the first-query sentence, which now points to the last
+  line) and the `Plain` after the help image, so every help reply ends with the same text link. Profile and Arena
+  replies already carried theirs (image + `Plain` refresh line; text/Markdown refresh notes, also on the drawing
+  fallback). Invariant added to §7. Test `test_links_are_always_given_as_text`: output image/text/markdown x drawing
+  ok/failing x help/profile/Arena. 190 -> 191. Mutation check (2): link line after the help image, last line of the
+  text help — both killed.

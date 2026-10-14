@@ -161,6 +161,31 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                 result = await self.run_command(self.plugin({'output_mode': output}, output=None), Event('/tarkov 帮助'))
                 self.assertIn('绑定自己：/tarkov 绑定', result[0])
 
+    async def test_links_are_always_given_as_text(self):
+        # Maintainer: whatever the output, the link is also sent as text (an image cannot be tapped or copied).
+        self.profiles[('pve', 1234567)] = profile()
+        self.profiles[('arena', 1234567)] = arena_profile()
+        def broken(card):
+            raise OSError('font missing')
+        def texts(result):
+            reply = result[-1]
+            return '\n'.join(part.text for part in reply if isinstance(part, PlainStub)) if isinstance(reply, list) else reply
+        cases = (('/tarkov 帮助', 'tarkov.dev 玩家搜索：https://tarkov.dev/players?gameMode=pve'),
+                 ('/tarkov pve 1234567', 'https://tarkov.dev/players/pve/1234567'),
+                 ('/tarkov 竞技场 1234567', 'https://tarkov.dev/players/arena/1234567'))
+        for output in ('image', 'text', 'markdown'):
+            for fails in (False, True):
+                for command, link in cases:
+                    with self.subTest(output=output, fails=fails, command=command):
+                        plugin = self.plugin({'default_mode': 'pve', 'output_mode': output}, output=None)
+                        renderers = {name: broken if fails else getattr(self.module, name)
+                                     for name in ('render_image', 'render_arena_image', 'render_help_image')}
+                        with patch.multiple(self.module, **renderers):
+                            result = await self.run_command(plugin, Event(command))
+                        self.assertIn(link, texts(result))
+        help_lines = self.plugin({'default_mode': 'pve'}).help_text().splitlines()
+        self.assertEqual(help_lines[-1], 'tarkov.dev 玩家搜索：https://tarkov.dev/players?gameMode=pve')
+
     async def test_help_image_settings_and_failure(self):
         cards = []
         def spy(card):
