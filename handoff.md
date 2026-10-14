@@ -629,3 +629,29 @@ end with the data line and the §19.1 footer, and show no level.
   fetched alone, `arena_by_default`, game-only default mode, Arena summariser, requested id, image-output note, Arena
   "no profile" text. The default-mode one survived at first; `test_arena_is_not_a_default_mode` added (168 tests),
   then killed.
+
+### 19.5 Arena picture proposals, round 2 (built on the game's setting)
+
+Maintainer: all three round-1 looks are good, but the design must draw on Arena's setting. Research (web, 2026-10-14):
+- The official site and its "What is Arena?" page: gladiator fights in arenas across the city of Tarkov, organised by
+  a mysterious group of Arena Masters led by the Host ([support page](https://arena.tarkov.com/support/knowledge/457));
+  the Fandom wiki describes Block as a courtyard "equipped by the Host for Arena fights"
+  ([wiki](https://escapefromtarkov.fandom.com/wiki/Arena)); a hands-on review describes a cheering crowd
+  ([MMORPG.com](https://www.mmorpg.com/player-interviews/hands-on-impressions-escape-from-tarkov-arena-is-a-great-entry-point-to-the-extraction-franchies-2000129435)).
+- The Host appears in the main game as the trader Ref, who moves roubles, GP coins and medals between the games; his
+  unlock quest has players paste fight posters around the maps ([Insider Gaming](https://insider-gaming.com/how-to-unlock-ref-in-escape-from-tarkov/)).
+- ARP = Arena Reputation Points, the ranked rating ([Liquipedia patch notes](https://liquipedia.net/tarkovarena/Patch_0.1.5.0.28989));
+  maps include Air Pit, Bay 5, Block, Bowl, Chop Shop, Equator, Fort, Iceberg, Sawmill, Skybridge
+  ([Liquipedia maps](https://liquipedia.net/tarkovarena/Category:Maps)).
+
+Proposals (throw-away `scratchpad/arena_previews2.py`, invented fixture, bundled font families only, no game assets;
+every element drawn; footer as §19.1; no level):
+
+| | Concept | Setting elements |
+|---|---|---|
+| A | The Host's fight poster | a poster taped to a concrete-block wall (the posters of Ref's quest): "THE HOST PRESENTS", huge nickname with an offset print, red/black bands per section with the season record (wins – losses summed over modes), starburst "BEST ARP", each mode as a numbered BOUT, torn bottom edge, "每晚开赛 · 观众席已满" |
+| B | The Arena Masters' fighter registry | a ledger page on dark leather: "ARENA MASTERS · 选手名册", entry rows, a GP-coin-like milled medallion for BEST ARP ("REPUTATION"), sections marked "计入 ARP / 不计 ARP", ruled event table, pen ticks for winning records, "登记人：THE HOST" and a wax seal |
+| C | Live scoreboard of a night-time pit | floodlights and light cones, "LIVE · FROM THE PIT", amber LED dot-matrix numbers on a stadium board per section, per-mode rows, chain-link fence along the bottom, "主持：THE HOST" |
+
+Not done: no map-level statistics exist in the profile, so maps are not shown; the round-1 proposals (§19.4) are
+superseded unless the maintainer prefers one of them.
