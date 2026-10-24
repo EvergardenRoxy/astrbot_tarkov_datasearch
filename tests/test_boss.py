@@ -66,7 +66,7 @@ class BossModelTests(unittest.TestCase):
         # Anything else that is no ordinary soldier is an event boss (here the unnamed Shadow of Tagilla).
         self.assertEqual({r['mob_id'] for r in entries if r['event']}, {'bossTagillaAgro'})
         self.assertEqual(len(entries),13)
-        self.assertEqual(next(r['boss_name'] for r in entries if r['mob_id']=='bossKnight'),'三狗（GOONS）')
+        self.assertEqual(next(r['boss_name'] for r in entries if r['mob_id']=='bossKnight'),'三狗 GOONS')
 
     def test_invalid_or_missing_probabilities_and_records_are_not_zero(self):
         for value in (None, True, '0.3', float('nan'), float('inf'), -0.1, 1.1):
@@ -196,20 +196,20 @@ class BossImageTests(unittest.TestCase):
 
 class ChangeSummaryTests(unittest.TestCase):
     def rows(self, **override):
-        row = {'map_id': 'm', 'map_name': '海岸线', 'mob_id': 'bossKnight', 'boss_name': '三狗（GOONS）',
+        row = {'map_id': 'm', 'map_name': '海岸线', 'mob_id': 'bossKnight', 'boss_name': '三狗 GOONS',
                'previous': '0.6', 'current': '0.8', 'change': '+20 个百分点', 'changed': True}
         return [{**row, **override}]
 
     def test_one_short_statement_per_change_kind(self):
-        self.assertEqual(change_lines(self.rows()), ['三狗（GOONS）（海岸线）：60%→80%'])
-        self.assertEqual(change_lines(self.rows(previous=None, current='1')), ['三狗（GOONS）（海岸线）：新增 100%'])
-        self.assertEqual(change_lines(self.rows(previous='1', current=None)), ['三狗（GOONS）（海岸线）：移除（原 100%）'])
+        self.assertEqual(change_lines(self.rows()), ['三狗 GOONS（海岸线）：60%→80%'])
+        self.assertEqual(change_lines(self.rows(previous=None, current='1')), ['三狗 GOONS（海岸线）：新增 100%'])
+        self.assertEqual(change_lines(self.rows(previous='1', current=None)), ['三狗 GOONS（海岸线）：移除（原 100%）'])
         self.assertEqual(change_lines(self.rows(mob_id=None, previous=None, current=None, change='地图新增')), ['地图新增：海岸线'])
 
     def test_unchanged_rows_and_other_pages_are_left_out(self):
         self.assertEqual(change_lines(self.rows(changed=False)), [])
         self.assertEqual(change_lines(self.rows(), {'other'}), [])
-        self.assertEqual(change_lines(self.rows(), {'m'}), ['三狗（GOONS）（海岸线）：60%→80%'])
+        self.assertEqual(change_lines(self.rows(), {'m'}), ['三狗 GOONS（海岸线）：60%→80%'])
 
     def test_long_lists_are_capped_with_a_count(self):
         lines = change_lines(self.rows()*(MAX_CHANGE_LINES+5))

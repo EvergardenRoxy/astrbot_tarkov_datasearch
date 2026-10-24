@@ -92,7 +92,7 @@
 
 ### 最终监控范围（维护者修正）
 
-仅包括 Tagilla、Reshala、Shturman、Sanitar、Killa、Glukhar、Zryachiy、Kaban、Kollontay、Partisan、邪教徒祭司，以及三狗（GOONS）。使用稳定 `mob ID` 白名单；Knight 的概率代表 GOONS 小队，展示名称固定为“三狗（GOONS）”，不另外列 Big Pipe/Birdeye。BEAR、USEC、护卫及名单外活动变体均不入表。地图排除破冰船、原中心区、实验室 Dark、迷宫和中心区教程；原中心区 21+ 保留其独立数据并显示为“中心区”。无目标 Boss 的单元格留白，不填 0%。
+仅包括 Tagilla、Reshala、Shturman、Sanitar、Killa、Glukhar、Zryachiy、Kaban、Kollontay、Partisan、邪教徒祭司，以及三狗 GOONS。使用稳定 `mob ID` 白名单；Knight 的概率代表 GOONS 小队，展示名称固定为“三狗 GOONS”，不另外列 Big Pipe/Birdeye。BEAR、USEC、护卫及名单外活动变体均不入表。地图排除破冰船、原中心区、实验室 Dark、迷宫和中心区教程；原中心区 21+ 保留其独立数据并显示为“中心区”。无目标 Boss 的单元格留白，不填 0%。
 
 ### 快照和比较
 

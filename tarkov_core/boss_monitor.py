@@ -152,7 +152,7 @@ def normalize_bosses(data, dictionaries=(), ignore=()):
             encoded = packed(rule)
             if len(encoded) > 8192:
                 raise QueryError('Boss 刷新条件过长')
-            name = '三狗（GOONS）' if mob_id == 'bossKnight' else translated(mobs[mob_id].get('name'), dictionaries, mob_id)
+            name = '三狗 GOONS' if mob_id == 'bossKnight' else translated(mobs[mob_id].get('name'), dictionaries, mob_id)
             rows.append({'mob_id': mob_id, 'boss_name': name, 'event': event,
                          'rule': encoded, 'condition': condition_text(rule, dictionaries), 'chance': chance})
         rows.sort(key=lambda row: (row['mob_id'], row['rule'], Decimal(row['chance'])))

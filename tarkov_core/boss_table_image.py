@@ -25,7 +25,7 @@ TEXT, MUTED, RED = (218,220,222), (154,157,160), (255,65,65)
 BOSS_ROWS = (('bossTagilla','Tagilla'), ('bossBully','Reshala'), ('bossKojaniy','Shturman'),
     ('bossSanitar','Sanitar'), ('bossKilla','Killa'), ('bossGluhar','Glukhar'), ('bossZryachiy','Zryachiy'),
     ('bossBoar','Kaban'), ('bossKolontay','Kollontay'), ('bossPartisan','Partisan'),
-    ('sectantPriest','邪教徒祭司'), ('bossKnight','三狗（GOONS）'))
+    ('sectantPriest','邪教徒祭司'), ('bossKnight','三狗 GOONS'))
 MAP_LABELS = (
     ('65b8d6f5cdde2479cb2a3125','中心区'),
     ('55f2d3fd4bdc2d5f408b4567','白天工厂'), ('59fc81d786f774390775787e','夜间工厂'),
