@@ -38,5 +38,12 @@ administrator settings action downloads fixed known portrait paths into the plug
 sanitizes them to small thumbnails and caches them for 365 days. Ordinary queries never download portraits. This
 attribution does not relicense the artwork. Missing/expired portraits use a locally drawn placeholder.
 
+**Documentation pictures with game artwork.** `docs/boss_preview.jpg` and `docs/boss_changes_preview.jpg` show the Boss
+portraits (Battlestate Games artwork served by assets.tarkov.dev) exactly as the plugin draws them after an administrator
+has run the manual portrait update. They are in the repository only to illustrate the plugin's output; the artwork remains
+the property of Battlestate Games, is not covered by the GPL that applies to the plugin's source, is not part of the
+plugin package (`docs/` is not packaged) and must not be reused separately. The maintainer accepted this when asking for
+real-data examples. Regenerate with `tools/build_public_preview.py`.
+
 This plugin is not affiliated with Battlestate Games or tarkov.dev. Plugin source is distributed under
 GPL-3.0-or-later (see LICENSE). aiohttp is a runtime dependency, not vendored; its own license applies.

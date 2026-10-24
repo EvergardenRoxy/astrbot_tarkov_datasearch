@@ -388,3 +388,24 @@ PR #6 (`1024` → `main`) could not be merged: `1024`'s history had been rewritt
 - The old `main` was `966d0fcef8f5be479e7dbf1974c01009eb9b838f`; no backup branch was pushed (it would keep the nickname).
   A local, unpushed copy named `main-before-force` existed in the working container only.
 - PR #6 closes as merged once `main` contains its head.
+
+## 17. README split, rename and live-data previews (2026-10-24, after release)
+
+Maintainer decisions (asked first): previews use live data with portraits **and are committed**; display name becomes
+"塔科夫数据查询" (README title and `metadata.yaml` `display_name`/`desc` only; plugin id, repo name and in-image texts stay);
+details move to `docs/player-query.md` and `docs/status-and-boss.md`; README keeps the overview, getting started, reply modes
+(player example images only), general settings and links; deliver by pushing `1024` and `main` and rebuilding the 0.4.5 zip.
+
+- `tools/build_public_preview.py` (new, needs network): fetches live `status` and PVE `maps` (+ zh/en), downloads the twelve
+  portraits through `BossPortraits.refresh` into a temp dir (the same path as the manual update), renders
+  `docs/status_preview.jpg`, `boss_preview.jpg`, `boss_changes_preview.jpg`. The changes picture compares live data with a
+  hand-made previous table (one rate different, one record missing, one ended); the docs say so. `tools/build_preview.py`
+  now only builds the player pictures (invented data).
+- **Licence note**: the Boss pictures in `docs/` contain Battlestate artwork. This reverses the earlier "no game art in the
+  repository" convention for documentation images only: `THIRD_PARTY.md` has a new paragraph (not GPL, illustration only, not
+  packaged because `docs/` is not in the zip, no separate reuse). The plugin package and runtime behaviour are unchanged:
+  portraits are still never bundled and never downloaded without the manual setting. Take the pictures down if Battlestate or
+  tarkov.dev objects.
+- Live observation worth knowing: at generation time the real status feed reported several components as unstable; real
+  PVE rates for the 11 maps were shown as fetched (75 % for several single-record resident bosses, 100 % for Glukhar and
+  Zryachiy on Lighthouse, Scourge 100 % on Labs).

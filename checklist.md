@@ -66,6 +66,8 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
 
 ### 0.4.5：状态、Boss 刷率、QQ 路由；物品查询已封存
 
+0. **文档整理**（发布后，维护者要求）：插件显示名改为“塔科夫数据查询”；README 只留总览、开始使用、回复方式（玩家示例图）、通用设置和链接，详细内容拆到 `docs/player-query.md` 和 `docs/status-and-boss.md`；状态和 Boss 的示例图改用 2026-10-24 的真实公开数据，并带 Boss 头像（游戏美术，版权归 Battlestate Games，只放在文档图里，不在插件包里，已写入 THIRD_PARTY.md）。变化示例图的“上次”表是手工构造的，文档里已注明。
+
 1. **做了什么**（均默认关闭，管理员在设置里逐项开启）
    - **公共数据缓存**：从 `json.tarkov.dev` 读取游戏公共数据，只存本地一个 SQLite 文件，按需检查更新，不启动后台任务。
    - **服务器状态**：`status` / `状态` 回复状态图片；`status_broadcast_enabled` 开启后，变化时向设置的目标群播报，检查间隔 2～30 分钟（默认 5）。

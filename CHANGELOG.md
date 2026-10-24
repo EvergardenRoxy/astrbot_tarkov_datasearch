@@ -30,6 +30,7 @@
 ### 变更
 
 - 版本号升至 0.4.5。
+- 插件显示名改为“塔科夫数据查询”（插件 id 和仓库名不变）；README 改为总览和链接，详细说明拆到 `docs/player-query.md`（玩家数据查询）和 `docs/status-and-boss.md`（服务器状态与 Boss 刷率）；状态和 Boss 的示例图改用真实公开数据并带 Boss 头像（`tools/build_public_preview.py`，头像是 Battlestate Games 的美术，只用于文档示例，不在插件包里，见 THIRD_PARTY.md）。
 - 开发中曾加入“物品查询”，因无法按俗称检索、使用效率低，在发布前剥离并封存（远端分支 `archive/item-query`，说明见 `docs/archive/item-query.md`），**本版不包含物品查询**。
 - 字体子集按本版文字重新生成（278 KB）。
 
