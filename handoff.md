@@ -28,7 +28,7 @@ earlier). From now on new work is appended as new sections.
 | Task | AstrBot plugin to look up Escape from Tarkov player profiles in chat (maintainer request, 2026-10-13); since 2026-10-24 also public game data: server status, Boss spawn rates, items. |
 | License / AI statement | GPL-3.0-or-later. README and CHANGELOG state the plugin was written by Claude Opus 5.5 (via Claude Code) and reviewed by the maintainer. |
 | Released | 0.4.5 (2026-10-24; 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
-| Work branch | `1024` carries 0.4.5 (status, Boss, QQ routes). A PR to `main` is open for review; its history differs from `main`'s (§10), so GitHub shows conflicts; the item query was archived (§11). |
+| Work branch | `1024` carries 0.4.5 (status, Boss, QQ routes). `main` was overwritten with this history on 2026-10-24 (§16); the item query was archived (§11). |
 | Tests | 294 on `1024` (307 before the item query was archived, §11; 193 at 0.4.4) (`python -m unittest discover -s tests`, needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13. 0.4.4 had 193. |
 | AstrBot evidence | 4.16.0 wheel read and its registration/wake/filter/parser bodies replayed by `tools/verify_qq_routes.py` (101 cases after the item query was archived; SDK and network boundaries doubled). Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. The maintainer ran a small closed test of 0.3.0. **No live AstrBot run of the 1024 features; QQ image delivery and proactive push are unverified.** |
 
@@ -225,11 +225,9 @@ thumbnail download). Previews were inspected visually.
   confirmations are control replies and stay short text.
 - **QQ acceptance and release**: verify passive images, proactive push, then decide whether the minimum AstrBot version
   changes; version bump, README and CHANGELOG at the maintainer's release request.
-- **Old history outside `1024`** (maintainer decided on 2026-10-24 to clean only `1024`, no merge for now): `main`
-  (through the merged PR #2), the tag `v0.4.4-release`, and GitHub's `refs/pull/*` still hold the two commits that
-  carried one reference player's nickname (see §10). Cleaning them needs a force-push of `main`/tag changes and, for
-  the pull refs, GitHub support; the maintainer decides. Merging `1024` into `main` will bring the cleaned history
-  as unrelated commits, so decide this before that merge.
+- **Old history outside `main`/`1024`** (§16): the tag `v0.4.4-release` and GitHub's `refs/pull/*` still hold the two commits that
+  carried one reference player's nickname (see §10). Retiring the tag needs a maintainer decision; the pull refs need GitHub
+  support.
 - Ideas not requested: an `llm_tool` so the chat model can look players up (see the spark plugin's stop-event and
   no-return-value pitfalls), weapon mastering / equipment / achievements by name, historical price charts, barter and
   crafting profit, quiet hours and coalescing for broadcasts, ETag checks for player snapshots, using the persistent
@@ -376,3 +374,17 @@ maps a listed boss is **resident** if its id is in `DAILY_BOSSES` (fixed rows), 
 
 - **Label alignment** (maintainer): the GOONS row/label is now `三狗 GOONS` (no parentheses), matching the event rows' `活动 <name>` form;
   change-summary lines read `三狗 GOONS（海岸线）：60%→80%`.
+
+## 16. `main` overwritten with `1024` (2026-10-24, maintainer decision)
+
+PR #6 (`1024` → `main`) could not be merged: `1024`'s history had been rewritten (§10) and shares only an early ancestor with
+`main`, so nine files conflicted. The maintainer chose to **overwrite `main` with `1024`** ("强制合并").
+
+- Done with a lease-protected force push (`main` was `966d0fc…` and was expected to be exactly that). `main` now equals the 0.4.5
+  release commit of `1024`; its history no longer contains the reference player's nickname.
+- Consequences: every commit hash on `main` changed; PRs #1–#5's merge commits are gone from `main`; clones/forks made earlier
+  keep the old history and must be reset (`git fetch && git reset --hard origin/main`); branch `v0.4.4`, branch
+  `v0.3.0-不支持竞技场-留档` and the tags still point at old commits (the tag `v0.4.4-release` carries the nickname; branches do not).
+- The old `main` was `966d0fcef8f5be479e7dbf1974c01009eb9b838f`; no backup branch was pushed (it would keep the nickname).
+  A local, unpushed copy named `main-before-force` existed in the working container only.
+- PR #6 closes as merged once `main` contains its head.
