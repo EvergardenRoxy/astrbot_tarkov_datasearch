@@ -27,8 +27,11 @@ https://github.com/google/fonts, rebuilt by `tools/build_fonts.py`):
   Reserved Font Name 'Share', unmodified (a modified copy could not keep the reserved name).
 
 **Boss table background.** `tarkov_core/assets/boss-background.jpg` is an AI-generated texture (no game art, text or logos)
-supplied by the project maintainer, who states it was generated with GPT-Image-2.5-sunburst. The provider's usage terms for
-generated images are not recorded here yet and must be confirmed by the maintainer before release.
+supplied by the project maintainer, who states it was generated with GPT-Image-2.5-sunburst. According to the maintainer, the
+provider's terms do not restrict use of the generated content in open-source software, and the image carries a hidden,
+traceable provider watermark. The bundled file is a JPEG re-encoded from the generator's original (WebP) output, so the
+watermark may not survive; nothing in the plugin reads or removes it. The terms themselves are not reproduced here; check
+the provider's current terms if the use changes.
 
 **Drawings and Boss portraits.** Player/status cards draw their game references themselves (a military dog tag,
 exit-status bars, a dossier page). The Boss matrix can display game character portraits identified by

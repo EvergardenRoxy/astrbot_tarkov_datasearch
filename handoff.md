@@ -369,8 +369,10 @@ maps a listed boss is **resident** if its id is in `DAILY_BOSSES` (fixed rows), 
   table and visible in the outer margin, header strip and footer area. Output stays byte-stable.
 - Tests 290 → 294 (`BackgroundTests`: size and readability, texture visible and stable, fallback to black, panel darkness);
   mutation check: ignoring the file and making the panels see-through both fail.
-- **Provenance**: generator GPT-Image-2.5-sunburst (maintainer's statement, recorded in `THIRD_PARTY.md`). Its provider's
-  terms for generated images are **not yet recorded**; the maintainer completes that before a release.
+- **Provenance**: generator GPT-Image-2.5-sunburst (maintainer's statement, recorded in `THIRD_PARTY.md`). Maintainer's statement: the provider's
+  terms do not restrict use of generated content in open-source software, and images carry a hidden traceable watermark.
+  Recorded in `THIRD_PARTY.md` as the maintainer's statement (terms not reproduced); the bundled JPEG is a re-encode of the
+  original WebP, so the watermark may not survive. Closed 2026-10-24.
 
 - **Label alignment** (maintainer): the GOONS row/label is now `三狗 GOONS` (no parentheses), matching the event rows' `活动 <name>` form;
   change-summary lines read `三狗 GOONS（海岸线）：60%→80%`.
