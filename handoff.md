@@ -226,8 +226,11 @@ thumbnail download). Previews were inspected visually.
   confirmations are control replies and stay short text.
 - **QQ acceptance and release**: verify passive images, proactive push, then decide whether the minimum AstrBot version
   changes; version bump, README and CHANGELOG at the maintainer's release request.
-- **Branch history**: the work branch `claude/amazing-clarke-eu3xue` still contains one reference player's name in its
-  older commits (`v0.4.0` and later release branches do not). Cleaning it needs a force-push; the maintainer decides.
+- **Old history outside `1024`** (maintainer decided on 2026-10-24 to clean only `1024`, no merge for now): `main`
+  (through the merged PR #2), the tag `v0.4.4-release`, and GitHub's `refs/pull/*` still hold the two commits that
+  carried one reference player's nickname (see §10). Cleaning them needs a force-push of `main`/tag changes and, for
+  the pull refs, GitHub support; the maintainer decides. Merging `1024` into `main` will bring the cleaned history
+  as unrelated commits, so decide this before that merge.
 - Ideas not requested: an `llm_tool` so the chat model can look players up (see the spark plugin's stop-event and
   no-return-value pitfalls), weapon mastering / equipment / achievements by name, historical price charts, barter and
   crafting profit, quiet hours and coalescing for broadcasts, ETag checks for player snapshots, using the persistent
@@ -246,6 +249,14 @@ fixtures and previews had used real nicknames, account ids and numbers copied fr
 Replaced with invented values; the history was rewritten (`git filter-repo`) and both branches force-pushed; the
 final tree was identical, the suite passed at every rewritten commit, and a scan of all blobs and messages found none of
 the real data. Clones/forks made earlier and GitHub's cache are outside the repository's control.
+
+**Reference player removed from `1024` history (2026-10-24, maintainer: delete it, only `1024`)**: the work branch
+`claude/amazing-clarke-eu3xue` (no longer on the remote) had briefly carried a public player's nickname in two
+documentation sentences (commit "Arena picture … proposal B", removed again one commit later). `1024` descends from it
+through `main`. The sentences about the reference run and the reference images were deleted from every commit of `1024`
+with `git filter-repo --replace-text` (fresh clone); the final tree differs from before only in two checklist
+sentences, tests pass at the rewritten tip and at the affected commits, and no blob or message mentions the name. All
+`1024` hashes from that point on changed; `1024` was force-pushed (with lease). No account id was ever involved.
 
 **Audits and reviews (all findings fixed except those noted)**:
 
