@@ -24,7 +24,8 @@ from .tarkov_core.boss_table_image import paginate_table, render_boss_page
 from .tarkov_core.help_image import render_help_image
 from .tarkov_core.image import render_image
 from .tarkov_core.output import render_markdown, render_text
-from .tarkov_core.platform_compat import QQ_OFFICIAL, is_qq_official, set_short_status_routes
+from .tarkov_core.platform_compat import QQ_OFFICIAL, is_qq_official
+from .tarkov_core.settings import Settings
 from .tarkov_core.notifications import NotificationStore, PermanentDeliveryError, StatusNotifications
 from .tarkov_core.polling import PollingTask
 from .tarkov_core.profile import summarize
@@ -76,12 +77,14 @@ def every(seconds):
 class TarkovPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
-        self.config = config
+        self.config = Settings(config)
         self.root = StarTools.get_data_dir('astrbot_tarkov_datasearch')
-        # The downloaded name index is optional (off by default): names are mainly learned from the users (accounts.py).
+        # The downloaded name index is optional (on by default): names are mainly learned from the users (accounts.py).
         self.names = NameIndex(self.root, self.download_index, self.int_setting('name_index_refresh_hours', 168, 1, 720))
         self.accounts = Accounts(self.root/'accounts.sqlite3')
         self.root.mkdir(parents=True, exist_ok=True)
+        # Group sessions that used the plugin, newest first: the push targets when no target list is configured.
+        self.session_ids, self.session_written = self.load_sessions(), {}
         # Keys the binding keys and the log trace ids, so neither can be turned back into a user id (review R-11).
         self.secret = load_secret(self.root/'binding.key')
         # (mode, account id) -> (monotonic time, profile summary)
@@ -109,7 +112,6 @@ class TarkovPlugin(Star):
             self.boss_modes, self.boss_targets, self.boss_broadcast_active, self.boss_monitor_error)
         self.boss_poller = PollingTask(self.boss_notifications.cycle, self.boss_broadcast_active,
                                       self.boss_interval, self.boss_monitor_error)
-        set_short_status_routes(self.__module__, self.config.get('short_commands_enabled', True) is True)
 
     async def initialize(self):
         if self.config.get('boss_portraits_update', False) is True:
@@ -201,8 +203,11 @@ class TarkovPlugin(Star):
         modes = list(GAME_MODES)+(['arena'] if self.arena_by_default() else [])
         return [mode]+[other for other in modes if other != mode]
 
+    def qq_words_enabled(self):
+        return self.config.get('qq_single_word_commands', True) is True
+
     def index_enabled(self):
-        return bool(self.config.get('name_index_enabled', False))
+        return bool(self.config.get('name_index_enabled', True))
 
     def binding_key(self, event):
         # unified_msg_origin is "<platform id>:<message type>:<session>"; a binding holds in every chat of a platform.
@@ -220,6 +225,8 @@ class TarkovPlugin(Star):
         index = f'；另外会查 tarkov.dev 的昵称名单（{every(self.names.refresh_seconds)}更新一次）' if self.index_enabled() else ''
         status = f"服务器状态图片：{self.cmd('status')}\n" if self.status_enabled() else ''
         boss = f"Boss 全表图片：{self.cmd('boss [模式]')}；最近变化：{self.cmd('boss [模式] 变化')}\n" if self.boss_enabled() else ''
+        words = ('QQ 官方机器人单词命令（后面的参数可以带空格）：tpvp、tpve、tseason、tarena [昵称、账号ID 或网址]；'
+                 'tbind <网址或账号ID>、tunbind、thelp；tstatus、tboss [模式] [变化]\n') if self.qq_words_enabled() else ''
         return ('塔科夫玩家档案查询（数据来自 tarkov.dev）\n'
                 f"{self.style()['help']}\n"
                 f"绑定自己：{self.cmd('绑定 <tarkov.dev 玩家页网址或账号ID>')}　解绑：{self.cmd('解绑')}\n"
@@ -231,7 +238,7 @@ class TarkovPlugin(Star):
                 '第一次查某个玩家前，请先在 tarkov.dev 用对应模式搜索他（链接见最后一行），'
                 '再把跳转后的网址发给我；之后就能直接用名字查（按 ID 或网址查到过的名字会被记住' + index + '）。\n'
                 '如果需要查询最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面。\n'
-                + status + boss + self.search_line())
+                + status + boss + words + self.search_line())
 
     def search_line(self):
         """The search page as a text line. Every help reply ends with it, the image included (maintainer: the link
@@ -248,6 +255,8 @@ class TarkovPlugin(Star):
             card['status_enabled'] = True
         if self.boss_enabled():
             card['boss_enabled'] = True
+        if self.qq_words_enabled():
+            card['qq_words'] = True
         return card
 
     async def help_reply(self, event):
@@ -265,6 +274,11 @@ class TarkovPlugin(Star):
     @filter.command('tarkov', alias={'塔科夫'})
     async def tarkov_command(self, event: AstrMessageEvent):
         text = COMMAND.sub('', event.message_str.strip(), count=1).strip()
+        async for result in self.dispatch(event, text):
+            yield result
+
+    async def dispatch(self, event, text):
+        """Access check, then the command text; every entry (tarkov, a slash after a QQ mention, the QQ single words)."""
         if not self.allowed(event):
             logger.info('Tarkov access denied; mode=%s', self.config.get('access_mode', 'all'))
             if text.split() and text.split()[0].lower() in STATUS_WORDS:
@@ -275,6 +289,7 @@ class TarkovPlugin(Star):
                 yield event.plain_result('此会话或用户没有塔科夫查询权限。')
             event.stop_event()
             return
+        await self.remember_session(event)
         async for result in self.handle(event, text):
             yield result
         event.stop_event()
@@ -284,40 +299,64 @@ class TarkovPlugin(Star):
     async def qq_slash_command(self, event: AstrMessageEvent):
         # QQ mentions wake AstrBot even when '/' is not configured as a wake prefix. In that case the
         # standard command filter still sees the slash. Its normal wake/permission/plugin checks apply here too.
-        if not is_qq_official(event) or self.config.get('qq_official_compat_enabled', True) is not True:
+        if not is_qq_official(event):
             return
         async for result in self.tarkov_command(event):
             yield result
 
-    @filter.command('status', alias={'状态'})
-    async def status_command(self, event: AstrMessageEvent):
-        if self.config.get('short_commands_enabled', True) is not True:
+    # QQ official bots cannot register a command that contains a space, so each action also has a one-word command; what
+    # follows the word may contain spaces (a nickname after tpve, say). Only on QQ official platforms, with the setting on.
+    async def qq_word(self, event, prefix):
+        if not is_qq_official(event) or self.config.get('qq_single_word_commands', True) is not True:
             return
-        yield await self.status_query(event, arguments=self.status_arguments(event))
-        event.stop_event()
-
-    @filter.command('/'+'status', alias={'/'+'状态'})
-    @filter.custom_filter(QQOfficialFilter)
-    async def qq_status_command(self, event: AstrMessageEvent):
-        if not is_qq_official(event) or self.config.get('qq_official_compat_enabled', True) is not True:
-            return
-        async for result in self.status_command(event):
+        words = event.message_str.strip().split(maxsplit=1)
+        async for result in self.dispatch(event, (prefix+' '+(words[1] if len(words) > 1 else '')).strip()):
             yield result
 
-    @filter.command('boss', alias={'刷率'})
-    async def boss_command(self, event: AstrMessageEvent):
-        if self.config.get('short_commands_enabled', True) is not True:
-            return
-        yield await self.boss_query(event, self.status_arguments(event))
-        event.stop_event()
-
-    @filter.command('/'+'boss', alias={'/'+'刷率'})
+    @filter.command('tpvp', alias={'/tpvp'})
     @filter.custom_filter(QQOfficialFilter)
-    async def qq_boss_command(self, event: AstrMessageEvent):
-        if not is_qq_official(event) or self.config.get('qq_official_compat_enabled', True) is not True:
-            return
-        async for result in self.boss_command(event):
-            yield result
+    async def qq_tpvp(self, event: AstrMessageEvent):
+        async for result in self.qq_word(event, 'pvp'): yield result
+
+    @filter.command('tpve', alias={'/tpve'})
+    @filter.custom_filter(QQOfficialFilter)
+    async def qq_tpve(self, event: AstrMessageEvent):
+        async for result in self.qq_word(event, 'pve'): yield result
+
+    @filter.command('tseason', alias={'/tseason'})
+    @filter.custom_filter(QQOfficialFilter)
+    async def qq_tseason(self, event: AstrMessageEvent):
+        async for result in self.qq_word(event, 'season'): yield result
+
+    @filter.command('tarena', alias={'/tarena'})
+    @filter.custom_filter(QQOfficialFilter)
+    async def qq_tarena(self, event: AstrMessageEvent):
+        async for result in self.qq_word(event, 'arena'): yield result
+
+    @filter.command('tbind', alias={'/tbind'})
+    @filter.custom_filter(QQOfficialFilter)
+    async def qq_tbind(self, event: AstrMessageEvent):
+        async for result in self.qq_word(event, 'bind'): yield result
+
+    @filter.command('tunbind', alias={'/tunbind'})
+    @filter.custom_filter(QQOfficialFilter)
+    async def qq_tunbind(self, event: AstrMessageEvent):
+        async for result in self.qq_word(event, 'unbind'): yield result
+
+    @filter.command('thelp', alias={'/thelp'})
+    @filter.custom_filter(QQOfficialFilter)
+    async def qq_thelp(self, event: AstrMessageEvent):
+        async for result in self.qq_word(event, 'help'): yield result
+
+    @filter.command('tstatus', alias={'/tstatus'})
+    @filter.custom_filter(QQOfficialFilter)
+    async def qq_tstatus(self, event: AstrMessageEvent):
+        async for result in self.qq_word(event, 'status'): yield result
+
+    @filter.command('tboss', alias={'/tboss'})
+    @filter.custom_filter(QQOfficialFilter)
+    async def qq_tboss(self, event: AstrMessageEvent):
+        async for result in self.qq_word(event, 'boss'): yield result
 
     @staticmethod
     def status_arguments(event):
@@ -745,7 +784,7 @@ class TarkovPlugin(Star):
         return self.config.get('status_enabled', False) is True
 
     def status_interval(self):
-        return self.int_setting('status_poll_minutes', 5, 2, 30)*60
+        return self.int_setting('status_poll_minutes', 30, 10, 90)*60
 
     def target_metadata(self, target):
         platforms = getattr(getattr(self.context, 'platform_manager', None), 'platform_insts', [])
@@ -755,6 +794,35 @@ class TarkovPlugin(Star):
                 return metadata
         return None
 
+    def load_sessions(self):
+        try:
+            return self.accounts.sessions()
+        except sqlite3.Error as exc:
+            logger.warning('Tarkov remembered sessions unavailable: %s', type(exc).__name__)
+            return []
+
+    async def remember_session(self, event):
+        """Remember a group session that was allowed to use the plugin, so pushes without a target list can reach it.
+        Only the conversation id is stored (no user id), at most once an hour per session."""
+        origin = event.unified_msg_origin
+        if not isinstance(origin, str) or origin.split(':', 2)[1:2] != ['GroupMessage']:
+            return
+        now = time.monotonic()
+        if origin in self.session_ids and now-self.session_written.get(origin, -3600) < 3600:
+            return
+        self.session_written[origin] = now
+        try:
+            await asyncio.to_thread(self.accounts.touch_session, origin)
+        except sqlite3.Error as exc:
+            logger.warning('Tarkov session record failed: %s', type(exc).__name__)
+            return
+        new = origin not in self.session_ids
+        self.session_ids = [origin]+[other for other in self.session_ids if other != origin][:49]
+        if new:
+            # The first group may arrive after startup, when no poller was running for lack of targets.
+            self.status_poller.start()
+            self.boss_poller.start()
+
     def status_targets(self):
         return self.notification_targets('status_notify_targets', self.config.get('status_qq_push_enabled', False) is True)
 
@@ -762,6 +830,9 @@ class TarkovPlugin(Star):
         targets = self.config.get(setting, [])
         if not isinstance(targets, list) or len(targets) > 50:
             return []
+        if not targets:
+            # No list configured: every group session that has used the plugin (each is checked like a listed target).
+            targets = list(self.session_ids)
         allowed = self.config_list('allowed_origins')
         if allowed is None:
             return []
@@ -867,7 +938,7 @@ class TarkovPlugin(Star):
         return list(dict.fromkeys(mode for mode in map(parse_mode, values) if mode in GAME_MODES))
 
     def boss_interval(self):
-        return self.int_setting('boss_poll_minutes', 10, 2, 30)*60
+        return self.int_setting('boss_poll_minutes', 30, 10, 90)*60
 
     def boss_targets(self):
         return self.notification_targets('boss_notify_targets', self.config.get('boss_qq_push_enabled', False) is True)

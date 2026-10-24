@@ -38,7 +38,7 @@ class StatusPluginTests(unittest.IsolatedAsyncioTestCase):
             plugin.status_snapshot = AsyncMock(return_value=status_card())
             cards = []
             with patch.object(self.module, 'render_status_image', lambda card: cards.append(card) or b'image'):
-                result = [r async for r in plugin.status_command(boundary.Event('/status'))]
+                result = [r async for r in plugin.tarkov_command(boundary.Event('/tarkov status'))]
             self.assertIsInstance(result[0][0], boundary.ImageStub)
             if error:
                 self.assertIn(error, cards[0]['error'])
@@ -59,9 +59,9 @@ class StatusPluginTests(unittest.IsolatedAsyncioTestCase):
         for text in ('/tarkov status', '/塔科夫 状态'):
             result = [r async for r in plugin.tarkov_command(boundary.Event(text))]
             self.assertEqual(Image.open(io.BytesIO(result[0][0].data)).format, 'JPEG')
-        event = boundary.Event('/status')
+        event = boundary.Event('/tstatus')
         event.platform_name = 'qq_official'
-        self.assertIsInstance([r async for r in plugin.qq_status_command(event)][0][0], boundary.ImageStub)
+        self.assertIsInstance([r async for r in plugin.qq_tstatus(event)][0][0], boundary.ImageStub)
         with patch.object(self.module, 'render_status_image', side_effect=RuntimeError()):
             self.assertIn('图片生成失败', await plugin.status_query(boundary.Event('/status')))
         cards = []
@@ -93,7 +93,7 @@ class StatusPluginTests(unittest.IsolatedAsyncioTestCase):
         plugin = self.plugin(config)
         self.assertEqual(plugin.status_targets(), ['bot:GroupMessage:1'])
         self.assertTrue(plugin.status_broadcast_active())
-        for value, minutes in ((2, 2), (30, 30), (1, 2), (31, 30), ('bad', 5), (float('inf'), 5)):
+        for value, minutes in ((10, 10), (90, 90), (1, 10), (91, 90), ('bad', 30), (float('inf'), 30)):
             plugin.config['status_poll_minutes'] = value
             self.assertEqual(plugin.status_interval(), minutes*60)
         plugin.config['allowed_origins'] = ['bot:GroupMessage:other']
@@ -149,19 +149,6 @@ class StatusPluginTests(unittest.IsolatedAsyncioTestCase):
             plugin.context.send_message.assert_awaited_once()
         self.assertEqual(fetch.await_count, 3)
         self.assertEqual(fetch.call_args.kwargs['etag'], '2')
-
-    async def test_short_command_disable_sets_actual_handler_metadata(self):
-        first = types.SimpleNamespace(handler_name='status_command', enabled=True)
-        qq = types.SimpleNamespace(handler_name='qq_status_command', enabled=True)
-        original = types.SimpleNamespace(handler_name='tarkov_command', enabled=True)
-        import sys
-        registry = sys.modules['astrbot.core.star.star_handler'].star_handlers_registry
-        with patch.object(registry, 'get_handlers_by_module_name', return_value=[first, qq, original]):
-            plugin = self.plugin({'short_commands_enabled': False, 'status_enabled': True})
-        self.assertFalse(first.enabled)
-        self.assertFalse(qq.enabled)
-        self.assertTrue(original.enabled)
-        self.assertEqual([r async for r in plugin.status_command(boundary.Event('/status'))], [])
 
     async def test_malformed_success_cannot_replace_last_good_status_or_advance_baseline(self):
         plugin = self.plugin({'status_enabled': True, 'status_broadcast_enabled': True,

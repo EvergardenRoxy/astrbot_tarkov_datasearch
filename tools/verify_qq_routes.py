@@ -146,52 +146,48 @@ async def verify(wheel):
             ('qq_official', ['!'], False, 'https://example.com/tarkov', True, False, {}, False),
             ('telegram', ['!'], False, '/tarkov pve 7', True, False, {}, False),
             ('telegram', ['/'], False, '/tarkov pve 7', True, False, {}, True),
-            ('qq_official', ['!'], False, '/tarkov pve 7', True, False, {'qq_official_compat_enabled': False}, False),
-            ('qq_official', ['/'], False, '/tarkov pve 7', True, False, {'qq_official_compat_enabled': False}, True),
             ('qq_official', ['!'], False, '/tarkov pve 7', True, False, {'access_mode': 'admin_only'}, True),
         ]
+        # Status and Boss through the namespace command and through the QQ one-word commands (no space in the command).
+        statusc, bossc = {'status_enabled': True}, {'boss_enabled': True, 'boss_modes': ['pve']}
         for platform in ('qq_official', 'qq_official_webhook'):
             for prefix in (['/'], ['!']):
                 for private in (False, True):
-                    for command in ('/status', '/状态', '/tarkov status'):
-                        cases.append((platform, prefix, private, command, True, False, {'status_enabled': True}, True))
+                    for command in ('/tarkov status', 'tarkov status', '/塔科夫 状态', '/tstatus', 'tstatus'):
+                        cases.append((platform, prefix, private, command, True, False, statusc, True))
+                    for command in ('/tarkov boss pve', 'tarkov boss pve', '/tboss pve', 'tboss pve'):
+                        cases.append((platform, prefix, private, command, True, False, bossc, True))
+                    for command in ('/tpve 7', 'tpve 7'):
+                        cases.append((platform, prefix, private, command, True, False, {}, True))
         cases += [
-            ('qq_official', ['!'], False, '/status', True, False, {}, True),  # disabled-feature image
-            ('qq_official', ['!'], False, '/status', True, False, {'short_commands_enabled': False}, False),
-            ('qq_official', ['!'], False, '/tarkov status', True, False,
-                {'short_commands_enabled': False, 'status_enabled': True}, True),
-            ('qq_official', ['!'], False, '/status', True, False,
-                {'status_enabled': True, 'qq_official_compat_enabled': False}, False),
-            ('qq_official', ['/'], False, '/status', True, False,
-                {'status_enabled': True, 'qq_official_compat_enabled': False}, True),
-            ('qq_official', ['!'], False, '/status', True, False,
-                {'status_enabled': True, 'access_mode': 'admin_only'}, True),
-            ('qq_official', ['!'], False, '@机器人 /status', False, False, {'status_enabled': True}, False),
-            ('telegram', ['!'], False, '/status', True, False, {'status_enabled': True}, False),
-            ('telegram', ['/'], False, '/status', True, False, {'status_enabled': True}, True),
+            ('qq_official', ['!'], False, '/tarkov status', True, False, {}, True),  # disabled-feature image
+            ('qq_official', ['!'], False, 'tstatus', True, False, {}, True),
+            ('qq_official', ['!'], False, 'thelp', True, False, {}, True),
+            ('qq_official', ['!'], False, 'tbind 7', True, False, {}, True),
+            ('qq_official', ['!'], False, 'tunbind', True, False, {}, True),
+            ('qq_official', ['!'], False, 'tseason 7', True, False, {}, True),
+            ('qq_official', ['!'], False, 'tarena 7', True, False, {}, True),
+            ('qq_official', ['!'], False, 'tpvp 7', True, False, {}, True),
+            ('qq_official', ['!'], False, 'tpve 7', True, False, {'qq_single_word_commands': False}, False),
+            ('qq_official', ['!'], False, 'tstatus', True, False, {'status_enabled': True, 'qq_single_word_commands': False}, False),
+            ('qq_official', ['!'], False, 'tpve 7', True, False, {'access_mode': 'admin_only'}, True),
+            ('qq_official', ['!'], False, 'tboss', True, False, {'boss_enabled': True, 'access_mode': 'admin_only'}, True),
+            ('qq_official', ['!'], False, '@机器人 /tstatus', False, False, statusc, False),
+            ('qq_official', ['/'], False, '/tpve 7', False, True, {}, False),
+            ('qq_official', ['!'], False, 'tpveish 7', True, False, {}, False),
+            ('telegram', ['!'], False, '/tpve 7', True, False, {}, False),
+            ('telegram', ['/'], False, '/tpve 7', True, False, {}, False),
+            ('telegram', ['/'], False, '/tstatus', True, False, statusc, False),
+            ('telegram', ['/'], False, '/tarkov status', True, False, statusc, True),
+            ('telegram', ['!'], False, '/tarkov boss pve', True, False, bossc, False),
+            ('telegram', ['/'], False, '/tarkov boss pve', True, False, bossc, True),
+            # The short commands /status and /boss no longer exist: nothing of ours answers them.
+            ('qq_official', ['!'], False, '/status', True, False, statusc, False),
+            ('qq_official', ['/'], False, '/status', True, False, statusc, False),
+            ('qq_official', ['!'], False, '/boss', True, False, bossc, False),
+            ('telegram', ['/'], False, '/boss', True, False, bossc, False),
         ]
         checks = []
-        for platform in ('qq_official', 'qq_official_webhook'):
-            for prefix in (['/'], ['!']):
-                for private in (False, True):
-                    for command in ('/boss', '/刷率', '/tarkov boss pve'):
-                        cases.append((platform, prefix, private, command, True, False,
-                                      {'boss_enabled': True, 'boss_modes': ['pve']}, True))
-        cases += [
-            ('qq_official', ['!'], False, '/boss', True, False, {}, True),
-            ('qq_official', ['!'], False, '/boss', True, False, {'short_commands_enabled': False}, False),
-            ('qq_official', ['!'], False, '/tarkov boss pve', True, False,
-                {'short_commands_enabled': False, 'boss_enabled': True}, True),
-            ('qq_official', ['!'], False, '/boss', True, False,
-                {'boss_enabled': True, 'qq_official_compat_enabled': False}, False),
-            ('qq_official', ['/'], False, '/boss', True, False,
-                {'boss_enabled': True, 'boss_modes': ['pve'], 'qq_official_compat_enabled': False}, True),
-            ('qq_official', ['!'], False, '/boss', True, False,
-                {'boss_enabled': True, 'access_mode': 'admin_only'}, True),
-            ('qq_official', ['!'], False, '@机器人 /boss', False, False, {'boss_enabled': True}, False),
-            ('telegram', ['!'], False, '/boss', True, False, {'boss_enabled': True}, False),
-            ('telegram', ['/'], False, '/boss', True, False, {'boss_enabled': True, 'boss_modes': ['pve']}, True),
-        ]
         for platform, prefix, private, text, mentioned, wrong_mention, config, should_reply in cases:
             message_type = ns['MessageType'].FRIEND_MESSAGE if private else ns['MessageType'].GROUP_MESSAGE
             message_class = ns['C2CMessage'] if private else ns['GroupMessage']
@@ -220,8 +216,8 @@ async def verify(wheel):
                     for handler in active:
                         outputs += [result async for result in handler.handler(plugin, event)]
                 assert bool(outputs) == should_reply, (platform, prefix, text, config, active, outputs)
-                is_status = text.lstrip('/').split()[0] in ('status', '状态') or text.endswith(' status')
-                is_boss = text.lstrip('/').split()[0] in ('boss', '刷率') or ' boss' in text
+                is_status = text.lstrip('/').split()[0] in ('tstatus',) or text.endswith(' status') or text.endswith(' 状态')
+                is_boss = text.lstrip('/').split()[0] in ('tboss',) or ' boss' in text
                 if config.get('access_mode') == 'admin_only':
                     if is_status or is_boss:
                         assert isinstance(outputs[0][0], ImageStub)
@@ -232,19 +228,22 @@ async def verify(wheel):
                 elif outputs:
                     if is_status or is_boss:
                         assert isinstance(outputs[0][0], ImageStub)
-                    else:
+                    elif 'pve 7' in text:
                         assert '【塔科夫 PVE 档案】' in outputs[0]
+                    else:
+                        # tbind / tunbind / thelp / tpvp / tseason / tarena: some reply, whatever the data holds.
+                        assert outputs[0]
                 checks.append({'platform': platform, 'wake_prefix': prefix, 'private': private, 'text': text,
                                'config': config, 'handler': [h.handler_name for h in active], 'replied': bool(outputs)})
             finally:
                 await plugin.terminate()
-        # An opted-out short command must leave another plugin's standard route selectable.
+        # We no longer register the short commands, so another plugin's /status and /boss routes stay the only ones.
         async def other_status(self, event):
             yield 'other-plugin'
         other_status.__module__ = 'other_status_plugin'
         ns['star_map'][other_status.__module__] = types.SimpleNamespace(activated=True, name='other', reserved=False)
         ns['register_command']('status')(other_status)
-        plugin = fixture.plugin({'short_commands_enabled': False})
+        plugin = fixture.plugin({'status_enabled': True, 'boss_enabled': True})
         try:
             raw = ns['GroupMessage'](id='source-id', content='/status', group_openid='group-openid', attachments=[],
                                     author=types.SimpleNamespace(member_openid='user-openid'))
@@ -255,7 +254,7 @@ async def verify(wheel):
             await stage.process(event)
             active = event.get_extra('activated_handlers', [])
             assert len(active) == 1 and active[0].handler is other_status
-            checks.append({'short_command_opt_out_preserves_other_plugin': True})
+            checks.append({'short_status_route_left_to_other_plugin': True})
         finally:
             await plugin.terminate()
         async def other_boss(self, event):
@@ -263,7 +262,7 @@ async def verify(wheel):
         other_boss.__module__ = 'other_boss_plugin'
         ns['star_map'][other_boss.__module__] = types.SimpleNamespace(activated=True, name='other_boss', reserved=False)
         ns['register_command']('boss')(other_boss)
-        plugin = fixture.plugin({'short_commands_enabled': False})
+        plugin = fixture.plugin({'status_enabled': True, 'boss_enabled': True})
         try:
             raw = ns['GroupMessage'](id='source-id', content='/boss', group_openid='group-openid', attachments=[],
                                     author=types.SimpleNamespace(member_openid='user-openid'))
@@ -273,7 +272,7 @@ async def verify(wheel):
             await stage.process(event)
             active = event.get_extra('activated_handlers', [])
             assert len(active) == 1 and active[0].handler is other_boss
-            checks.append({'short_boss_opt_out_preserves_other_plugin': True})
+            checks.append({'short_boss_route_left_to_other_plugin': True})
         finally:
             await plugin.terminate()
         print(json.dumps({'astrbot_version': version, 'passed': len(checks), 'boundary_doubles': True,

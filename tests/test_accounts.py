@@ -17,6 +17,20 @@ class AccountsTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_remembered_sessions_are_newest_first_and_bounded(self):
+        self.assertEqual(self.store.sessions(), [])
+        for i in range(accounts.MAX_SESSIONS+5):
+            self.store.touch_session(f'bot:GroupMessage:g{i}', now=1000+i)
+        self.store.touch_session('bot:GroupMessage:g0', now=1)
+        recent = self.store.sessions(limit=3)
+        self.assertEqual(recent, [f'bot:GroupMessage:g{accounts.MAX_SESSIONS+4}', f'bot:GroupMessage:g{accounts.MAX_SESSIONS+3}',
+                                  f'bot:GroupMessage:g{accounts.MAX_SESSIONS+2}'])
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM sessions').fetchone()[0], accounts.MAX_SESSIONS)
+        # A session seen again moves to the front; only the conversation id is stored, no user.
+        self.store.touch_session('bot:GroupMessage:g7', now=99999)
+        self.assertEqual(self.store.sessions(limit=1), ['bot:GroupMessage:g7'])
+
     def test_owner_key_is_per_platform_and_keyed(self):
         # The same user in two groups of one platform is one owner (maintainer's choice); another platform is not.
         key = b'k'*32

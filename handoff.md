@@ -411,3 +411,42 @@ details move to `docs/player-query.md` and `docs/status-and-boss.md`; README kee
 - Live observation worth knowing: at generation time the real status feed reported several components as unstable; real
   PVE rates for the 11 maps were shown as fetched (75 % for several single-record resident bosses, 100 % for Glukhar and
   Zryachiy on Lighthouse, Scourge 100 % on Labs).
+
+## 18. Settings regrouped, QQ single-word commands, push targets default to used groups (2026-10-24, maintainer decisions)
+
+Asked first; decisions: single-word commands = the full set including bind/help; empty target list = every session that used
+the plugin; short commands removed outright; nested (AstrBot `object`) settings groups; name index on by default; poll
+interval default 30, range 10–90 minutes.
+
+- **Why single words**: the QQ official bot console rejects a command containing a space ("指令中不要包含空格"), so
+  `/tarkov boss` cannot be listed in its command menu. `main.py` registers `tpvp`, `tpve`, `tseason`, `tarena`, `tbind`,
+  `tunbind`, `thelp`, `tstatus`, `tboss` (each also as `/word`) behind `QQOfficialFilter`; `qq_word()` rebuilds the spaced
+  command (`tpve Player One` → `pve Player One`) and calls `dispatch()`, the one place doing the access check, session
+  recording and `handle()` (shared with `tarkov_command`). Setting `qq_single_word_commands` (default true) gates them; the help
+  text and image list them when on. Replay (`tools/verify_qq_routes.py`, AstrBot 4.16.0): 146 cases, including the negative
+  ones for the removed `/status` and `/boss`.
+- **Removed**: the `status`/`boss`/`状态`/`刷率` short commands and their QQ slash twins, `short_commands_enabled`,
+  `qq_official_compat_enabled` (`@机器人 /tarkov` is always accepted on QQ official) and `platform_compat.set_short_status_routes`;
+  command style `mention_slash` (an unknown value falls back to `mention`).
+- **Settings page**: `_conf_schema.json` is four `object` groups (`general`, `player`, `status`, `boss`), every item with a short
+  description (≤ 30 chars) and hint (≤ 170). `tarkov_core/settings.py` `Settings` wraps the config so the code still reads flat
+  keys (`GROUPS`/`GROUP_OF`; a flat key is used when the group lacks it, which keeps the tests and a flat config working;
+  writes go where the value lives; `save_config` passes through). AstrBot's integrity check deletes keys that are not in the
+  schema, so **settings saved by the old flat schema are lost** and reset to the defaults (accepted by the maintainer; no
+  migration is possible). `test_release` flattens the schema for the default/fallback check and requires every key in exactly
+  one group.
+- **Push targets**: when `status_notify_targets` / `boss_notify_targets` is empty, targets are the remembered group sessions
+  (`accounts.sqlite3` table `sessions(umo, seen_at)`, newest first, ≤ 200 stored, ≤ 50 used). `dispatch()` records a session
+  (conversation id only, groups only, never private chats or users, only after the access check passed, rewritten at most hourly);
+  the first new session starts the status and Boss pollers when they were idle for lack of targets. The usual target checks
+  still apply to remembered sessions (allowed origins, proactive capability, the QQ push switches). A listed target replaces the
+  remembered ones.
+- **Intervals**: `status_poll_minutes` and `boss_poll_minutes` default 30, slider 10–90 (step 1). `PollingTask`'s failure
+  back-off cap is now `max(1800, interval)` seconds, because the old fixed 1800 s cap would have cut a 90-minute interval short.
+- **Name index** (`name_index_enabled`) defaults to **true** in the schema and in `index_enabled()`: the first name lookup that
+  misses the recorded names in a mode downloads that mode's index (PvP ~30 MB, ~25 s, ~100 MB on disk). The test helper switches it
+  off unless a test passes fake names.
+- Tests 294 → 306; mutation checks: back-off cap, groups-only recording, recording at all, the empty-list fallback each fail a test.
+  Docs updated (README general settings, both detail documents, CHANGELOG 0.4.5, checklist). Version stays 0.4.5, but the
+  config layout change means installs of the previously delivered 0.4.5 zip lose their saved settings: bump to 0.4.6 if that zip
+  was already distributed.

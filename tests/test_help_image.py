@@ -76,6 +76,3 @@ class HelpImageTests(unittest.TestCase):
         _, texts = drawn_texts(card(style='mention'))
         self.assertIn(COMMAND_STYLES['mention']['note'], texts)
         self.assertFalse([text for text in texts if text.startswith('/tarkov')])
-        _, texts = drawn_texts(card(style='mention_slash'))
-        self.assertIn('@机器人 /tarkov [模式]', texts)
-        self.assertIn(COMMAND_STYLES['mention_slash']['note'], texts)

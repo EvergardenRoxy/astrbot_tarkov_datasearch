@@ -70,8 +70,8 @@ class BossPluginTests(unittest.IsolatedAsyncioTestCase):
         for command in ('/tarkov boss pve', '/塔科夫 刷率 pve'):
             result = [r async for r in plugin.tarkov_command(boundary.Event(command))]
             self.assertEqual(Image.open(io.BytesIO(result[0][0].data)).format, 'JPEG')
-        event = boundary.Event('/boss season'); event.platform_name = 'qq_official'
-        result = [r async for r in plugin.qq_boss_command(event)]
+        event = boundary.Event('/tboss season'); event.platform_name = 'qq_official'
+        result = [r async for r in plugin.qq_tboss(event)]
         self.assertIsInstance(result[0][0], boundary.ImageStub)
         self.assertEqual(plugin.boss_snapshot.call_args.args[0], 'season')
 
@@ -103,7 +103,7 @@ class BossPluginTests(unittest.IsolatedAsyncioTestCase):
         await plugin.initialize()
         self.assertFalse(plugin.boss_store.path.exists())
         self.assertIsNone(plugin.boss_poller.task)
-        for setting, expected in ((2,120), (30,1800), (1,120), (99,1800), ('bad',600)):
+        for setting, expected in ((10,600), (90,5400), (1,600), (99,5400), ('bad',1800)):
             plugin.config['boss_poll_minutes'] = setting
             self.assertEqual(plugin.boss_interval(), expected)
         plugin.config.update(boss_enabled=True, boss_broadcast_enabled=True,
@@ -164,15 +164,6 @@ class BossPluginTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(plugin.boss_store.latest('pvp'), latest)
             self.assertEqual(stale['state'][-1]['rows'][0]['chance'], '0.4')
         self.assertEqual([kw['etag'] for key,kw in calls if not key.language][-1], '1')
-
-    async def test_short_opt_out_disables_actual_boss_handlers_only(self):
-        handlers = [types.SimpleNamespace(handler_name=name,enabled=True) for name in
-                    ('boss_command','qq_boss_command','tarkov_command')]
-        registry = sys.modules['astrbot.core.star.star_handler'].star_handlers_registry
-        with patch.object(registry,'get_handlers_by_module_name',return_value=handlers):
-            plugin = self.plugin({'short_commands_enabled':False})
-        self.assertEqual([h.enabled for h in handlers], [False,False,True])
-        self.assertEqual([r async for r in plugin.boss_command(boundary.Event('/boss'))], [])
 
     async def test_portrait_setting_is_a_persisted_one_shot_and_ordinary_queries_never_refresh(self):
         class Config(dict):

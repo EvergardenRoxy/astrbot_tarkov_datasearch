@@ -4,6 +4,7 @@ players.tarkov.dev only has a profile after someone looked the player up on the 
 name index lags behind (handoff §16), so the plugin learns names from its users instead: every binding and every
 successful query by account id or player-page link records the nickname the profile shows.
 """
+from contextlib import closing
 import hashlib
 import hmac
 import os
@@ -16,6 +17,8 @@ from .names import SUGGESTIONS, spelling_variants
 # Recorded names kept at most; the least recently seen are dropped beyond this.
 MAX_NAMES = 200000
 MAX_MATCHES = 6
+# Group sessions that used a command, kept as push targets when no target list is configured; the oldest are dropped.
+MAX_SESSIONS = 200
 
 
 SECRET_BYTES = 32
@@ -56,6 +59,7 @@ class Accounts:
         db.execute('CREATE TABLE IF NOT EXISTS bindings (owner TEXT PRIMARY KEY, aid INTEGER NOT NULL, nickname TEXT NOT NULL, bound_at REAL NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS names (key TEXT NOT NULL, aid INTEGER NOT NULL, name TEXT NOT NULL, seen_at REAL NOT NULL, PRIMARY KEY (key, aid))')
         db.execute('CREATE INDEX IF NOT EXISTS names_seen ON names (seen_at)')
+        db.execute('CREATE TABLE IF NOT EXISTS sessions (umo TEXT PRIMARY KEY, seen_at REAL NOT NULL)')
         return db
 
     def bind(self, owner, aid, nickname):
@@ -126,3 +130,15 @@ class Accounts:
             return rows, total
         finally:
             db.close()
+
+    def touch_session(self, umo, now=None):
+        """Remember a group session (its AstrBot conversation id, no user id) that used the plugin."""
+        now = time.time() if now is None else now
+        with closing(self.connect()) as db, db:
+            db.execute('INSERT INTO sessions VALUES (?,?) ON CONFLICT(umo) DO UPDATE SET seen_at=excluded.seen_at', (umo, now))
+            db.execute('DELETE FROM sessions WHERE umo NOT IN (SELECT umo FROM sessions ORDER BY seen_at DESC LIMIT ?)', (MAX_SESSIONS,))
+
+    def sessions(self, limit=50):
+        """The most recently active remembered sessions, newest first."""
+        with closing(self.connect()) as db:
+            return [row[0] for row in db.execute('SELECT umo FROM sessions ORDER BY seen_at DESC LIMIT ?', (limit,))]

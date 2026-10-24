@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import arena_profile, profile
+from tarkov_core.accounts import Accounts
 from tarkov_core.names import spelling_variants
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -138,6 +139,8 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         if names is not None:
             # A fake server index only matters when the optional index is switched on.
             config.setdefault('name_index_enabled', True)
+        # The downloaded name index is on by default (maintainer); most tests are about the recorded names only.
+        config.setdefault('name_index_enabled', False)
         plugin = self.module.TarkovPlugin(types.SimpleNamespace(), config)
         plugin.names = names or FakeNames()
         return plugin
@@ -210,7 +213,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                                   'mode': 'season', 'label': 'PVP 赛季',
                                   'search': 'https://tarkov.dev/players?gameMode=pvp-season',
                                   'example': 'https://tarkov.dev/players/pvp-season/1234567',
-                                  'arena_by_default': True, 'index': '每天'}])
+                                  'arena_by_default': True, 'index': '每天', 'qq_words': True}])
         self.assertIn('绑定自己：@机器人 tarkov 绑定', result[0])
         self.assertTrue(any('help image failed' in str(entry[0]) for entry in self.logs))
         self.assertIsNone(self.plugin(output='image').help_card()['index'])
@@ -292,8 +295,8 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('档案', result[1])
 
     async def test_name_not_found(self):
-        # Index off (the default): the reply explains how to make the player known.
-        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text'})
+        # Index switched off: the reply explains how to make the player known.
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text', 'name_index_enabled': False})
         with patch.object(self.transport, 'fetch_index', side_effect=AssertionError('index must not be used')):
             result = await self.run_command(plugin, Event('/tarkov pve Nobody_Here'))
         self.assertIn('还不知道 Nobody_Here 的账号 ID', result[0])
@@ -657,7 +660,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
     async def test_names_are_learned_from_queries(self):
         # Index off (the default); a query by id or link teaches the name to everyone.
         self.profiles[('pve', 7654321)] = profile(aid=7654321, info_nickname='Player_One')
-        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text'})
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text', 'name_index_enabled': False})
         with patch.object(self.transport, 'fetch_index', side_effect=AssertionError('index must not be used')):
             self.assertIn('还不知道 player_one', (await self.run_command(plugin, Event('/tarkov pve player_one')))[0])
             await self.run_command(plugin, Event('/tarkov pve 7654321'))
@@ -667,7 +670,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('注意', result[0])
 
     async def test_renamed_player_found_by_old_name(self):
-        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text'})
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text', 'name_index_enabled': False})
         self.profiles[('pve', 5)] = profile(aid=5, info_nickname='OldName')
         await self.run_command(plugin, Event('/tarkov pve 5'))
         plugin.cache.clear()
@@ -1015,7 +1018,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         for platform in ('qq_official', 'qq_official_webhook'):
             event = Event('/tarkov pve 7')
             event.platform_name = platform
-            plugin = self.plugin({'command_style': 'mention_slash'})
+            plugin = self.plugin()
             with patch.object(self.transport, 'fetch_profile', self.fake_fetch):
                 result = [r async for r in plugin.qq_slash_command(event)]
             self.assertIn('【塔科夫 PVE 档案】', result[0])
@@ -1025,23 +1028,93 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
             plugin = self.plugin({'access_mode': 'admin_only'})
             self.assertEqual([r async for r in plugin.qq_slash_command(blocked)], ['此会话或用户没有塔科夫查询权限。'])
             self.assertTrue(blocked.stopped)
-            disabled = Event('/tarkov pve 7')
-            disabled.platform_name = platform
-            plugin = self.plugin({'qq_official_compat_enabled': False})
-            self.assertEqual([r async for r in plugin.qq_slash_command(disabled)], [])
-            self.assertFalse(disabled.stopped)
         other = Event('/tarkov pve 7')
         other.platform_name = 'telegram'
         self.assertEqual([r async for r in self.plugin().qq_slash_command(other)], [])
         self.assertFalse(self.module.QQOfficialFilter().filter(other, {}))
 
-    async def test_mention_slash_style_is_used_in_help_and_hints(self):
+    def qq_event(self, text, origin='bot:GroupMessage:g1', platform='qq_official'):
+        event = Event(text)
+        event.platform_name, event.unified_msg_origin = platform, origin
+        return event
+
+    async def test_qq_single_word_commands_map_to_the_spaced_commands(self):
+        cases = (('qq_tpvp', 'tpvp', 'pvp'), ('qq_tpve', '/tpve Player_One', 'pve Player_One'),
+                 ('qq_tseason', 'tseason 7', 'season 7'), ('qq_tarena', 'tarena a b', 'arena a b'),
+                 ('qq_tbind', 'tbind https://tarkov.dev/players/pve/7', 'bind https://tarkov.dev/players/pve/7'),
+                 ('qq_tunbind', 'tunbind', 'unbind'), ('qq_thelp', 'thelp', 'help'), ('qq_tstatus', 'tstatus', 'status'),
+                 ('qq_tboss', 'tboss pve 变化', 'boss pve 变化'))
+        for handler, text, expected in cases:
+            for platform in ('qq_official', 'qq_official_webhook'):
+                with self.subTest(handler=handler, platform=platform):
+                    plugin, seen = self.plugin(), []
+                    async def spy(event, command, seen=seen):
+                        seen.append(command)
+                        yield 'ok'
+                    plugin.dispatch = spy
+                    self.assertEqual([r async for r in getattr(plugin, handler)(self.qq_event(text, platform=platform))], ['ok'])
+                    self.assertEqual(seen, [expected])
+
+    async def test_qq_single_word_commands_need_qq_and_the_setting(self):
+        for plugin, event in ((self.plugin(), self.qq_event('tpve 7', platform='telegram')),
+                              (self.plugin({'qq_single_word_commands': False}), self.qq_event('tpve 7'))):
+            self.assertEqual([r async for r in plugin.qq_tpve(event)], [])
+            self.assertFalse(event.stopped)
+
+    async def test_qq_single_word_commands_query_and_respect_access(self):
+        self.profiles[('pve', 7)] = profile(aid=7)
+        plugin = self.plugin()
+        with patch.object(self.transport, 'fetch_profile', self.fake_fetch):
+            result = [r async for r in plugin.qq_tpve(self.qq_event('tpve 7'))]
+        self.assertIn('【塔科夫 PVE 档案】', result[0])
+        blocked = self.qq_event('tpve 7')
+        result = [r async for r in self.plugin({'access_mode': 'admin_only'}).qq_tpve(blocked)]
+        self.assertEqual(result, ['此会话或用户没有塔科夫查询权限。'])
+        self.assertTrue(blocked.stopped)
+
+    async def test_help_lists_the_single_words_only_when_enabled(self):
+        self.assertIn('tpve', self.plugin().help_text())
+        self.assertNotIn('tpve', self.plugin({'qq_single_word_commands': False}).help_text())
+        self.assertTrue(self.plugin().help_card()['qq_words'])
+        self.assertNotIn('qq_words', self.plugin({'qq_single_word_commands': False}).help_card())
+
+    async def test_group_sessions_that_used_the_plugin_are_the_default_push_targets(self):
+        plugin = self.plugin({'status_enabled': True, 'status_broadcast_enabled': True})
+        started = []
+        plugin.status_poller.start = lambda: started.append('status')
+        plugin.boss_poller.start = lambda: started.append('boss')
+        self.assertEqual(plugin.status_targets(), [])
+        with patch.object(self.transport, 'fetch_profile', self.fake_fetch):
+            await self.run_command(plugin, self.qq_event('/tarkov pve 7', origin='bot:GroupMessage:g1'))
+            await self.run_command(plugin, self.qq_event('/tarkov pve 7', origin='bot:FriendMessage:u1'))
+            await self.run_command(plugin, self.qq_event('/tarkov pve 7', origin='bot:GroupMessage:g2'))
+            await self.run_command(plugin, self.qq_event('/tarkov pve 7', origin='bot:GroupMessage:g1'))
+        # Groups only (no private chats), newest first; each is checked like a listed target.
+        # g1 was seen again within the hour: nothing is rewritten, so g2 (added later) stays the newest.
+        self.assertEqual(plugin.status_targets(), ['bot:GroupMessage:g2', 'bot:GroupMessage:g1'])
+        self.assertEqual(started, ['status', 'boss', 'status', 'boss'])
+        self.assertEqual(Accounts(plugin.accounts.path).sessions(), ['bot:GroupMessage:g2', 'bot:GroupMessage:g1'])
+        # A listed target replaces the remembered sessions; the origin limit still applies to remembered ones.
+        plugin.config['status_notify_targets'] = ['bot:GroupMessage:other']
+        self.assertEqual(plugin.status_targets(), ['bot:GroupMessage:other'])
+        plugin.config['status_notify_targets'] = []
+        plugin.config['allowed_origins'] = ['bot:GroupMessage:g2']
+        self.assertEqual(plugin.status_targets(), ['bot:GroupMessage:g2'])
+
+    async def test_a_denied_group_is_not_remembered(self):
+        plugin = self.plugin({'access_mode': 'admin_only'})
+        await self.run_command(plugin, self.qq_event('/tarkov pve 7', origin='bot:GroupMessage:g9'))
+        self.assertEqual(plugin.accounts.sessions(), [])
+
+    async def test_the_name_index_is_on_by_default(self):
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {})
+        self.assertTrue(plugin.index_enabled())
+        self.assertFalse(self.plugin().index_enabled())
+
+    async def test_removed_mention_slash_style_falls_back_to_mention(self):
         plugin = self.plugin({'command_style': 'mention_slash'})
-        self.assertEqual(plugin.cmd('帮助'), '@机器人 /tarkov 帮助')
-        self.assertEqual(plugin.help_card()['command'], '@机器人 /tarkov')
-        self.assertIn('@机器人 /tarkov', plugin.help_text())
-        result = await self.run_command(plugin, Event('/tarkov'))
-        self.assertIn('@机器人 /tarkov 绑定', result[0])
+        self.assertEqual(plugin.cmd('帮助'), '@机器人 tarkov 帮助')
+        self.assertNotIn('@机器人 /tarkov', plugin.help_text())
 
     async def test_bind_failure_is_not_listed_as_a_missing_profile(self):
         self.profiles[('pve', 7)] = profile(aid=7)

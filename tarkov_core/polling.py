@@ -39,7 +39,8 @@ class PollingTask:
                 self.on_error(exc)
             finished = self.clock()
             while self.enabled():
-                delay = min(1800, max(120, self.interval())*2**max(0, failures-1))
+                base = max(120, self.interval())
+                delay = min(max(1800, base), base*2**max(0, failures-1))
                 remaining = delay-(self.clock()-finished)
                 if remaining <= 0:
                     break

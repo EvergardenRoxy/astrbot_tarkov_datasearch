@@ -1,245 +1,277 @@
 {
-    "default_mode": {
-        "type": "string",
-        "description": "默认模式",
-        "default": "pvp",
-        "options": [
-            "pvp",
-            "pve",
-            "season"
-        ],
-        "labels": [
-            "PVP",
-            "PVE",
-            "PVP 赛季"
-        ],
-        "hint": "查询时没写模式就先看这里的模式。也可以在命令里写 pvp、pve、赛季 或 竞技场 指定。"
+    "general": {
+        "type": "object",
+        "description": "通用",
+        "items": {
+            "command_style": {
+                "type": "string",
+                "description": "命令写法",
+                "default": "mention",
+                "hint": "帮助和回复里怎么显示命令，只影响显示。@机器人 tarkov 适合 QQ 官方机器人等平台，/tarkov 适合支持 / 唤醒的平台；两种写法实际都能用。",
+                "options": [
+                    "mention",
+                    "slash"
+                ],
+                "labels": [
+                    "@机器人 tarkov",
+                    "/tarkov"
+                ]
+            },
+            "qq_single_word_commands": {
+                "type": "bool",
+                "description": "QQ 官方机器人单词命令",
+                "default": true,
+                "hint": "QQ 官方机器人的命令里不能有空格。开启后可用 tpvp、tpve、tseason、tarena（查玩家）、tbind、tunbind、thelp（绑定、解绑、帮助）、tstatus、tboss（状态、Boss），后面的参数可以带空格，例如“@机器人 tpve 昵称”。到 QQ 机器人后台把它们加进命令列表即可。"
+            },
+            "access_mode": {
+                "type": "string",
+                "description": "谁可以使用",
+                "default": "all",
+                "hint": "“管理员”指 AstrBot 管理员，不是群管理员。",
+                "options": [
+                    "admin_only",
+                    "admin_and_whitelist",
+                    "all"
+                ],
+                "labels": [
+                    "仅管理员",
+                    "管理员和指定用户",
+                    "所有人"
+                ]
+            },
+            "user_whitelist": {
+                "type": "list",
+                "description": "指定用户",
+                "default": [],
+                "hint": "平台用户 ID（如 QQ 号），在“管理员和指定用户”时生效。"
+            },
+            "allowed_origins": {
+                "type": "list",
+                "description": "限定聊天",
+                "default": [],
+                "hint": "只允许这些会话使用，填 AstrBot 会话标识（聊天里发 /sid 查看）；留空不限制。"
+            },
+            "proxy_enabled": {
+                "type": "bool",
+                "description": "访问 tarkov.dev 时使用代理",
+                "default": false,
+                "hint": "开启后所有请求都走下面的代理，代理连不上不会改为直连。查询提示“HTTP 403”（服务器 IP 被拦）时可以开启。"
+            },
+            "proxy_url": {
+                "type": "string",
+                "description": "代理地址",
+                "default": "",
+                "hint": "HTTP/HTTPS 代理，写明端口，如 http://127.0.0.1:7890，不支持 SOCKS。"
+            },
+            "public_data_cache_minutes": {
+                "type": "int",
+                "description": "公共游戏数据缓存（分钟）",
+                "default": 5,
+                "hint": "状态和 Boss 共用，过期后的查询才会检查更新；0 表示每次都检查。",
+                "slider": {
+                    "min": 0,
+                    "max": 1440,
+                    "step": 1
+                }
+            }
+        }
     },
-    "arena_by_default": {
-        "type": "bool",
-        "description": "不写模式时也查竞技场",
-        "default": false,
-        "hint": "关闭时（默认）只有写明“竞技场”或发送竞技场网址时才查竞技场。开启后，不写模式的查询也会看竞技场档案（每次多一个请求），塔科夫三个模式都没有档案时显示竞技场档案。"
+    "player": {
+        "type": "object",
+        "description": "玩家数据查询",
+        "items": {
+            "default_mode": {
+                "type": "string",
+                "description": "默认模式",
+                "default": "pvp",
+                "hint": "命令里没写模式时先看这个模式；没有档案会自动换成有档案的模式。",
+                "options": [
+                    "pvp",
+                    "pve",
+                    "season"
+                ],
+                "labels": [
+                    "PVP",
+                    "PVE",
+                    "PVP 赛季"
+                ]
+            },
+            "arena_by_default": {
+                "type": "bool",
+                "description": "不写模式时也查竞技场",
+                "default": false,
+                "hint": "开启后每次查询多一个请求。"
+            },
+            "output_mode": {
+                "type": "string",
+                "description": "输出方式",
+                "default": "image",
+                "hint": "图片在本地绘制，画不出时自动改发文字；Markdown 在 QQ 上会显示出原始符号。",
+                "options": [
+                    "image",
+                    "text",
+                    "markdown"
+                ],
+                "labels": [
+                    "图片",
+                    "文字",
+                    "Markdown 文字"
+                ]
+            },
+            "skill_count": {
+                "type": "int",
+                "description": "显示的技能数",
+                "default": 10,
+                "hint": "精英技能总是全部显示，这里设置其余技能显示几项；0 不显示。",
+                "slider": {
+                    "min": 0,
+                    "max": 49,
+                    "step": 1
+                }
+            },
+            "profile_cache_minutes": {
+                "type": "int",
+                "description": "档案缓存（分钟）",
+                "default": 10,
+                "hint": "只存内存；用玩家页网址查询和绑定时不用缓存；0 不缓存。",
+                "slider": {
+                    "min": 0,
+                    "max": 1440,
+                    "step": 5
+                }
+            },
+            "name_index_enabled": {
+                "type": "bool",
+                "description": "同时使用 tarkov.dev 的昵称名单",
+                "default": true,
+                "hint": "按昵称查不到时，再查 tarkov.dev 的昵称名单。首次按昵称查 PVP 会下载约 30 MB，本地约占 100 MB，需要等几十秒。"
+            },
+            "name_index_refresh_hours": {
+                "type": "int",
+                "description": "昵称名单更新间隔（小时）",
+                "default": 168,
+                "hint": "名单每天更新，间隔到了再查询时才会重新下载。",
+                "slider": {
+                    "min": 1,
+                    "max": 720,
+                    "step": 1
+                }
+            },
+            "download_timeout_seconds": {
+                "type": "int",
+                "description": "下载最长等待（秒）",
+                "default": 120,
+                "hint": "下载昵称名单的超时；查单个档案最多等 60 秒。",
+                "slider": {
+                    "min": 15,
+                    "max": 900,
+                    "step": 15
+                }
+            }
+        }
     },
-    "output_mode": {
-        "type": "string",
-        "description": "输出方式",
-        "default": "image",
-        "options": [
-            "image",
-            "text",
-            "markdown"
-        ],
-        "labels": [
-            "图片",
-            "文字",
-            "Markdown 文字"
-        ],
-        "hint": "查到档案后怎样回复。“图片”：在本地画一张情报档案风格的图片（不经过任何在线渲染服务），画图失败时自动改发文字。“文字”：纯文字，适合任何平台。“Markdown 文字”：带标题、表格和加粗的文字，适合能显示 Markdown 的平台（如 Telegram、Discord），在 QQ 等平台上会显示出原始符号。帮助命令也跟随这个设置（选“图片”时回复一张用法图片）。找不到玩家、同名列表和出错提示总是文字。"
+    "status": {
+        "type": "object",
+        "description": "服务器状态",
+        "items": {
+            "status_enabled": {
+                "type": "bool",
+                "description": "服务器状态功能",
+                "default": false,
+                "hint": "开启后可用 tarkov status 查询服务器状态图片。关闭时不下载数据。"
+            },
+            "status_broadcast_enabled": {
+                "type": "bool",
+                "description": "状态变化推送",
+                "default": false,
+                "hint": "状态变化时自动发图；首次只记录不推送。需要先开启上面的“服务器状态功能”。"
+            },
+            "status_poll_minutes": {
+                "type": "int",
+                "description": "状态检查间隔（分钟）",
+                "default": 30,
+                "hint": "10～90 分钟，保存后生效。",
+                "slider": {
+                    "min": 10,
+                    "max": 90,
+                    "step": 1
+                }
+            },
+            "status_notify_targets": {
+                "type": "list",
+                "description": "状态推送目标",
+                "default": [],
+                "hint": "留空：推送给所有用过本插件命令的群。填写：只推送给这些会话（完整会话标识，聊天里发 /sid 查看，最多 50 个）。"
+            },
+            "status_qq_push_enabled": {
+                "type": "bool",
+                "description": "允许向 QQ 官方机器人推送状态",
+                "default": false,
+                "hint": "向 QQ 官方群推送前必须开启，还需要机器人有主动消息权限。"
+            }
+        }
     },
-    "command_style": {
-        "type": "string",
-        "description": "命令写法",
-        "default": "mention",
-        "options": [
-            "mention",
-            "slash",
-            "mention_slash"
-        ],
-        "labels": [
-            "@机器人 tarkov（QQ 官方机器人等）",
-            "/tarkov（支持 / 唤醒的平台）",
-            "@机器人 /tarkov（QQ 官方机器人提及后加斜杠）"
-        ],
-        "hint": "帮助及所有操作提示的命令写法。可选 @机器人 tarkov、/tarkov 或 @机器人 /tarkov。只影响显示；QQ 官方提及后的斜杠路由由下一项兼容开关控制。"
-    },
-    "qq_official_compat_enabled": {
-        "type": "bool",
-        "description": "QQ 官方机器人提及后斜杠命令兼容",
-        "default": true,
-        "hint": "支持 @机器人 /tarkov 和 @机器人 /塔科夫。在 AstrBot 未将 / 配为唤醒前缀时补充 QQ 官方命令入口；关闭不影响框架本来能识别的命令。不启用主动推送，也不修改 AstrBot 全局唤醒配置。"
-    },
-    "public_data_cache_minutes": {
-        "type": "int",
-        "description": "公共游戏数据按需缓存时间（分钟）",
-        "default": 5,
-        "slider": {"min": 0, "max": 1440, "step": 1},
-        "hint": "状态、Boss 共用。按资源、模式、语言保存；过期后查询才检查更新，不启动后台轮询。0 表示每次条件检查。状态及 Boss 播报每轮条件复查，不受此缓存时间阻止。"
-    },
-    "status_enabled": {
-        "type": "bool",
-        "description": "服务器状态图片查询",
-        "default": false,
-        "hint": "开启后可用 status、状态或 tarkov status 查询服务器公开状态。无论原输出设置为何值，此功能均回复图片。关闭时不为本功能下载数据。"
-    },
-    "status_broadcast_enabled": {
-        "type": "bool",
-        "description": "服务器状态变化图片播报",
-        "default": false,
-        "hint": "依赖状态查询开关，并且必须填写播报目标。首次只保存基线，随后故障、恢复或新增有效公告才播报；不变时静默，网络失败不当作游戏停服。明确权限错误会暂停对应目标；修复权限后先关闭播报并保存重载，再开启并保存重载以重置。"
-    },
-    "status_poll_minutes": {
-        "type": "int",
-        "description": "服务器状态轮询间隔（分钟）",
-        "default": 5,
-        "slider": {"min": 2, "max": 30, "step": 1},
-        "hint": "2～30 分钟，保存后重载生效。慢请求不会重叠，失败会退避。检查频率不代表上游数据更新频率。"
-    },
-    "status_notify_targets": {
-        "type": "list",
-        "description": "服务器状态播报目标",
-        "default": [],
-        "hint": "每项填写完整 AstrBot 会话标识（/sid 查看），最多 50 项。留空不播报。目标还必须符合限定聊天设置；不会自动向所有聊天群发。查询权限控制查询用户，播报由管理员在此明确授权目标会话。"
-    },
-    "status_qq_push_enabled": {
-        "type": "bool",
-        "description": "允许向 QQ 官方机器人会话播报状态",
-        "default": false,
-        "hint": "仅在已验证当前 AstrBot、机器人及群权限支持主动图片消息后开启。此项不授予 QQ 平台权限；未开启不影响用户主动查询状态。"
-    },
-    "boss_enabled": {
-        "type": "bool",
-        "description": "Boss 刷率功能总开关",
-        "default": false,
-        "hint": "总开关：关闭后整个 Boss 功能停用，不能查询（boss、boss 变化、续页），也不会轮询或推送，无论下面的推送开关如何，且不下载 Boss 数据。范围：仅含指定 11 类日常 Boss 和三狗（GOONS，以 Knight 记录为准），不含普通 AI 或活动变体。排除破冰船、原中心区、实验室 Dark、迷宫、中心区教程和码头；原中心区 21+ 显示为中心区。深色矩阵中多概率分别显示不相加，变化标红，100% 红字加粗。头像仅通过下方手动更新项下载。"
-    },
-    "boss_portraits_update": {
-        "type": "bool",
-        "description": "手动拉取/更新 Boss 头像（执行一次后自动关闭）",
-        "default": false,
-        "hint": "打开并保存重载后从 assets.tarkov.dev 拉取 12 个头像，执行前自动复位。缓存有效期 365 天；普通查询、轮询、启动或缓存过期均不自动下载。缺失、过期或下载失败时使用占位图，不影响刷率。要重试或强制更新，请再次打开并保存重载。"
-    },
-    "boss_broadcast_enabled": {
-        "type": "bool",
-        "description": "Boss 刷率变化推送",
-        "default": false,
-        "hint": "只控制变化推送：关闭只停止后台轮询和推送，查询不受影响。开启还要求 Boss 总开关已开、有监控模式和播报目标。变化推送的图下方会用文字简要列出本次变化。首次静默，后续成功快照有变化才生成全表。每目标每轮最多提交 5 页并保存逐页结果，剩余页下轮继续；已提交页不重发。权限错误暂停目标，修复后关闭保存重载，再开启保存重载以重置。"
-    },
-    "boss_poll_minutes": {
-        "type": "int",
-        "description": "Boss 刷率轮询间隔（分钟）",
-        "default": 10,
-        "slider": {"min": 2, "max": 30, "step": 1},
-        "hint": "2～30 分钟，保存重载生效；慢请求不重叠，失败退避。此频率不保证上游同步更新。"
-    },
-    "boss_modes": {
-        "type": "list",
-        "description": "Boss 监控模式及默认查询模式",
-        "default": ["pvp", "pve", "season"],
-        "hint": "可填 pvp、pve、season（赛季）。各模式分别保存基线；新加模式首次静默。空列表不监控，仍可显式 boss pve 等查询。覆盖约定地图范围内的日常 Boss 及三狗。"
-    },
-    "boss_event_ignore": {
-        "type": "list",
-        "description": "不当作活动 Boss 的怪物（高级）",
-        "default": [],
-        "hint": "活动 Boss 规则：常驻日常 Boss 之外，地图 Boss 记录中除 Raider、黑色军团、USEC、BEAR、游荡者、守军以外的都显示为“活动”行（最多 3 行）。若上游新增了不想显示的常规怪物，把它的 normalizedName（如 raider）填在这里。修改后对应监控会静默重建基线，不会误报变化。"
-    },
-    "boss_notify_targets": {
-        "type": "list",
-        "description": "Boss 刷率播报目标",
-        "default": [],
-        "hint": "填写完整 AstrBot 会话标识（/sid 查看），最多 50 项；留空不轮询、不播报。目标还须符合限定聊天及平台主动消息能力，不会向所有可用会话发送。"
-    },
-    "boss_qq_push_enabled": {
-        "type": "bool",
-        "description": "允许向 QQ 官方会话播报 Boss 刷率",
-        "default": false,
-        "hint": "验证当前 AstrBot、机器人及群权限支持主动图片消息后启用；不授予平台权限。关闭不影响主动查询。与状态播报的 QQ 开关独立。"
-    },
-    "short_commands_enabled": {
-        "type": "bool",
-        "description": "启用简短查询命令",
-        "default": true,
-        "hint": "控制 status/状态、boss/刷率（含 QQ 斜杠入口）的实际处理器启用状态。冲突时关闭并保存重载，仍可用 tarkov status、tarkov boss。"
-    },
-    "access_mode": {
-        "type": "string",
-        "description": "谁可以使用",
-        "default": "all",
-        "options": [
-            "admin_only",
-            "admin_and_whitelist",
-            "all"
-        ],
-        "labels": [
-            "仅管理员",
-            "管理员和指定用户",
-            "所有人"
-        ],
-        "hint": "默认“所有人”。“管理员”指 AstrBot 管理员，不是 QQ 群管理员。选择“管理员和指定用户”时，在下一项填写用户。"
-    },
-    "user_whitelist": {
-        "type": "list",
-        "description": "指定用户",
-        "default": [],
-        "hint": "每项填一个用户 ID（例如 QQ 号）。只在“管理员和指定用户”模式下生效。"
-    },
-    "allowed_origins": {
-        "type": "list",
-        "description": "限定聊天",
-        "default": [],
-        "hint": "只允许在这些聊天中使用，留空表示不限制。每项填一个 AstrBot 会话标识（在聊天中发送 /sid 查看）。这里只限定聊天，使用的人仍需符合“谁可以使用”。"
-    },
-    "skill_count": {
-        "type": "int",
-        "description": "显示的技能数",
-        "default": 10,
-        "slider": {
-            "min": 0,
-            "max": 49,
-            "step": 1
-        },
-        "hint": "精英技能总是全部列出；这里是其余技能按等级从高到低显示几项。设为 0 不显示技能。"
-    },
-    "profile_cache_minutes": {
-        "type": "int",
-        "description": "档案缓存时间（分钟）",
-        "default": 10,
-        "slider": {
-            "min": 0,
-            "max": 1440,
-            "step": 5
-        },
-        "hint": "同一个玩家在这段时间内再次查询时，直接使用上次取到的档案，不再访问 tarkov.dev。只保存在内存中，重载插件即清除。设为 0 关闭。"
-    },
-    "name_index_enabled": {
-        "type": "bool",
-        "description": "同时使用 tarkov.dev 的昵称名单",
-        "default": false,
-        "hint": "默认关闭。插件主要靠用户提供的对应关系按名字查询：绑定账号、按账号 ID 或玩家页网址查到过的玩家，名字都会被记住，所有人之后都能直接用名字查到。开启后，记录里找不到的名字会再查 tarkov.dev 每天发布的昵称名单（只收录在网站上被搜索过的玩家，PVP 名单约 30 MB，本地约占 100 MB），按下一项的间隔下载更新。"
-    },
-    "name_index_refresh_hours": {
-        "type": "int",
-        "description": "昵称名单更新间隔（小时）",
-        "default": 168,
-        "slider": {
-            "min": 1,
-            "max": 720,
-            "step": 1
-        },
-        "hint": "只在开启上一项时使用。插件在本地保存一份名单并按这个间隔检查更新，默认 168 小时（每周一次）。tarkov.dev 每天重建名单，所以每次检查通常都要重新下载，PVP 名单约 30 MB，下载和整理需要几十秒；下载失败后 10 分钟内不会再试。"
-    },
-    "download_timeout_seconds": {
-        "type": "int",
-        "description": "下载最长等待（秒）",
-        "default": 120,
-        "slider": {
-            "min": 15,
-            "max": 900,
-            "step": 15
-        },
-        "hint": "下载昵称名单最多等多久，默认 120 秒。网络慢时可以调高。查询单个档案最多等这个时间和 60 秒中较小的一个。"
-    },
-    "proxy_enabled": {
-        "type": "bool",
-        "description": "访问 tarkov.dev 时使用代理",
-        "default": false,
-        "hint": "默认关闭，直接连接。部分服务器的 IP 会被 tarkov.dev 的 Cloudflare 拦截（查询时提示 HTTP 403），这时可以开启并在下一项填写代理。开启后插件的所有请求都经过这个代理，不使用 AstrBot 或系统的代理设置；代理连不上时不会改为直连，开启后没有填写地址时查询会报错。"
-    },
-    "proxy_url": {
-        "type": "string",
-        "description": "代理地址",
-        "default": "",
-        "hint": "开启上一项后才使用。格式如 http://代理主机:端口，支持 HTTP / HTTPS 代理，不支持 SOCKS。AstrBot 在 Docker 中运行时，127.0.0.1 指容器自己。地址里有账号密码时只填在这里，不要发到聊天中。"
+    "boss": {
+        "type": "object",
+        "description": "Boss 刷率",
+        "items": {
+            "boss_enabled": {
+                "type": "bool",
+                "description": "Boss 刷率功能",
+                "default": false,
+                "hint": "总开关：关闭后不能查询，也不会检查或推送。开启后可用 tarkov boss 查询刷率全表图。"
+            },
+            "boss_broadcast_enabled": {
+                "type": "bool",
+                "description": "刷率变化推送",
+                "default": false,
+                "hint": "只管推送：关闭后查询照常。刷率变化时自动发图，图下方文字写明变化；首次只记录不推送。"
+            },
+            "boss_poll_minutes": {
+                "type": "int",
+                "description": "刷率检查间隔（分钟）",
+                "default": 30,
+                "hint": "10～90 分钟，保存后生效。",
+                "slider": {
+                    "min": 10,
+                    "max": 90,
+                    "step": 1
+                }
+            },
+            "boss_modes": {
+                "type": "list",
+                "description": "监控和默认查询的模式",
+                "default": [
+                    "pvp",
+                    "pve",
+                    "season"
+                ],
+                "hint": "可填 pvp、pve、season。新加的模式第一次只记录不推送；留空则不监控，但仍可 tarkov boss pve 这样指定模式查询。"
+            },
+            "boss_notify_targets": {
+                "type": "list",
+                "description": "刷率推送目标",
+                "default": [],
+                "hint": "留空：推送给所有用过本插件命令的群。填写：只推送给这些会话（完整会话标识，聊天里发 /sid 查看，最多 50 个）。"
+            },
+            "boss_qq_push_enabled": {
+                "type": "bool",
+                "description": "允许向 QQ 官方机器人推送刷率",
+                "default": false,
+                "hint": "向 QQ 官方群推送前必须开启，还需要机器人有主动消息权限。"
+            },
+            "boss_event_ignore": {
+                "type": "list",
+                "description": "不当作活动 Boss 的怪物（高级）",
+                "default": [],
+                "hint": "表格里除常驻 Boss 外，非 Raider、黑色军团、USEC、BEAR、游荡者、守军的 Boss 会显示为“活动”。上游新增了不想显示的普通怪物时，在这里填它的 normalizedName（如 raider）。"
+            },
+            "boss_portraits_update": {
+                "type": "bool",
+                "description": "拉取 Boss 头像（执行一次后自动关闭）",
+                "default": false,
+                "hint": "打开并保存后，从 assets.tarkov.dev 下载 12 个头像并缓存 365 天，之后自动关闭。平时不会自动下载；没有头像时用占位圆。"
+            }
+        }
     }
 }

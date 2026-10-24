@@ -245,6 +245,21 @@ class PollingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(delays, [300, 90])
         self.assertEqual(cycles, [0, 620])
 
+    async def test_long_intervals_are_not_cut_to_the_failure_backoff_cap(self):
+        # Intervals go up to 90 minutes: the 30-minute cap of the failure back-off must not shorten a normal wait.
+        clock, delays = [0], []
+        async def cycle(): pass
+        async def wait(event, seconds):
+            delays.append(seconds)
+            clock[0] += seconds
+        stop = []
+        async def wait_once(event, seconds):
+            await wait(event, seconds)
+            stop.append(1)
+        poller = PollingTask(cycle, lambda: not stop, lambda: 5400, lambda e: None, clock=lambda: clock[0], wait=wait_once)
+        await poller.run()
+        self.assertEqual(delays, [5400])
+
     async def test_failures_back_off_and_close_cancels_sleep(self):
         clock, delays, errors = [0], [], []
         async def cycle(): raise TimeoutError()

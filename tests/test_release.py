@@ -8,8 +8,21 @@ from pathlib import Path
 
 from tarkov_core import VERSION
 from tarkov_core.modes import GAME_MODES, MODES
+from tarkov_core.settings import GROUPS
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def flat_schema():
+    """The schema's settings by key; the settings page groups them in nested objects (tarkov_core.settings.GROUPS)."""
+    nested = json.loads((ROOT/'_conf_schema.json').read_text(encoding='utf-8'))
+    flat = {}
+    for group, spec in nested.items():
+        assert spec['type'] == 'object' and spec['description'] and group in GROUPS, group
+        for key, item in spec['items'].items():
+            assert key in GROUPS[group] and key not in flat, key
+            flat[key] = item
+    return flat
 
 
 class ReleaseTests(unittest.TestCase):
@@ -28,7 +41,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_schema_defaults_match_code_fallbacks(self):
         # main.py reads each key with a fallback; a fresh install uses the schema default. Keep them equal.
-        schema = json.loads((ROOT/'_conf_schema.json').read_text(encoding='utf-8'))
+        schema = flat_schema()
         main = (ROOT/'main.py').read_text(encoding='utf-8')
         for key, spec in schema.items():
             with self.subTest(key=key):
@@ -38,6 +51,8 @@ class ReleaseTests(unittest.TestCase):
                     self.assertEqual(fallback.group(1).strip(), repr(spec['default']))
         # Arena is not a default mode; the separate "arena_by_default" switch adds it (maintainer).
         self.assertEqual(set(schema['default_mode']['options']), set(GAME_MODES))
+        # Every setting belongs to exactly one group, and every grouped key exists in the schema.
+        self.assertEqual(set(schema), {key for keys in GROUPS.values() for key in keys})
         for spec in schema.values():
             if 'labels' in spec:
                 self.assertEqual(len(spec['labels']), len(spec['options']))
