@@ -325,3 +325,12 @@ feature proved inefficient. It is sealed, not deleted from history.
   zones `BotZoneArmory`/`BotZoneGreenOffice`, generic `unknown-npc-portrait.webp`. Lab non-event mobs: `PmcBot` (raiders;
   PvP/PvE), `pmcBotBlackDiv` (season raiders), `pmcUSEC`/`pmcBEAR` (PvE). Lab Dark (excluded map) holds `bossWedgeLab`.
   Rule and display are a **proposal awaiting the maintainer's decision** (not implemented).
+- **Rule extension check (maintainer: all selected maps; 2-3 event rows; resident whitelist + generic-mob blacklist)** — feasibility
+  from the same three-mode feed, every non-daily boss record on the eleven selected maps. Mob `normalizedName` (language
+  independent) separates the generic soldiers cleanly: `raider` (`PmcBot`), `black-div` (`pmcBotBlackDiv`,
+  `pmcBotBlackDivSeason`), `usec` (`pmcUSEC`), `bear` (`pmcBEAR`), `rogue` (`exUsecFree`, Lighthouse), `af` (`Sentry`,
+  Shoreline). After removing those six, the only record left on the selected maps in PvP, PvE and season is
+  `bossScourgeEventLab` (Lab). Excluded maps hold more non-daily mobs (Wedge, Black Div., Tagilla's shadow, `vsRF`), which
+  never reach the rule. Raider/PMC/USEC/BEAR alone are not enough: Rogue and Sentry would otherwise be listed as events.
+  Blacklisting by `normalizedName` is feasible; residual risk is a future generic type that is not yet on the list
+  (it would show as an event until added), hence the proposed optional ignore setting. Awaiting go-ahead; not implemented.
