@@ -49,9 +49,6 @@ def characters():
     static = json.loads((ROOT/'tarkov_core'/'data'/'static.json').read_text(encoding='utf-8'))
     for skill in static['skills'].values():
         chars |= set(skill['zh'])
-    corpus = ROOT/'tarkov_core'/'data'/'item-label-chars.txt'
-    if corpus.exists():
-        chars |= {char for char in corpus.read_text(encoding='utf-8') if ord(char) > 126 and char.isprintable()}
     return ''.join(sorted(chars))
 
 

@@ -98,9 +98,6 @@ def decode(key, body):
         if key.resource == 'maps' and not key.language:
             from .boss_monitor import normalize_bosses
             normalize_bosses(data)
-        if key.resource == 'items' and not key.language:
-            from .items import validate_items
-            validate_items(data)
     except (ValueError, UnicodeError, RecursionError, QueryError):
         raise DataError('tarkov.dev 返回的公共数据格式无法识别') from None
     return document

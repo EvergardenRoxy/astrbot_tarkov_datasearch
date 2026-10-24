@@ -22,7 +22,6 @@ from fixtures import profile
 from test_plugin import Event, ImageStub, PlainStub, PluginTests
 from test_status import status_data
 from test_boss import boss_data
-from test_items import EN, ZH, item_data
 
 
 class At:
@@ -193,25 +192,6 @@ async def verify(wheel):
             ('telegram', ['!'], False, '/boss', True, False, {'boss_enabled': True}, False),
             ('telegram', ['/'], False, '/boss', True, False, {'boss_enabled': True, 'boss_modes': ['pve']}, True),
         ]
-        for platform in ('qq_official','qq_official_webhook'):
-            for prefix in (['/'],['!']):
-                for private in (False,True):
-                    for command in ('/item pve Med Kit','/物品 Medical Aid Kit','/tarkov item pve Med Kit'):
-                        cases.append((platform,prefix,private,command,True,False,
-                                      {'items_enabled':True,'item_images_enabled':False,'item_trader_enabled':False},True))
-        cases += [
-            ('qq_official',['!'],False,'/item Med Kit',True,False,{},True),
-            ('qq_official',['!'],False,'/item Med Kit',True,False,{'short_commands_enabled':False},False),
-            ('qq_official',['!'],False,'/tarkov item pve Med Kit',True,False,
-                {'short_commands_enabled':False,'items_enabled':True,'item_images_enabled':False,'item_trader_enabled':False},True),
-            ('qq_official',['!'],False,'/item Med Kit',True,False,{'qq_official_compat_enabled':False},False),
-            ('qq_official',['/'],False,'/item Med Kit',True,False,{'qq_official_compat_enabled':False},True),
-            ('qq_official',['!'],False,'/item Med Kit',True,False,{'items_enabled':True,'access_mode':'admin_only'},True),
-            ('qq_official',['!'],False,'@机器人 /item Med Kit',False,False,{'items_enabled':True},False),
-            ('telegram',['!'],False,'/item Med Kit',True,False,{'items_enabled':True},False),
-            ('telegram',['/'],False,'/item Med Kit',True,False,
-                {'items_enabled':True,'item_images_enabled':False,'item_trader_enabled':False},True),
-        ]
         for platform, prefix, private, text, mentioned, wrong_mention, config, should_reply in cases:
             message_type = ns['MessageType'].FRIEND_MESSAGE if private else ns['MessageType'].GROUP_MESSAGE
             message_class = ns['C2CMessage'] if private else ns['GroupMessage']
@@ -233,8 +213,7 @@ async def verify(wheel):
             outputs = []
             try:
                 async def public_response(key, **kwargs):
-                    if key.resource == 'items': data = ZH if key.language == 'zh' else EN if key.language else item_data()
-                    else: data = {} if key.language else boss_data(1) if key.resource == 'maps' else status_data()
+                    data = {} if key.language else boss_data(1) if key.resource == 'maps' else status_data()
                     return {'status': 200}, json.dumps({'data': data}).encode()
                 fetch_status = AsyncMock(side_effect=public_response)
                 with patch.object(fixture.transport, 'fetch_profile', fixture.fake_fetch), patch.object(module, 'fetch_public', fetch_status):
@@ -243,16 +222,15 @@ async def verify(wheel):
                 assert bool(outputs) == should_reply, (platform, prefix, text, config, active, outputs)
                 is_status = text.lstrip('/').split()[0] in ('status', '状态') or text.endswith(' status')
                 is_boss = text.lstrip('/').split()[0] in ('boss', '刷率') or ' boss' in text
-                is_item = text.lstrip('/').split()[0] in ('item','物品') or ' item' in text
                 if config.get('access_mode') == 'admin_only':
-                    if is_status or is_boss or is_item:
+                    if is_status or is_boss:
                         assert isinstance(outputs[0][0], ImageStub)
                         fetch_status.assert_not_awaited()
                     else:
                         assert '没有塔科夫查询权限' in outputs[0]
                     assert len(fixture.fetched) == before
                 elif outputs:
-                    if is_status or is_boss or is_item:
+                    if is_status or is_boss:
                         assert isinstance(outputs[0][0], ImageStub)
                     else:
                         assert '【塔科夫 PVE 档案】' in outputs[0]
@@ -278,24 +256,6 @@ async def verify(wheel):
             active = event.get_extra('activated_handlers', [])
             assert len(active) == 1 and active[0].handler is other_status
             checks.append({'short_command_opt_out_preserves_other_plugin': True})
-        finally:
-            await plugin.terminate()
-        async def other_item(self,event):
-            yield event.plain_result('other item handler')
-        other_item.__module__ = 'other_item_plugin'
-        ns['star_map'][other_item.__module__] = types.SimpleNamespace(activated=True,name='other_item',reserved=False)
-        ns['register_command']('item')(other_item)
-        plugin = fixture.plugin({'short_commands_enabled':False})
-        try:
-            raw = ns['GroupMessage'](id='source-id',content='/item Med Kit',group_openid='group-openid',attachments=[],
-                                    author=types.SimpleNamespace(member_openid='user-openid'))
-            event = RouteEvent(ns['_parse_from_qqofficial'](raw,ns['MessageType'].GROUP_MESSAGE),'qq_official')
-            stage = ns['WakingCheckStage']()
-            await stage.initialize(types.SimpleNamespace(astrbot_config={'platform_settings':{},'admins_id':[],'wake_prefix':['/']}))
-            await stage.process(event)
-            active = event.get_extra('activated_handlers',[])
-            assert len(active)==1 and active[0].handler is other_item
-            checks.append({'short_item_opt_out_preserves_other_plugin':True})
         finally:
             await plugin.terminate()
         async def other_boss(self, event):

@@ -28,8 +28,6 @@ def help_rows(card):
         rows.append(('服务器状态', f'{command} status', '图片查询；播报需要单独开启'))
     if card.get('boss_enabled'):
         rows.append(('Boss 刷率', f'{command} boss [模式] [变化]', '全表分页；100% 红字加粗，播报单独开启'))
-    if card.get('items_enabled'):
-        rows.append(('物品查询', f'{command} item [模式] <名称或id:ID>', '不写模式查共同属性；写模式查价格和差异'))
     return rows
 
 

@@ -21,10 +21,6 @@ from .tarkov_core.boss_monitor import build_table, normalize_bosses
 from .tarkov_core.boss_notifications import BossNotifications, BossStore
 from .tarkov_core.boss_portraits import BossPortraits
 from .tarkov_core.boss_table_image import paginate_table, render_boss_page
-from .tarkov_core.item_catalog import ItemCatalog
-from .tarkov_core.item_icons import ItemIcons
-from .tarkov_core.item_image import paginate_item, render_item_page, source_notes
-from .tarkov_core.items import attribute_blocks, flea_blocks, parse_item_arguments, scan_time, trader_blocks, translate
 from .tarkov_core.help_image import render_help_image
 from .tarkov_core.image import render_image
 from .tarkov_core.output import render_markdown, render_text
@@ -56,7 +52,6 @@ BIND_WORDS = ('bind', '绑定')
 UNBIND_WORDS = ('unbind', '解绑')
 STATUS_WORDS = ('status', '状态')
 BOSS_WORDS = ('boss', '刷率')
-ITEM_WORDS = ('item', '物品')
 
 
 class IndexTimeout(TimeoutError):
@@ -113,9 +108,6 @@ class TarkovPlugin(Star):
             self.boss_modes, self.boss_targets, self.boss_broadcast_active, self.boss_monitor_error)
         self.boss_poller = PollingTask(self.boss_notifications.cycle, self.boss_broadcast_active,
                                       self.boss_interval, self.boss_monitor_error)
-        self.item_catalog = ItemCatalog(self.root/'item-catalog.sqlite3')
-        self.item_icons = ItemIcons(self.root/'item-icons')
-        self.item_image_slots = asyncio.Semaphore(2)
         set_short_status_routes(self.__module__, self.config.get('short_commands_enabled', True) is True)
 
     async def initialize(self):
@@ -227,7 +219,6 @@ class TarkovPlugin(Star):
         index = f'；另外会查 tarkov.dev 的昵称名单（{every(self.names.refresh_seconds)}更新一次）' if self.index_enabled() else ''
         status = f"服务器状态图片：{self.cmd('status')}\n" if self.status_enabled() else ''
         boss = f"Boss 全表图片：{self.cmd('boss [模式]')}；最近变化：{self.cmd('boss [模式] 变化')}\n" if self.boss_enabled() else ''
-        item = f"物品图片：{self.cmd('item <名称>')} 查通用属性；{self.cmd('item <模式> <名称>')} 查模式数据\n" if self.items_enabled() else ''
         return ('塔科夫玩家档案查询（数据来自 tarkov.dev）\n'
                 f"{self.style()['help']}\n"
                 f"绑定自己：{self.cmd('绑定 <tarkov.dev 玩家页网址或账号ID>')}　解绑：{self.cmd('解绑')}\n"
@@ -239,7 +230,7 @@ class TarkovPlugin(Star):
                 '第一次查某个玩家前，请先在 tarkov.dev 用对应模式搜索他（链接见最后一行），'
                 '再把跳转后的网址发给我；之后就能直接用名字查（按 ID 或网址查到过的名字会被记住' + index + '）。\n'
                 '如果需要查询最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面。\n'
-                + status + boss + item + self.search_line())
+                + status + boss + self.search_line())
 
     def search_line(self):
         """The search page as a text line. Every help reply ends with it, the image included (maintainer: the link
@@ -256,8 +247,6 @@ class TarkovPlugin(Star):
             card['status_enabled'] = True
         if self.boss_enabled():
             card['boss_enabled'] = True
-        if self.items_enabled():
-            card['items_enabled'] = True
         return card
 
     async def help_reply(self, event):
@@ -281,8 +270,6 @@ class TarkovPlugin(Star):
                 yield await self.status_picture(event, {'error': '此会话或用户没有塔科夫查询权限。'})
             elif text.split() and text.split()[0].lower() in BOSS_WORDS:
                 yield await self.boss_picture(event, {'error': '此会话或用户没有塔科夫查询权限。'})
-            elif text.split() and text.split()[0].lower() in ITEM_WORDS:
-                yield await self.item_error(event, '此会话或用户没有塔科夫查询权限。')
             else:
                 yield event.plain_result('此会话或用户没有塔科夫查询权限。')
             event.stop_event()
@@ -331,21 +318,6 @@ class TarkovPlugin(Star):
         async for result in self.boss_command(event):
             yield result
 
-    @filter.command('item', alias={'物品'})
-    async def item_command(self, event: AstrMessageEvent):
-        if self.config.get('short_commands_enabled', True) is not True:
-            return
-        yield await self.item_query(event, self.status_arguments(event))
-        event.stop_event()
-
-    @filter.command('/'+'item', alias={'/'+'物品'})
-    @filter.custom_filter(QQOfficialFilter)
-    async def qq_item_command(self, event: AstrMessageEvent):
-        if not is_qq_official(event) or self.config.get('qq_official_compat_enabled', True) is not True:
-            return
-        async for result in self.item_command(event):
-            yield result
-
     @staticmethod
     def status_arguments(event):
         words = event.message_str.strip().split(maxsplit=1)
@@ -358,10 +330,6 @@ class TarkovPlugin(Star):
             return
         if words and words[0].lower() in BOSS_WORDS:
             yield await self.boss_query(event, ' '.join(words[1:]))
-            return
-        if words and words[0].lower() in ITEM_WORDS:
-            # Preserve quotes and the full multi-word item name for mode-word disambiguation.
-            yield await self.item_query(event, text.split(maxsplit=1)[1] if len(words) > 1 else '')
             return
         action = 'query'
         if words and words[0].lower() in HELP_WORDS:
@@ -1009,160 +977,6 @@ class TarkovPlugin(Star):
             raise PermanentDeliveryError('目标不再允许 Boss 播报')
         return await self.context.send_message(target, MessageChain(chain=[Image.fromBytes(image_data)]))
 
-    def items_enabled(self):
-        return self.config.get('items_enabled', False) is True
-
-    def item_features(self):
-        return {'details':self.config.get('item_details_enabled', True) is True,
-                'flea':self.config.get('item_flea_enabled', True) is True,
-                'trader':self.config.get('item_trader_enabled', True) is True}
-
-    async def load_item_sources(self, mode):
-        base = await self.public_resource('items', mode=mode, allow_stale=True)
-        results = await asyncio.gather(*(self.public_resource('items', mode=mode, language=language,
-            allow_stale=True) for language in ('zh', 'en')), return_exceptions=True)
-        for result in results:
-            if isinstance(result, asyncio.CancelledError): raise result
-        return {'base':base,'translations':[None if isinstance(result, BaseException) else result for result in results]}
-
-    async def item_context(self, mode, item):
-        context = {'traders':{},'tasks':{}}
-        resources = ['traders']
-        if any(offer.get('taskUnlock') for offer in item['prices'].get('buyFromTrader',[])):
-            resources.append('tasks')
-        for resource in resources:
-            try:
-                source = await self.public_resource(resource, mode=mode, allow_stale=True)
-                document = await source.json()
-                dictionaries = []
-                results = await asyncio.gather(*(self.public_resource(resource, mode=mode, language=language,
-                    allow_stale=True) for language in ('zh','en')), return_exceptions=True)
-                for result in results:
-                    if isinstance(result, asyncio.CancelledError): raise result
-                    if not isinstance(result, BaseException): dictionaries.append((await result.json())['data'])
-                data = document['data']['tasks'] if resource == 'tasks' else document['data']
-                all_offers = [*item['prices'].get('buyFromTrader',[]),*item['prices'].get('sellToTrader',[])]
-                needed = {offer.get('taskUnlock' if resource == 'tasks' else 'trader') for offer in all_offers}
-                for key in needed:
-                    value = data.get(key)
-                    if not isinstance(value, dict): continue
-                    name = translate(value.get('name'), dictionaries, value.get('normalizedName') or key)
-                    if name in (key+' Nickname',key+' name',key+' Name'):
-                        name = value.get('normalizedName') or key
-                    context[resource][key] = name if resource == 'tasks' else {'name':name}
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.warning('Tarkov item reference unavailable: %s %s', resource, type(exc).__name__)
-        return context
-
-    async def prepare_item_image(self, page, index=1, total=1, token=''):
-        command = self.cmd('item', '页', token, index+1 if index < total else 1) if token else ''
-        async with self.item_image_slots:
-            icon = None
-            if page.get('item_id') and self.config.get('item_images_enabled', True) is True:
-                try:
-                    icon = await self.item_icons.get(page['item_id'], proxy=self.proxy())
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    logger.warning('Tarkov item thumbnail unavailable: %s', type(exc).__name__)
-            return await asyncio.to_thread(render_item_page, page, index, total, command, icon)
-
-    async def item_picture(self, event, page, index=1, total=1, token=''):
-        try:
-            data = await self.prepare_item_image(page, index, total, token)
-            return event.chain_result([Image.fromBytes(data)])
-        except Exception as exc:
-            logger.warning('Tarkov item image failed: %s', type(exc).__name__)
-            return event.plain_result('物品图片生成失败，请稍后再试。')
-
-    async def item_error(self, event, message):
-        try:
-            pages = await asyncio.to_thread(paginate_item, {'name':'物品查询','label':'查询提示'}, [('提示', message)])
-        except Exception as exc:
-            logger.warning('Tarkov item error image failed: %s', type(exc).__name__)
-            return event.plain_result('物品图片生成失败，请稍后再试。')
-        return await self.item_picture(event, pages[0])
-
-    async def item_query(self, event, arguments=''):
-        if not self.allowed(event): return await self.item_error(event, '此会话或用户没有塔科夫查询权限。')
-        if not self.items_enabled(): return await self.item_error(event, '物品查询尚未开启，请联系管理员在设置中启用。')
-        owner = self.owner(event)
-        if owner in self.active: return await self.item_error(event, '你的上一次查询还没完成，请稍候。')
-        self.active.add(owner)
-        try:
-            words = arguments.strip().split()
-            features = self.item_features()
-            if words and words[0].lower() in ('页','page'):
-                if len(words) != 3 or not re.fullmatch('[0-9a-f]{12}', words[1]) or not re.fullmatch('[0-9]{1,4}', words[2]):
-                    raise QueryError('续查用法：'+self.cmd('item 页 <快照编号> <页码>'))
-                pages = await self.item_catalog.thread(self.item_catalog.pages, words[1])
-                if not pages: raise QueryError('物品快照已过期或被清理，请重新查询。')
-                index = int(words[2])
-                if not 1 <= index <= len(pages): raise QueryError(f'页码超出范围，此快照共 {len(pages)} 页。')
-                if pages[index-1].get('features') != features: raise QueryError('展示开关已变更，请重新查询。')
-                return await self.item_picture(event, pages[index-1], index, len(pages), words[1])
-            mode, query = parse_item_arguments(arguments)
-            if mode is None and not features['details']: raise QueryError('通用属性查询已关闭。可指定模式查询已启用的价格功能。')
-            if mode is not None and not any(features.values()): raise QueryError('物品属性、跳蚤和商人功能均已关闭。')
-            modes = list(GAME_MODES) if mode is None or features['details'] else [mode]
-            results = await asyncio.gather(*(self.item_catalog.ensure(m,self.load_item_sources) for m in modes), return_exceptions=True)
-            metadata,failed = {},[]
-            for current,result in zip(modes,results):
-                if isinstance(result, asyncio.CancelledError): raise result
-                if isinstance(result, BaseException):
-                    failed.append(current); logger.warning('Tarkov item catalog failed: %s %s', current, type(result).__name__)
-                else: metadata[current] = result
-            if mode and mode not in metadata: raise QueryError(label_of(mode)+' 物品数据获取失败；请稍后再试。')
-            if not metadata: raise QueryError('物品目录获取失败，请稍后再试。')
-            search_modes = [mode] if mode else list(metadata)
-            ids,count = await self.item_catalog.thread(self.item_catalog.search, query, search_modes)
-            notes = source_notes(metadata, failed)
-            card = {'name':'物品查询','label':label_of(mode)+' · 模式数据' if mode else '通用属性 · 跨模式核对',
-                    'notes':notes,'features':features}
-            if not ids:
-                message = ('此模式' if mode else '本次成功取得的目录')+'未找到该物品，请尝试完整名称、简称或物品 ID。'
-                if failed: message += ' 部分模式获取失败，不能确认所有模式均不存在。'
-                blocks = [('未找到',message)]
-            elif len(ids) > 1:
-                blocks = [('候选物品',f'匹配 {count} 件，列出前 {len(ids)} 件；请补充名称或使用明确 ID。')]
-                for item_id in ids:
-                    candidates = await self.item_catalog.thread(self.item_catalog.get,item_id,search_modes)
-                    candidate = next(iter(candidates.values()))
-                    command = self.cmd('item', *([mode] if mode else []), 'id:'+item_id)
-                    blocks.append(('候选物品',candidate['name']+'\nID '+item_id+'\n'+command))
-            else:
-                item_id = ids[0]
-                items = await self.item_catalog.thread(self.item_catalog.get,item_id,list(metadata))
-                selected = items[mode] if mode else items.get('pvp') or next(iter(items.values()))
-                card.update(name=selected['name'],item_id=item_id)
-                blocks = [('物品身份','名称：'+selected['name']+'；简称：'+selected['short_name'])]
-                complete = all(current in items for current in GAME_MODES)
-                blocks.extend(await asyncio.to_thread(attribute_blocks,items,complete,mode,features['details']))
-                if mode:
-                    blocks.append(('数据时间','物品记录更新：'+scan_time(selected['prices'].get('updated'))))
-                    if features['details'] and 'discardLimit' in selected['prices']:
-                        limit = selected['prices']['discardLimit']
-                        blocks.append(('模式限制','丢弃数量上限：'+('不限' if limit == -1 else '未提供' if limit is None else str(limit))))
-                    if features['flea']: blocks.extend(flea_blocks(selected,metadata[mode].get('flea',{})))
-                    if features['trader']: blocks.extend(trader_blocks(selected,await self.item_context(mode,selected)))
-                    if features['details']:
-                        card['notes'].append('共同属性：'+self.cmd('item','id:'+item_id))
-                elif not complete:
-                    missing = [label_of(current) for current in metadata if current not in items]
-                    if missing: blocks.append(('核对范围','此物品未在以下模式目录中列出：'+'、'.join(missing)))
-            pages = await asyncio.to_thread(paginate_item,card,blocks)
-            token = await self.item_catalog.thread(self.item_catalog.save_pages,pages)
-            return await self.item_picture(event,pages[0],1,len(pages),token)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.warning('Tarkov item query failed: %s',type(exc).__name__)
-            return await self.item_error(event, str(exc) if isinstance(exc,QueryError) else '本次物品查询失败，请稍后再试。')
-        finally:
-            self.active.discard(owner)
-
     async def terminate(self):
         self._terminated = True
         await self.status_poller.close()
@@ -1170,8 +984,6 @@ class TarkovPlugin(Star):
         await self.status_store.close()
         await self.boss_store.close()
         await self.boss_portraits.close()
-        await self.item_catalog.close()
-        await self.item_icons.close()
         self.boss_normalized.clear()
         await self.public_data.close()
         self.cache.clear()

@@ -28,9 +28,9 @@ earlier). From now on new work is appended as new sections.
 | Task | AstrBot plugin to look up Escape from Tarkov player profiles in chat (maintainer request, 2026-10-13); since 2026-10-24 also public game data: server status, Boss spawn rates, items. |
 | License / AI statement | GPL-3.0-or-later. README and CHANGELOG state the plugin was written by Claude Opus 5.5 (via Claude Code) and reviewed by the maintainer. |
 | Released | 0.4.4 (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
-| Work branch | `1024` (head `5630c68` + later). Version number still 0.4.4: status, Boss and item features are **unreleased**. No PR. |
-| Tests | 307 on `1024` (`python -m unittest discover -s tests`, needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13. 0.4.4 had 193. |
-| AstrBot evidence | 4.16.0 wheel read and its registration/wake/filter/parser bodies replayed by `tools/verify_qq_routes.py` (135 cases, SDK and network boundaries doubled). Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. The maintainer ran a small closed test of 0.3.0. **No live AstrBot run of the 1024 features; QQ image delivery and proactive push are unverified.** |
+| Work branch | `1024` (head `5630c68` + later). Version number still 0.4.4: status and Boss features are **unreleased**; the item query was archived (§11). No PR. |
+| Tests | 275 on `1024` (307 before the item query was archived, §11) (`python -m unittest discover -s tests`, needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13. 0.4.4 had 193. |
+| AstrBot evidence | 4.16.0 wheel read and its registration/wake/filter/parser bodies replayed by `tools/verify_qq_routes.py` (101 cases after the item query was archived; SDK and network boundaries doubled). Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. The maintainer ran a small closed test of 0.3.0. **No live AstrBot run of the 1024 features; QQ image delivery and proactive push are unverified.** |
 
 ## 2. Data sources and evidence
 
@@ -76,7 +76,7 @@ The plugin reads the static snapshots TarkovMonitor uses (`TarkovDev.cs`, revisi
 - Index data quality: 8,344 lower-cased names with more than one id in PvP (31 empty), 35 with whitespace (stripped),
   two over 64 characters (one 16,000; skipped), 778 names over 15 characters (775 `TarkovCitizen…`, max 21).
 
-### 2.3 Public game data: json.tarkov.dev (status, Boss, items)
+### 2.3 Public game data: json.tarkov.dev (status, Boss; the items feed is only documented, item queries are archived)
 
 Full inventory and request conventions: `docs/tarkov-api-reference.md` (sources pinned to tarkov-dev
 `ec44177…` and tarkov-data-manager `59bc50d…`). Key points:
@@ -102,16 +102,16 @@ Full inventory and request conventions: `docs/tarkov-api-reference.md` (sources 
 | Arena | `arena.py`, `arena_image.py` | `summarize_arena()` (12 counters/mode, ≤ 12 modes/section, ranked/unranked split, no level); `RANKS` from BestArp with the maintainer's overlapping table cut at each upper limit; BestArp is the highest ever reached, so the rank shown is the highest reached; > 7900 shown as "竞技场前100名玩家" without ARP. Image = "ARENA MASTERS · 选手名册" ledger with GP-style ARP medallion, W – L bars. |
 | Static tables | `data/static.json`, `tools/build_static.py` | 79 level rows and 49 skill names from `json.tarkov.dev` (+ zh); not fetched at run time. Re-run on game updates. |
 | Card / outputs | `card.py`, `output.py`, `image.py`, `help_image.py`, `fonts/` | `build_card()` is the single content model; `render_text`, `render_markdown`, `render_image` (JPEG q85, 820 px, seeded grain so output is byte-stable). Image style: dossier paper + dog tag + exit-status bars; footer with data time (GMT+8), plugin name/version/repo and the open-source notice. Exit wording follows the game: 撤离 / 匆匆逃离 / 转移 / KIA / 行动中失踪 (`card.EXITS`). Bundled OFL fonts (Noto Sans SC subset, Oswald, Share Tech Mono); other characters draw as `?`; `tools/build_fonts.py` rebuilds the subset from the characters in code, skill names and `data/item-label-chars.txt`. |
-| Plugin | `main.py` | Commands `tarkov` (alias `塔科夫`), `status`/`状态`, `boss`/`刷率`, `item`/`物品` plus namespace forms (`tarkov status` …). Optional leading `/` accepted. Flow for players: access check → parse `[mode] target` → own binding / link / id / name → profiles → `show()` → `reply()` (output per `output_mode`). One in-flight query per sender (keyed hash). |
+| Plugin | `main.py` | Commands `tarkov` (alias `塔科夫`), `status`/`状态`, `boss`/`刷率` plus namespace forms (`tarkov status` …). Optional leading `/` accepted. Flow for players: access check → parse `[mode] target` → own binding / link / id / name → profiles → `show()` → `reply()` (output per `output_mode`). One in-flight query per sender (keyed hash). |
 | Accounts | `accounts.py` | `bindings(owner, aid, nickname, bound_at)`; `owner` = HMAC-SHA256 with a random 32-byte `binding.key` (mode 0600). `names(key, aid, name, seen_at)` shared by everyone, fed by every fetched profile, exact-case first then most recent, capped at 200,000. |
 | Name index (optional) | `names.py` | Off by default (`name_index_enabled`). Per mode a SQLite `names-<path>.sqlite3` built from the downloaded index with a bytes regex (not `json.loads`), built into a unique temp file then `os.replace`d; one lock per mode; failed refresh keeps the old db and backs off 10 min; first-download failure also backs off; limits 64 MiB / 192 MiB. PvP: 23-26 s, 97 MB db, ~106 MB RSS. Used only for names, never for ids. |
 | Public data cache | `public_api.py`, `resource_cache.py` | Fixed host `json.tarkov.dev`; validated `ResourceKey` (mode translated pvp→regular, season→pvp-season; language; item id). Limits 32 MiB received / 64 MiB decoded. Lazy SQLite `public-data/resources.sqlite3`: body + validators + cache-control + times; LRU 32 entries / 128 MiB payload; TTL `public_data_cache_minutes` (default 5, 0 = always check); conditional 304; stale fallback only when explicitly allowed (never for 404 or config errors); Retry-After suppression; shared in-flight fetches (cancelled readers don't cancel others); ≤ 2 downloads, ≤ 32 pending; malformed 200 cannot overwrite a good row. Not yet used by player snapshots. |
-| QQ / routing | `platform_compat.py`, `tools/verify_qq_routes.py` | `qq_official_compat_enabled` (default true) adds a second standard handler for slash-prefixed commands on `qq_official`/`qq_official_webhook` only, disjoint from the framework path, delegating to the original handlers. `command_style` (§6). `short_commands_enabled` edits real handler metadata for the six status/Boss/item short handlers (namespace routes stay). |
+| QQ / routing | `platform_compat.py`, `tools/verify_qq_routes.py` | `qq_official_compat_enabled` (default true) adds a second standard handler for slash-prefixed commands on `qq_official`/`qq_official_webhook` only, disjoint from the framework path, delegating to the original handlers. `command_style` (§6). `short_commands_enabled` edits real handler metadata for the four status/Boss short handlers (namespace routes stay). |
 | Polling / notifications | `polling.py`, `notifications.py`, `boss_notifications.py` | One cancellable, non-overlapping task per feature (status, Boss); first check immediate, delay starts after a cycle, no catch-up, failure backoff ≤ 30 min, no worker when disabled or without targets. Separate lazy SQLite files; baseline + event written atomically; first success is a silent baseline; per-target submission state, ≤ 3 attempts, permission errors pause the target durably (reset: disable+save, enable+save); `send_message()` true = submitted, `None` = terminal unknown; no exactly-once. Retention 7 days / 200 events / 64 MiB. Targets are explicit UMOs (≤ 50), intersected with allowed origins and known proactive capability. |
 | Server status | `server_status.py`, `status_image.py` | Normalised feed (component identity by id, then normalised name; compare status codes, add/remove, global message, notice id+content+time; ignore order and display names). Unknown codes are never shown as healthy. Failed requests never mean downtime. Image shows overall/component state, ≤ 3 notice excerpts (400 chars), checked/fetched/version times, stale flags. |
 | Boss | `boss_monitor.py`, `boss_table_image.py`, `boss_portraits.py` | Scope: eleven daily bosses + GOONS (`bossKnight`, shown `三狗（GOONS）`) by stable mob-id allowlist; no BEAR/USEC/followers. Excluded maps: Icebreaker, original Ground Zero, Lab Dark, Labyrinth, tutorial; retained `ground-zero-21` is labelled `中心区`. Twelve columns: 中心区、白天工厂、夜间工厂、海关、森林、海岸线、立交桥、储备站、灯塔、塔科夫街区、实验室、码头. Conditional records are never summed; compare map+mob+rule identity, then probability; probabilities must be finite 0–1 numbers. Dark matrix (Boss rows, map columns, mode top-left, 1760 px); changes red; exact 100% and its Boss name bold red; explicit 0% printed; unlisted cells blank. Query snapshots/continuation `boss 页 <12-hex> <n>` kept ≤ 24 h, 16 groups, 32 MiB. Scope policy `daily-goons-selected-maps-matrix-v4`: older baselines/events/snapshots are retired on open. Portraits: fixed assets.tarkov.dev paths from the feed's known portrait links, **manual-only** (`boss_portraits_update` one-shot setting), 128 px sanitized thumbnails, 365-day expiry, placeholder when missing; no game art is bundled (THIRD_PARTY). |
-| Items | `items.py`, `item_catalog.py`, `item_image.py`, `item_icons.py` | `item <name>` = attributes common to all three modes (no prices, no default mode); `item <pvp|pve|season> <name>` = that mode's prices, limits and verified differences. Names: full/short, zh/en, normalised, `id:<24-hex>`; quote a name starting with a mode word. Common = same value in all three modes with compatible `properties.propertiesType`; missing/null/zero stay distinct; partial modes give an identity-only card with "核对未完成". Whitelisted attributes only (not exhaustive). Flea: last low, 24 h stats, counts, scan time, flea restrictions; trader buy and sell separate, original currency + RUB, LL, task unlock, limits; zero/negative/missing prices are not free offers. Lazy `item-catalog.sqlite3` with versioned content signatures, off-loop builds, atomic replacement, last-good fallback. Search tiers exact → NFKC/case → substring, ≤ 25 candidates, never silently picks. Pages `item 页 <12-hex> <n>` from immutable 1-hour snapshots (≤ 16 groups / 16 MiB) that re-check current feature switches. Optional thumbnails: selected item only, fixed assets path, 7 days, ≤ 128 PNGs / 32 MiB. The real feed has one virtual dogtag id (`customdogtags12345678910`). |
-| Settings | `_conf_schema.json` | New data features default **off** (`status_enabled`, `boss_enabled`, `items_enabled` and their broadcast / QQ-push switches; item sub-switches default true under the parent). Poll intervals `status_poll_minutes` (5) and `boss_poll_minutes` (10), 2–30 minutes each. `test_release` keeps schema defaults equal to code fallbacks. |
+| Items | – | **Archived and removed** (§11). Branch `archive/item-query` @ `9f29e6f`; description in `docs/archive/item-query.md`. |
+| Settings | `_conf_schema.json` | New data features default **off** (`status_enabled`, `boss_enabled` and their broadcast / QQ-push switches). Poll intervals `status_poll_minutes` (5) and `boss_poll_minutes` (10), 2–30 minutes each. `test_release` keeps schema defaults equal to code fallbacks. |
 
 Measured: profile fetch 0.2 s; image 0.2–0.3 s, ~300–400 KB; package under 1 MiB (`tools/package_plugin.py`).
 
@@ -147,7 +147,7 @@ Suites (`tests/`): `test_profile`, `test_output`, `test_image`, `test_help_image
 `test_transport`, `test_accounts`, `test_plugin` (player flow, bind, access, output modes, command style, QQ routes,
 proxy/timeouts, concurrency), `test_release` (version, schema = code defaults, declared imports, package contents),
 `test_public_api`, `test_resource_cache`, `test_status`, `test_status_plugin`, `test_boss`, `test_boss_plugin`,
-`test_boss_portraits`, `test_items`, `test_item_plugin`, `test_item_icons`; helpers `fixtures.py` and `astrbot/`
+`test_boss_portraits`; helpers `fixtures.py` and `astrbot/`
 (SDK stubs). Fixtures are invented.
 
 Method: tests first and shown failing on the old code, then the fix, then the full suite. Each fix round was
@@ -159,7 +159,7 @@ link line after images, command-style literals, scope/aliases, 100% styling, mig
 
 Live read-only smokes (real network, SDK stubbed, nothing kept in the tree): player flows in all four modes; public
 cache 200 → 304; status (nine components); Boss tables for three modes (sixteen then twelve maps; 29/29/27 selected
-records, two exact-100% records per mode); item queries (nine public requests on first load, zero on repeat, one
+records, two exact-100% records per mode); item queries before the archive (nine public requests on first load, zero on repeat, one
 thumbnail download). Previews were inspected visually.
 
 ## 6. Not verified
@@ -175,7 +175,6 @@ thumbnail download). Previews were inspected visually.
 - Cloudflare's User-Agent rule is observed, not documented. Whether a page view always refreshes a snapshot is inferred.
 - The weekly name-index check usually re-downloads (the index is rebuilt daily); the 304 saving was never observed
   across days.
-- Item price semantics beyond the whitelist; mixed-currency edge cases rely on the feed's own fields.
 
 ## 7. Decisions made without the maintainer (revisit)
 
@@ -187,7 +186,7 @@ thumbnail download). Previews were inspected visually.
 6. Arena rank = highest rank whose lower bound BestArp has passed (overlapping table cut at each upper limit).
 7. The open-source sentence is spaced like the other chat texts (a space between CJK and Latin).
 8. Nickname rule 3–24 characters (longest generated name seen: 21).
-9. Item/Boss/status sub-switches default true under off-by-default parents; proactive broadcast targets are separate
+9. Proactive broadcast targets are separate
    from access lists.
 
 ## 8. Invariants for future changes
@@ -196,7 +195,7 @@ thumbnail download). Previews were inspected visually.
 - Keep `trust_env=False`, `allow_redirects=False`, the fixed hosts (`players.tarkov.dev`, `json.tarkov.dev`, and the
   fixed `assets.tarkov.dev` paths for chosen item ids / known Boss portrait links), and all size limits. Never fetch a
   feed- or user-chosen host. Keep identifying the client honestly in `User-Agent`.
-- `summarize()` and the status/Boss/item normalisers must never raise on odd third-party field types; malformed 200
+- `summarize()` and the status/Boss normalisers must never raise on odd third-party field types; malformed 200
   responses must never overwrite a last-good cache row, baseline or index.
 - Chat messages come from `QueryError` texts written here or exception type names, never raw exception strings.
 - Upstream failure is never "game down", "0% spawn" or "item does not exist". Failed requests do not advance baselines.
@@ -216,10 +215,10 @@ thumbnail download). Previews were inspected visually.
 
 - **Output formats (maintainer correction, 2026-10-24)**: *image is the default output; text and Markdown must stay
   for compatibility with platforms that cannot send images.* Players, Arena and help already follow `output_mode`.
-  Status, Boss and item queries and broadcasts are currently **image-only** (their schema hints say so), and
+  Status and Boss queries and broadcasts are currently **image-only** (their schema hints say so), and
   `docs/development-plan.md` carries a correction banner for its old "image-only" wording. **Maintainer decision:
   postpone text/Markdown for the new features for now and keep their requirement on record.** When resumed: make
-  `output_mode` govern status, Boss tables, item cards/candidates/pages and error replies (unknown → image); add text
+  `output_mode` govern status, Boss tables and error replies (unknown → image); add text
   and Markdown renderers beside each image renderer from the same card/page model (same pagination and `页` tokens;
   Boss changes marked in text); image failure falls back to text with a note; broadcasts follow `output_mode`;
   tests per feature × three outputs; then rewrite the plan text in `docs/development-plan.md` §1/§2/§9. Binding
@@ -238,11 +237,11 @@ thumbnail download). Previews were inspected visually.
 
 ## 10. History worth keeping
 
-**Releases** (branches `v0.3.0`–`v0.4.4`, each one commit on the previous one): 0.1.0 text output; 0.2.0 image and
+**Releases** (the release branches were each one commit on the previous one; on the remote only `v0.3.0-不支持竞技场-留档` and `v0.4.4` remain as branches, tags `v0.3.0beta`, `v0.4.2-release` … `v0.4.4-release` exist, `v0.4.0`–`v0.4.3` branches are gone): 0.1.0 text output; 0.2.0 image and
 Markdown output (maintainer chose the dossier style + dog tag + exit-status bars); `v0.3.0` bind-and-query (tested by the maintainer); `v0.4.0` image footer
 + Arena; `v0.4.1` `_`/`-` name suggestions; `v0.4.2` PMC K/D, source lines, Arena ranks, image wording; `v0.4.3` help as
 an image, links always as text, `@机器人 tarkov` wording, logo; `v0.4.4` `command_style` setting. `1024` carries the
-unreleased status/Boss/item/QQ work (published 2026-10-24, normal push, no PR).
+unreleased status/Boss/QQ work (published 2026-10-24, normal push, no PR).
 
 **Real player data removed (2026-10-14, maintainer: "你怎么在插件说明文档里写了真实用户名")**: README examples, tests,
 fixtures and previews had used real nicknames, account ids and numbers copied from the maintainer's PVE profile.
@@ -268,4 +267,27 @@ sentences, tests pass at the rewritten tip and at the affected commits, and no b
 | Review after takeover (2026-10-24) | Binding hint listed failed modes as missing; fixed in the 1024 work with a regression test. |
 
 **Other facts**: Cloudflare's rule on the default agent; the font-subset size figures once quoted as "characters" were the
-byte size of the character list (the subset holds ~480+ glyphs plus the item corpus, package < 1 MiB).
+byte size of the character list (after the item archive the subset holds the glyphs of the code and skill names only, font 278 KB).
+
+## 11. Item query archived and removed (2026-10-24, maintainer decision)
+
+Reason: item lookup cannot be searched by common nicknames (that would need a large hand-maintained alias table), and the
+feature proved inefficient. It is sealed, not deleted from history.
+
+- **Archive**: remote branch `archive/item-query` = `9f29e6f` (the `1024` tip before removal). Tag push failed (network
+  disconnect), so no tag. `docs/archive/item-query.md` holds the design/implementation summary and the original
+  `development-plan` §5 and §14 verbatim, plus restore instructions.
+- **Removed from `1024`**: `tarkov_core/items.py`, `item_catalog.py`, `item_image.py`, `item_icons.py`,
+  `data/item-label-chars.txt`; `tests/test_items.py`, `test_item_plugin.py`, `test_item_icons.py` (32 tests); in
+  `main.py` the `item`/`物品` commands (plain, QQ slash, namespace), the catalog/icon objects, help lines and the
+  permission-denied item branch; the five `item*` settings; `public_api.decode`'s item validator hook (the generic
+  `items` resource and `item_id` history key stay in the public client, which is documented in
+  `docs/tarkov-api-reference.md`); the help image's item row; the item cases of `tools/verify_qq_routes.py`; the item
+  paragraph of `THIRD_PARTY.md`. `short_commands_enabled` now covers four handlers.
+- **Fonts**: `tools/build_fonts.py` no longer reads the item corpus; the subset was rebuilt from the same pinned Noto
+  source (sha256 `a3041811…`), 833,760 → 278,292 bytes; other fonts unchanged.
+- **Behaviour now**: `item …` is no longer a command. Typed after the plugin command it falls into the player query
+  path like any other word (a nickname lookup), so no special message is shown.
+- **Validation**: 275 tests pass; the AstrBot 4.16.0 route replay passes 101 cases (was 135 with item cases).
+- **Docs**: `docs/development-plan.md` §5/§14 reduced to pointers, item settings/commands removed; checklist updated.
+  README had no item section.
