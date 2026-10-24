@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw
 
 from tarkov_core.boss_monitor import BOSS_SCOPE, DAILY_BOSSES, build_table, normalize_bosses, percent, probability, state_fingerprint
 from tarkov_core.boss_notifications import BossNotifications, BossStore, PAGES_PER_CYCLE, QUERY_SECONDS
+from tarkov_core import boss_table_image
 from tarkov_core.boss_table_image import BOSS_ROWS, FONT_SIZE, MAPS_PER_PAGE, MAX_CHANGE_LINES, RED, TEXT as INK, change_lines, compact_rows, notes_for, paginate_table, render_boss_page
 from tarkov_core.image import font
 from tarkov_core.public_api import DataError, ResourceKey, decode
@@ -276,6 +277,42 @@ class EventBossTests(unittest.TestCase):
         self.assertEqual(change_lines(rows), ['活动 bossScourgeEventLab（Lab）：新增 100%'])
         rows, changed = build_table(withevent, base)
         self.assertEqual(change_lines(rows), ['活动 bossScourgeEventLab（Lab）：移除（原 100%）'])
+
+
+class BackgroundTests(unittest.TestCase):
+    def page(self):
+        return paginate_table({'mode': 'pve'}, build_table(None, normalize_bosses(boss_data()))[0])[0]
+
+    def setUp(self): boss_table_image.background_source.cache_clear()
+
+    def tearDown(self): boss_table_image.background_source.cache_clear()
+
+    def test_bundled_background_is_small_and_readable(self):
+        self.assertTrue(boss_table_image.BACKGROUND.exists())
+        self.assertLess(boss_table_image.BACKGROUND.stat().st_size, 250_000)
+        self.assertIsNotNone(boss_table_image.background_source())
+
+    def test_background_shows_outside_the_table_and_the_image_is_stable(self):
+        data = render_boss_page(self.page())
+        self.assertEqual(data, render_boss_page(self.page()))
+        img = Image.open(io.BytesIO(data)).convert('L')
+        # The strip left of the table (x < MARGIN) is texture, not one flat colour.
+        strip = img.crop((0, 0, 12, img.height)).getdata()
+        self.assertGreater(len(set(strip)), 8)
+
+    def test_missing_background_falls_back_to_plain_black(self):
+        with patch.object(boss_table_image, 'BACKGROUND', Path('/nonexistent/background.jpg')):
+            boss_table_image.background_source.cache_clear()
+            self.assertIsNone(boss_table_image.background_source())
+            img = Image.open(io.BytesIO(render_boss_page(self.page()))).convert('RGB')
+        self.assertEqual(img.getpixel((2, 2)), (12, 12, 12))
+
+    def test_table_text_stays_legible_on_the_panels(self):
+        img = Image.open(io.BytesIO(render_boss_page(self.page()))).convert('L')
+        # Inside the table body the panel keeps the texture dark: all but the sparse text pixels are very dark.
+        values = sorted(img.crop((305, 110, 540, 370)).getdata())
+        self.assertLess(values[len(values)//2], 32)
+        self.assertLess(values[int(len(values)*.95)], 40)
 
 
 class FooterTests(unittest.TestCase):

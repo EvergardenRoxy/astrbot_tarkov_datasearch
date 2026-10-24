@@ -3,6 +3,8 @@ import email.utils
 import io
 import re
 from collections import OrderedDict
+from functools import lru_cache
+from pathlib import Path
 from decimal import Decimal
 
 from PIL import Image, ImageDraw, ImageOps
@@ -12,6 +14,9 @@ from .card import when
 from .image import fit, font, jpeg, safe, wrap
 from .modes import label_of
 
+BACKGROUND = Path(__file__).parent/'assets'/'boss-background.jpg'
+# Opacity of the dark panels laid over the background (0-255): the table body, the header/label column, the footer band.
+BODY_ALPHA, LABEL_ALPHA, FOOTER_ALPHA = 205, 220, 120
 MARGIN, LABEL_WIDTH, MAP_WIDTH = 20, 280, 120
 MAPS_PER_PAGE, FONT_SIZE, LINE_HEIGHT = 16, 22, 30
 MAX_EVENT_ROWS = 3
@@ -53,6 +58,24 @@ def rate_lines(draw, rates):
         line = line+' / '+text if line else text
     if line: lines.append(line)
     return [part for text in lines for part in wrap(draw,text,font('sc',FONT_SIZE,800),MAP_WIDTH-16)]
+
+
+@lru_cache(maxsize=1)
+def background_source():
+    """The bundled background, or None when it cannot be read (the table is then drawn on plain black)."""
+    try:
+        with Image.open(BACKGROUND) as source:
+            return source.convert('RGB')
+    except (OSError, ValueError):
+        return None
+
+
+def backdrop(width, height):
+    """The background scaled to cover the canvas and centred; plain black without the file."""
+    source = background_source()
+    if source is None:
+        return Image.new('RGB', (width, height), BG)
+    return ImageOps.fit(source, (width, height), Image.Resampling.BICUBIC, centering=(0.5, 0.5))
 
 
 def paginate_table(card, rows):
@@ -139,10 +162,18 @@ def render_boss_page(page,token='',index=1,total=1,command='',portraits=None):
     summary = [line for text in page.get('change_lines',[])
                for line in wrap(probe,safe(text),font('sc',20,600),width-2*MARGIN-20)]
     summary_height = len(summary)*30+44 if summary else 0
-    img = Image.new('RGB',(width,grid_end+summary_height+len(notes)*26+48),BG)
+    height = grid_end+summary_height+len(notes)*26+48
+    # Dark translucent panels over the background keep the numbers legible; the texture shows through faintly.
+    layer = Image.new('RGBA',(width,height),(0,0,0,0))
+    panels = ImageDraw.Draw(layer)
+    panels.rounded_rectangle([MARGIN,MARGIN,width-MARGIN,grid_end],radius=14,fill=BODY+(BODY_ALPHA,))
+    panels.rectangle([MARGIN+1,MARGIN+1,width-MARGIN-1,MARGIN+header],fill=LABEL_BG+(LABEL_ALPHA,))
+    if rows and not page.get('error'):
+        panels.rectangle([MARGIN+1,MARGIN+header,MARGIN+LABEL_WIDTH,grid_end-1],fill=LABEL_BG+(LABEL_ALPHA,))
+    panels.rectangle([0,grid_end+6,width,height],fill=(0,0,0,FOOTER_ALPHA))
+    img = Image.alpha_composite(backdrop(width,height).convert('RGBA'),layer).convert('RGB')
     draw = ImageDraw.Draw(img)
-    draw.rounded_rectangle([MARGIN,MARGIN,width-MARGIN,grid_end],radius=14,fill=BODY,outline=GRID)
-    draw.rectangle([MARGIN+1,MARGIN+1,width-MARGIN-1,MARGIN+header],fill=LABEL_BG)
+    draw.rounded_rectangle([MARGIN,MARGIN,width-MARGIN,grid_end],radius=14,outline=GRID)
     mode = label_of(page['mode']) if page.get('mode') else 'BOSS'
     draw.text((MARGIN+LABEL_WIDTH/2,MARGIN+header/2),mode,font=font('sc',26,800),fill=TEXT,anchor='mm')
     if page.get('error'):
@@ -158,7 +189,6 @@ def render_boss_page(page,token='',index=1,total=1,command='',portraits=None):
         y = MARGIN+header
         for row in rows:
             height = row['height']
-            draw.rectangle([MARGIN+1,y,MARGIN+LABEL_WIDTH,y+height],fill=LABEL_BG)
             guaranteed = any('1' in cell['rates'] for cell in row['cells'])
             label_color,label_weight = (RED,800) if guaranteed else (TEXT,600)
             portrait = portraits.get(row['mob_id'])

@@ -356,5 +356,20 @@ maps a listed boss is **resident** if its id is in `DAILY_BOSSES` (fixed rows), 
   baseline. The normalised-state cache key includes the ignore list.
 - New setting `boss_event_ignore` (list of `normalizedName`, lower-cased, ≤ 64 characters, default empty).
 - Residual risk: a new ordinary soldier type that is not on the blacklist shows as an event until added to the list.
-- Tests 282 → 291 (`EventBossTests`, scope-retirement store test, ignore-setting plugin test, footer/summary tests); mutation
+- Tests 282 → 290 (`EventBossTests`, scope-retirement store test, ignore-setting plugin test, footer/summary tests); mutation
   check: dropping `af`, raising the row cap, ignoring the scope and ignoring the ignore list each fail tests. Fonts rebuilt.
+
+## 15. Boss background image (2026-10-24, maintainer-supplied)
+
+- Two generated candidates were supplied; the darker one is bundled as `tarkov_core/assets/boss-background.jpg` (1254×1254,
+  JPEG q80, 207 KB; mean luminance ≈ 35/255, centre very even, no bright spots). The lighter one (bullet holes, rivets,
+  peaks up to 214/255) was not used: it competes with the table text. Package 636 KB (limit 1 MiB).
+- `boss_table_image.backdrop(width, height)` scales it to cover the canvas, centred (`ImageOps.fit`); `background_source()`
+  loads it once (`lru_cache`) and returns `None` when unreadable, in which case the table is drawn on plain black as before.
+- The table body, header and label column are translucent dark panels over it (`BODY_ALPHA` 205, `LABEL_ALPHA` 220), plus a
+  dark band under the grid (`FOOTER_ALPHA` 120) so the change summary and footer stay legible. The texture is faint inside the
+  table and visible in the outer margin, header strip and footer area. Output stays byte-stable.
+- Tests 290 → 294 (`BackgroundTests`: size and readability, texture visible and stable, fallback to black, panel darkness);
+  mutation check: ignoring the file and making the panels see-through both fail.
+- **Provenance open**: the generator model and its licence terms are not recorded yet; `THIRD_PARTY.md` says so and must be
+  completed by the maintainer before a release.
