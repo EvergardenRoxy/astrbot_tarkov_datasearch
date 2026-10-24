@@ -17,7 +17,7 @@ from .tarkov_core.names import NAME, SUGGESTIONS, NameIndex
 from .tarkov_core.arena import build_arena_card, render_arena_markdown, render_arena_text, summarize_arena
 from .tarkov_core.arena_image import render_arena_image
 from .tarkov_core.card import BOT_LIMIT, build_card
-from .tarkov_core.boss_monitor import build_table, normalize_bosses
+from .tarkov_core.boss_monitor import BOSS_SCOPE, build_table, normalize_bosses
 from .tarkov_core.boss_notifications import BossNotifications, BossStore
 from .tarkov_core.boss_portraits import BossPortraits
 from .tarkov_core.boss_table_image import paginate_table, render_boss_page
@@ -100,6 +100,7 @@ class TarkovPlugin(Star):
         self.status_poller = PollingTask(self.status_notifications.cycle, self.status_broadcast_active,
                                         self.status_interval, self.status_monitor_error)
         self.boss_store = BossStore(self.root/'boss-notifications.sqlite3')
+        self.boss_store.scope = BOSS_SCOPE+':'+','.join(sorted(self.boss_event_ignore()))
         self.boss_image_slots = asyncio.Semaphore(2)
         self.boss_portraits = BossPortraits(self.root/'boss-portraits')
         self.boss_normalized = {}
@@ -852,6 +853,13 @@ class TarkovPlugin(Star):
     def boss_enabled(self):
         return self.config.get('boss_enabled', False) is True
 
+    def boss_event_ignore(self):
+        """normalizedName values of mobs never shown as event bosses (settings; lower-cased, bounded)."""
+        values = self.config.get('boss_event_ignore', [])
+        if isinstance(values, str): values = [values]
+        if not isinstance(values, (list, tuple, set)): return set()
+        return {text.lower()[:64] for text in (str(v).strip() for v in values) if text}
+
     def boss_modes(self):
         values = self.config.get('boss_modes', ['pvp', 'pve', 'season'])
         if not isinstance(values, list):
@@ -888,13 +896,13 @@ class TarkovPlugin(Star):
                 dictionaries.append((await translation.json())['data'])
                 warning |= translation.stale
                 signatures.append(await asyncio.to_thread(hash, translation.body))
-        signature = (await asyncio.to_thread(hash, snapshot.body), *signatures)
+        signature = (await asyncio.to_thread(hash, snapshot.body), *signatures, tuple(sorted(self.boss_event_ignore())))
         cached = self.boss_normalized.get(mode)
         if cached and cached[0] == signature:
             state = cached[1]
         else:
             document = await snapshot.json()
-            state = await asyncio.to_thread(normalize_bosses, document['data'], dictionaries)
+            state = await asyncio.to_thread(normalize_bosses, document['data'], dictionaries, self.boss_event_ignore())
             if not self._terminated:
                 self.boss_normalized[mode] = (signature, state)
         return {'mode': mode, 'state': state, 'checked_at': snapshot.checked_at, 'fetched_at': snapshot.fetched_at,

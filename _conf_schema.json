@@ -128,6 +128,12 @@
         "default": ["pvp", "pve", "season"],
         "hint": "可填 pvp、pve、season（赛季）。各模式分别保存基线；新加模式首次静默。空列表不监控，仍可显式 boss pve 等查询。覆盖约定地图范围内的日常 Boss 及三狗。"
     },
+    "boss_event_ignore": {
+        "type": "list",
+        "description": "不当作活动 Boss 的怪物（高级）",
+        "default": [],
+        "hint": "活动 Boss 规则：常驻日常 Boss 之外，地图 Boss 记录中除 Raider、黑色军团、USEC、BEAR、游荡者、守军以外的都显示为“活动”行（最多 3 行）。若上游新增了不想显示的常规怪物，把它的 normalizedName（如 raider）填在这里。修改后对应监控会静默重建基线，不会误报变化。"
+    },
     "boss_notify_targets": {
         "type": "list",
         "description": "Boss 刷率播报目标",

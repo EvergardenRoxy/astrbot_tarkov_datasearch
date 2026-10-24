@@ -42,7 +42,7 @@ class BossModelTests(unittest.TestCase):
         data['mobs'].update({mob:{'name':mob} for mob in DAILY_BOSSES})
         for mob in ('bear','usec','pmcBEAR','pmcUSEC','bossTagillaAgro','followerBully'):
             data['mobs'][mob] = {'name':'BEAR' if 'bear' in mob.lower() else 'USEC'}
-            data['maps']['factory']['bosses'].append({'mob':mob,'spawnChance':None})
+            data['maps']['factory']['bosses'].append({'mob':mob,'spawnChance':0.5 if mob == 'bossTagillaAgro' else None})
         excluded = {'69af492a4819ea4ba10a69c5':'icebreaker', '653e6760052c01c1c805532f':'ground-zero',
                     '6a294a5b5eb5f9a1700417b7':'the-lab-dark', '6733700029c367a3d40b02af':'the-labyrinth',
                     '68236e8153654e8c1200798a':'ground-zero-tutorial', '65cc8f81a9aac3e77d0cfd3e':'terminal'}
@@ -61,8 +61,10 @@ class BossModelTests(unittest.TestCase):
         self.assertEqual(columns[0]['name'],'中心区')
         self.assertEqual({column['map_id'] for column in columns},{m['map_id'] for m in state})
         entries = next(m['rows'] for m in state if m['map_id'] == 'factory')
-        self.assertEqual({r['mob_id'] for r in entries}, DAILY_BOSSES)
-        self.assertEqual(len(entries),12)
+        self.assertEqual({r['mob_id'] for r in entries if not r['event']}, DAILY_BOSSES)
+        # Anything else that is no ordinary soldier is an event boss (here the unnamed Shadow of Tagilla).
+        self.assertEqual({r['mob_id'] for r in entries if r['event']}, {'bossTagillaAgro'})
+        self.assertEqual(len(entries),13)
         self.assertEqual(next(r['boss_name'] for r in entries if r['mob_id']=='bossKnight'),'三狗（GOONS）')
 
     def test_invalid_or_missing_probabilities_and_records_are_not_zero(self):
@@ -221,6 +223,61 @@ class ChangeSummaryTests(unittest.TestCase):
         self.assertEqual(with_summary.width, plain.width)
 
 
+def feed(mobs, map_id='5b0fc42d86f7744a585f9105'):
+    """Feed-shaped data: every mob has the language-independent normalizedName the real feed gives."""
+    return {'maps': {map_id: {'name': 'Lab', 'bosses': [{'mob': mob, 'spawnChance': 1} for mob in mobs]}},
+            'mobs': {mob: {'name': mob, 'normalizedName': norm} for mob, norm in mobs.items()}}
+
+
+class EventBossTests(unittest.TestCase):
+    SOLDIERS = {'PmcBot': 'raider', 'pmcBotBlackDiv': 'black-div', 'pmcBotBlackDivSeason': 'black-div', 'pmcUSEC': 'usec',
+                'pmcBEAR': 'bear', 'exUsecFree': 'rogue', 'Sentry': 'af'}
+
+    def mobs(self, state):
+        return {(r['mob_id'], r['event']) for m in state for r in m['rows']}
+
+    def test_ordinary_soldier_types_are_never_events(self):
+        self.assertEqual(self.mobs(normalize_bosses(feed(self.SOLDIERS))), set())
+
+    def test_resident_bosses_stay_rows_and_unknown_bosses_become_events(self):
+        mobs = {**self.SOLDIERS, 'bossTagilla': 'tagilla', 'bossScourgeEventLab': 'scourge'}
+        self.assertEqual(self.mobs(normalize_bosses(feed(mobs))), {('bossTagilla', False), ('bossScourgeEventLab', True)})
+
+    def test_ignore_list_and_id_fallback(self):
+        mobs = {'bossScourgeEventLab': 'scourge'}
+        self.assertEqual(self.mobs(normalize_bosses(feed(mobs), (), {'scourge'})), set())
+        # No normalizedName: soldier-looking ids and followers are not events, other ids are.
+        data = feed({'a': 'x'}); data['mobs'] = {m: {'name': m} for m in ('pmcFoo', 'exUsecBar', 'followerX', 'bossNew')}
+        data['maps']['5b0fc42d86f7744a585f9105']['bosses'] = [{'mob': m, 'spawnChance': 1} for m in data['mobs']]
+        self.assertEqual(self.mobs(normalize_bosses(data)), {('bossNew', True)})
+
+    def test_event_rows_follow_the_fixed_rows_label_and_cap(self):
+        mobs = {f'bossEvent{i}': f'event{i}' for i in range(5)}
+        rows, _ = build_table(None, normalize_bosses(feed(mobs)))
+        page = paginate_table({'mode': 'pve'}, rows)[0]
+        labels = [r['label'] for r in page['rows']]
+        self.assertEqual(len(page['rows']), len(BOSS_ROWS)+3)
+        self.assertEqual(labels[len(BOSS_ROWS):], ['活动 bossEvent0', '活动 bossEvent1', '活动 bossEvent2'])
+        self.assertEqual(page['event_overflow'], 2)
+        self.assertIn('另有 2 个活动 Boss 未显示', notes_for(page, '', 1, 1, ''))
+        Image.open(io.BytesIO(render_boss_page(page))).verify()
+
+    def test_event_rows_without_content_on_a_page_are_left_out(self):
+        rows, _ = build_table(None, normalize_bosses(feed({'bossTagilla': 'tagilla'})))
+        page = paginate_table({'mode': 'pve'}, rows)[0]
+        self.assertEqual(len(page['rows']), len(BOSS_ROWS))
+        self.assertNotIn('event_overflow', page)
+
+    def test_event_appearing_and_ending_are_changes(self):
+        base = normalize_bosses(feed({'bossTagilla': 'tagilla'}))
+        withevent = normalize_bosses(feed({'bossTagilla': 'tagilla', 'bossScourgeEventLab': 'scourge'}))
+        rows, changed = build_table(base, withevent)
+        self.assertTrue(changed)
+        self.assertEqual(change_lines(rows), ['活动 bossScourgeEventLab（Lab）：新增 100%'])
+        rows, changed = build_table(withevent, base)
+        self.assertEqual(change_lines(rows), ['活动 bossScourgeEventLab（Lab）：移除（原 100%）'])
+
+
 class FooterTests(unittest.TestCase):
     def test_footer_is_one_source_line_unless_something_needs_saying(self):
         page = {'mode': 'pve', 'checked_at': 100, 'fetched_at': 90, 'compared_at': 50}
@@ -250,6 +307,15 @@ class BossStoreTests(unittest.TestCase):
     def event(self, count=80):
         self.store.observe(boss_card(count=count), self.targets, now=100)
         return self.store.observe(boss_card(0.4, count=count, checked=200), self.targets, now=200)
+
+    def test_a_different_scope_retires_old_baselines_silently(self):
+        self.store.observe(boss_card(), self.targets, now=100)
+        self.store.observe(boss_card(0.4, checked=200), self.targets, now=200)
+        self.assertIsNotNone(self.store.latest('pvp', now=200))
+        other = BossStore(self.store.path); other.scope = BOSS_SCOPE+':scourge'
+        self.assertIsNone(other.latest('pvp', now=200))
+        # The first observation under the new scope is a silent baseline, not a change.
+        self.assertIsNone(other.observe(boss_card(0.9, checked=300), self.targets, now=300))
 
     def test_only_change_events_carry_the_summary(self):
         self.store.observe(boss_card(), self.targets, now=100)

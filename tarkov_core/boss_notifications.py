@@ -16,6 +16,9 @@ PAGES_PER_CYCLE = 5
 
 
 class BossStore(NotificationStore):
+    # What the stored baselines cover; the plugin appends the ignore list so changing it re-baselines silently.
+    scope = BOSS_SCOPE
+
     def connect(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         db = sqlite3.connect(self.path, timeout=10)
@@ -35,10 +38,10 @@ class BossStore(NotificationStore):
         with db:
             db.execute('BEGIN IMMEDIATE')
             scope = db.execute("SELECT value FROM metadata WHERE key='scope'").fetchone()
-            if not scope or scope[0] != BOSS_SCOPE:
+            if not scope or scope[0] != self.scope:
                 # A changed inclusion policy is not an observed rate transition. Retire tables with ordinary AI.
                 db.execute('DELETE FROM baselines'); db.execute('DELETE FROM events'); db.execute('DELETE FROM queries')
-                db.execute("INSERT OR REPLACE INTO metadata VALUES ('scope',?)", (BOSS_SCOPE,))
+                db.execute("INSERT OR REPLACE INTO metadata VALUES ('scope',?)", (self.scope,))
         return db
 
     @staticmethod

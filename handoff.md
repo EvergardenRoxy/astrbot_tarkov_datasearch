@@ -109,7 +109,7 @@ Full inventory and request conventions: `docs/tarkov-api-reference.md` (sources 
 | QQ / routing | `platform_compat.py`, `tools/verify_qq_routes.py` | `qq_official_compat_enabled` (default true) adds a second standard handler for slash-prefixed commands on `qq_official`/`qq_official_webhook` only, disjoint from the framework path, delegating to the original handlers. `command_style` (§6). `short_commands_enabled` edits real handler metadata for the four status/Boss short handlers (namespace routes stay). |
 | Polling / notifications | `polling.py`, `notifications.py`, `boss_notifications.py` | One cancellable, non-overlapping task per feature (status, Boss); first check immediate, delay starts after a cycle, no catch-up, failure backoff ≤ 30 min, no worker when disabled or without targets. Separate lazy SQLite files; baseline + event written atomically; first success is a silent baseline; per-target submission state, ≤ 3 attempts, permission errors pause the target durably (reset: disable+save, enable+save); `send_message()` true = submitted, `None` = terminal unknown; no exactly-once. Retention 7 days / 200 events / 64 MiB. Targets are explicit UMOs (≤ 50), intersected with allowed origins and known proactive capability. |
 | Server status | `server_status.py`, `status_image.py` | Normalised feed (component identity by id, then normalised name; compare status codes, add/remove, global message, notice id+content+time; ignore order and display names). Unknown codes are never shown as healthy. Failed requests never mean downtime. Image shows overall/component state, ≤ 3 notice excerpts (400 chars), checked/fetched/version times, stale flags. |
-| Boss | `boss_monitor.py`, `boss_table_image.py`, `boss_portraits.py` | Scope: eleven daily bosses + GOONS (`bossKnight`, shown `三狗（GOONS）`) by stable mob-id allowlist; no BEAR/USEC/followers. Excluded maps: Icebreaker, original Ground Zero, Lab Dark, Labyrinth, tutorial, the pier (`terminal`, id `65cc8f81…`, removed 2026-10-24, §13); retained `ground-zero-21` is labelled `中心区`. Eleven columns: 中心区、白天工厂、夜间工厂、海关、森林、海岸线、立交桥、储备站、灯塔、塔科夫街区、实验室. Conditional records are never summed; compare map+mob+rule identity, then probability; probabilities must be finite 0–1 numbers. Dark matrix (Boss rows, map columns, mode top-left, 1640 px); changes red; exact 100% and its Boss name bold red; explicit 0% printed; unlisted cells blank. Query snapshots/continuation `boss 页 <12-hex> <n>` kept ≤ 24 h, 16 groups, 32 MiB. Scope policy `daily-goons-selected-maps-matrix-v5`: older baselines/events/snapshots are retired on open. Portraits: fixed assets.tarkov.dev paths from the feed's known portrait links, **manual-only** (`boss_portraits_update` one-shot setting), 128 px sanitized thumbnails, 365-day expiry, placeholder when missing; no game art is bundled (THIRD_PARTY). |
+| Boss | `boss_monitor.py`, `boss_table_image.py`, `boss_portraits.py` | Scope: eleven daily bosses + GOONS (`bossKnight`, shown `三狗（GOONS）`) by stable mob-id allowlist; no BEAR/USEC/followers. Resident bosses are rows; other listed bosses are event rows unless generic (§14). Excluded maps: Icebreaker, original Ground Zero, Lab Dark, Labyrinth, tutorial, the pier (`terminal`, id `65cc8f81…`, removed 2026-10-24, §13); retained `ground-zero-21` is labelled `中心区`. Eleven columns: 中心区、白天工厂、夜间工厂、海关、森林、海岸线、立交桥、储备站、灯塔、塔科夫街区、实验室. Conditional records are never summed; compare map+mob+rule identity, then probability; probabilities must be finite 0–1 numbers. Dark matrix (Boss rows, map columns, mode top-left, 1640 px); changes red; exact 100% and its Boss name bold red; explicit 0% printed; unlisted cells blank. Query snapshots/continuation `boss 页 <12-hex> <n>` kept ≤ 24 h, 16 groups, 32 MiB. Scope policy `daily-goons-selected-maps-matrix-v5`: older baselines/events/snapshots are retired on open. Portraits: fixed assets.tarkov.dev paths from the feed's known portrait links, **manual-only** (`boss_portraits_update` one-shot setting), 128 px sanitized thumbnails, 365-day expiry, placeholder when missing; no game art is bundled (THIRD_PARTY). |
 | Items | – | **Archived and removed** (§11). Branch `archive/item-query` @ `9f29e6f`; description in `docs/archive/item-query.md`. |
 | Settings | `_conf_schema.json` | New data features default **off** (`status_enabled`, `boss_enabled` and their broadcast / QQ-push switches). Poll intervals `status_poll_minutes` (5) and `boss_poll_minutes` (10), 2–30 minutes each. `test_release` keeps schema defaults equal to code fallbacks. |
 
@@ -324,7 +324,7 @@ feature proved inefficient. It is sealed, not deleted from history.
   `bossScourgeEventLab` ("Scourge", escort `followerScourgeEventLab` "Scourge 保镖"), `spawnChance` 1, `spawnTime` -1,
   zones `BotZoneArmory`/`BotZoneGreenOffice`, generic `unknown-npc-portrait.webp`. Lab non-event mobs: `PmcBot` (raiders;
   PvP/PvE), `pmcBotBlackDiv` (season raiders), `pmcUSEC`/`pmcBEAR` (PvE). Lab Dark (excluded map) holds `bossWedgeLab`.
-  Rule and display are a **proposal awaiting the maintainer's decision** (not implemented).
+  Implemented below.
 - **Rule extension check (maintainer: all selected maps; 2-3 event rows; resident whitelist + generic-mob blacklist)** — feasibility
   from the same three-mode feed, every non-daily boss record on the eleven selected maps. Mob `normalizedName` (language
   independent) separates the generic soldiers cleanly: `raider` (`PmcBot`), `black-div` (`pmcBotBlackDiv`,
@@ -334,3 +334,27 @@ feature proved inefficient. It is sealed, not deleted from history.
   never reach the rule. Raider/PMC/USEC/BEAR alone are not enough: Rogue and Sentry would otherwise be listed as events.
   Blacklisting by `normalizedName` is feasible; residual risk is a future generic type that is not yet on the list
   (it would show as an event until added), hence the proposed optional ignore setting. Awaiting go-ahead; not implemented.
+
+## 14. Event bosses on all selected maps (2026-10-24, maintainer decisions)
+
+Rule (maintainer: extend beyond the Lab; 2-3 event rows; resident whitelist + generic-mob blacklist): on the eleven selected
+maps a listed boss is **resident** if its id is in `DAILY_BOSSES` (fixed rows), an ordinary soldier if the mob's
+`normalizedName` is in `boss_monitor.GENERIC_MOBS` (`raider`, `black-div`, `usec`, `bear`, `rogue`, `af`) or in the new
+`boss_event_ignore` setting, otherwise an **event boss**. Without a `normalizedName` the id decides (`pmc*`, `exusec*`,
+`follower*` are never events). Feasibility check and the data behind the blacklist are in §13.
+
+- `normalize_bosses(data, dictionaries, ignore)` marks rows `event`; `build_table` passes the flag; event rows go through the
+  same probability/rule validation as resident ones (a bad record still raises).
+- Image: up to `MAX_EVENT_ROWS` = 3 rows labelled `活动 <name>` under the twelve fixed rows (sorted by mob id; the Boss name is
+  red when the row has a 100% cell, like resident rows); rows with no content on a page are skipped; the placeholder circle
+  uses the name's first character; more than three → footer line `另有 N 个活动 Boss 未显示`. No portrait (generic
+  `unknown-npc` art is never downloaded).
+- Changes: an event appearing is `活动 <name>（地图）：新增 100%`, ending is `…：移除（原 100%）`, shown in the change summary and
+  pushed like any other change.
+- Scope policy `daily-goons-events-selected-maps-matrix-v6`; `BossStore.scope` = policy + `:` + the sorted ignore list, so
+  adding a mob to the ignore list (or the upgrade itself) retires old baselines and the next observation is a silent
+  baseline. The normalised-state cache key includes the ignore list.
+- New setting `boss_event_ignore` (list of `normalizedName`, lower-cased, ≤ 64 characters, default empty).
+- Residual risk: a new ordinary soldier type that is not on the blacklist shows as an event until added to the list.
+- Tests 282 → 291 (`EventBossTests`, scope-retirement store test, ignore-setting plugin test, footer/summary tests); mutation
+  check: dropping `af`, raising the row cap, ignoring the scope and ignoring the ignore list each fail tests. Fonts rebuilt.

@@ -14,6 +14,7 @@ from .modes import label_of
 
 MARGIN, LABEL_WIDTH, MAP_WIDTH = 20, 280, 120
 MAPS_PER_PAGE, FONT_SIZE, LINE_HEIGHT = 16, 22, 30
+MAX_EVENT_ROWS = 3
 BG, BODY, LABEL_BG, GRID = (12,12,12), (21,21,21), (31,31,31), (43,43,43)
 TEXT, MUTED, RED = (218,220,222), (154,157,160), (255,65,65)
 BOSS_ROWS = (('bossTagilla','Tagilla'), ('bossBully','Reshala'), ('bossKojaniy','Shturman'),
@@ -35,7 +36,7 @@ def compact_rows(rows):
         key = (row['map_id'],row['mob_id'])
         if key not in groups:
             groups[key] = {'map_id':row['map_id'],'map_name':row['map_name'],'mob_id':row['mob_id'],
-                           'boss_name':row['boss_name'],'rates':set(),'changed':False}
+                           'boss_name':row['boss_name'],'event':row.get('event',False),'rates':set(),'changed':False}
         group = groups[key]
         if row['current'] is not None: group['rates'].add(row['current'])
         group['changed'] |= row['changed']
@@ -62,22 +63,29 @@ def paginate_table(card, rows):
     names = dict(MAP_LABELS)
     map_ids = sorted(maps,key=lambda key:(order.get(key,len(order)),key))
     lookup = {(r['map_id'],r['mob_id']):r for r in compact}
+    # Event bosses (not resident, not an ordinary soldier) get up to MAX_EVENT_ROWS extra rows below the fixed ones.
+    events = {r['mob_id']:r['boss_name'] for r in compact if r.get('event') and r['mob_id']}
+    event_ids = sorted(events)[:MAX_EVENT_ROWS]
+    overflow = len(events)-len(event_ids)
     pages = []
     for start in range(0,max(1,len(map_ids)),MAPS_PER_PAGE):
         columns = [{'map_id':key,'name':names.get(key,maps[key])} for key in map_ids[start:start+MAPS_PER_PAGE]]
         for column in columns:
             column['lines'] = wrap(draw,safe(column['name']),font('sc',20,700),MAP_WIDTH-12)
         matrix = []
-        for mob_id,name in BOSS_ROWS:
+        for mob_id,name,event in [(m,n,False) for m,n in BOSS_ROWS]+[(m,events[m],True) for m in event_ids]:
             cells = []
             for column in columns:
                 source = lookup.get((column['map_id'],mob_id),{})
                 rates, changed = source.get('rates',[]), source.get('changed',False)
                 cells.append({'rates':rates,'changed':changed,
                               'lines':rate_lines(draw,rates) if rates else ['—'] if changed else []})
+            if event and not any(c['lines'] for c in cells):
+                continue
             height = max(90,max((len(c['lines'])*LINE_HEIGHT+24 for c in cells),default=90))
-            matrix.append({'mob_id':mob_id,'boss_name':name,'cells':cells,'height':height})
-        pages.append({**card,'columns':columns,'rows':matrix,
+            matrix.append({'mob_id':mob_id,'boss_name':name,'label':('活动 '+name) if event else name,
+                           'cells':cells,'height':height})
+        pages.append({**card,**({'event_overflow':overflow} if overflow else {}),'columns':columns,'rows':matrix,
                       'header_height':max(78,max((len(c['lines'])*25+20 for c in columns),default=78))})
     return pages
 
@@ -91,14 +99,15 @@ def change_lines(rows, map_ids=None):
     for row in rows:
         if not row['changed'] or (map_ids is not None and row['map_id'] not in map_ids):
             continue
+        name = ('活动 ' if row.get('event') else '')+str(row['boss_name'])
         if row['mob_id'] is None:
             lines.append(f"{row['change']}：{row['map_name']}")
         elif row['previous'] is None:
-            lines.append(f"{row['boss_name']}（{row['map_name']}）：新增 {percent(row['current'])}")
+            lines.append(f"{name}（{row['map_name']}）：新增 {percent(row['current'])}")
         elif row['current'] is None:
-            lines.append(f"{row['boss_name']}（{row['map_name']}）：移除（原 {percent(row['previous'])}）")
+            lines.append(f"{name}（{row['map_name']}）：移除（原 {percent(row['previous'])}）")
         else:
-            lines.append(f"{row['boss_name']}（{row['map_name']}）：{percent(row['previous'])}→{percent(row['current'])}")
+            lines.append(f"{name}（{row['map_name']}）：{percent(row['previous'])}→{percent(row['current'])}")
     if len(lines) > MAX_CHANGE_LINES:
         lines[MAX_CHANGE_LINES:] = [f'另有 {len(lines)-MAX_CHANGE_LINES} 项变化未列出']
     return lines
@@ -111,6 +120,7 @@ def notes_for(page,token,index,total,command):
     elif page.get('from_cache'): notes.append('使用已缓存或条件复查后的资源。')
     if page.get('translation_warning'): notes.append('部分翻译未取得，名称保留英文或上游标识。')
     if token and total > 1: notes.append(f'快照 {token} · 第 {index}/{total} 页 · 至多保留 24 小时；续查：'+command)
+    if page.get('event_overflow'): notes.append(f"另有 {page['event_overflow']} 个活动 Boss 未显示")
     from . import NAME, NOTICE, VERSION
     notes.append(f'数据 json.tarkov.dev · 头像 assets.tarkov.dev · {NAME} v{VERSION} · '+NOTICE)
     return notes
@@ -158,8 +168,8 @@ def render_boss_page(page,token='',index=1,total=1,command='',portraits=None):
                     img.paste(icon,(MARGIN+10,int(y+(height-icon.height)/2)),icon)
             else:
                 draw.ellipse([MARGIN+20,y+height/2-25,MARGIN+70,y+height/2+25],fill=GRID)
-                draw.text((MARGIN+45,y+height/2),row['boss_name'][0],font=font('sc',24,700),fill=MUTED,anchor='mm')
-            name = safe(row['boss_name'])
+                draw.text((MARGIN+45,y+height/2),safe(row['boss_name'][:1] or '?'),font=font('sc',24,700),fill=MUTED,anchor='mm')
+            name = safe(row.get('label',row['boss_name']))
             f = fit(draw,name,'sc',23,LABEL_WIDTH-98,label_weight,smallest=17)
             draw.text((MARGIN+90,y+height/2),name,font=f,fill=label_color,anchor='lm')
             for j,cell in enumerate(row['cells']):

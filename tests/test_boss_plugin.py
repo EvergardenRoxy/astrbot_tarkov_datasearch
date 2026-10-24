@@ -89,6 +89,15 @@ class BossPluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({page['mode'] for page in pages}, {'pvp','pve'})
         self.assertIn('不表示刷率为零', pages[-1]['error'])
 
+    async def test_event_ignore_setting_is_cleaned_and_part_of_the_stored_scope(self):
+        plugin = self.plugin({'boss_event_ignore': [' Scourge ', '', 5, 'x'*100]})
+        self.assertEqual(plugin.boss_event_ignore(), {'scourge', '5', 'x'*64})
+        self.assertTrue(plugin.boss_store.scope.startswith('daily-goons-events-'))
+        self.assertIn(':5,scourge,', plugin.boss_store.scope)
+        for bad in (None, 5, {'a': 1}):
+            self.assertEqual(self.plugin({'boss_event_ignore': bad}).boss_event_ignore(), set())
+        self.assertEqual(self.plugin({'boss_event_ignore': 'Raider'}).boss_event_ignore(), {'raider'})
+
     async def test_modes_interval_target_switches_and_lazy_lifecycle(self):
         plugin = self.plugin()
         await plugin.initialize()

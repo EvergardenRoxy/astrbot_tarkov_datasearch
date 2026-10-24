@@ -12,10 +12,14 @@ from .transport import QueryError
 # 工厂、夜间工厂、迷宫、实验室、破冰船、森林、灯塔、海岸线、储备站、中心区、塔科夫街区、教程、桥。
 # 邪教徒祭司、邪教徒战士、掠夺者、游荡者、黑色军团、保镖、守卫、俄军。
 
-BOSS_SCOPE = 'daily-goons-selected-maps-matrix-v5'
+BOSS_SCOPE = 'daily-goons-events-selected-maps-matrix-v6'
 # Explicit maintainer scope: Knight represents the GOONS squad. Ordinary AI and event variants stay excluded.
 DAILY_BOSSES = frozenset(('bossTagilla', 'bossBully', 'bossKojaniy', 'bossSanitar', 'bossKilla', 'bossGluhar',
                          'bossZryachiy', 'bossBoar', 'bossKolontay', 'bossPartisan', 'sectantPriest', 'bossKnight'))
+# Resident bosses are the whitelist above. Everything else a selected map lists as a boss is an event boss unless it
+# is an ordinary soldier type, identified by the mob's language-independent normalizedName (checked against the
+# three modes' feeds on 2026-10-24: Raider PmcBot, Black Division, USEC, BEAR, Rogue exUsecFree, AF Sentry).
+GENERIC_MOBS = frozenset(('raider', 'black-div', 'usec', 'bear', 'rogue', 'af'))
 EXCLUDED_MAP_IDS = frozenset(('69af492a4819ea4ba10a69c5', '653e6760052c01c1c805532f',
                               '6a294a5b5eb5f9a1700417b7', '6733700029c367a3d40b02af', '68236e8153654e8c1200798a',
                               '65cc8f81a9aac3e77d0cfd3e'))
@@ -88,7 +92,19 @@ def condition_text(rule, dictionaries):
     return '；'.join(parts) or '上游未提供条件'
 
 
-def normalize_bosses(data, dictionaries=()):
+def is_event_mob(mob_id, mob, ignore=()):
+    """True for a listed boss that is neither a resident boss nor an ordinary soldier type."""
+    key = mob.get('normalizedName') if isinstance(mob, dict) else None
+    if not isinstance(key, str) or not key:
+        # Without a normalizedName fall back to the id: ordinary soldier ids start with pmc / exusec, followers are never bosses.
+        key = mob_id.lower()
+        if key.startswith(('pmc', 'exusec', 'follower')):
+            return False
+    key = key.lower()
+    return key not in GENERIC_MOBS and key not in ignore
+
+
+def normalize_bosses(data, dictionaries=(), ignore=()):
     if not isinstance(data, dict) or not isinstance(data.get('maps'), dict) or not isinstance(data.get('mobs'), dict):
         raise QueryError('地图或 Boss 数据格式错误')
     maps, mobs = data['maps'], data['mobs']
@@ -110,7 +126,11 @@ def normalize_bosses(data, dictionaries=()):
             if not isinstance(boss, dict) or not isinstance(boss.get('mob'), str) or not boss['mob']:
                 raise QueryError('Boss 引用缺失')
             mob_id = boss['mob']
-            if mob_id not in DAILY_BOSSES:
+            if mob_id in DAILY_BOSSES:
+                event = False
+            elif isinstance(mobs.get(mob_id), dict) and is_event_mob(mob_id, mobs[mob_id], ignore):
+                event = True
+            else:
                 continue
             if mob_id not in mobs or not isinstance(mobs[mob_id], dict):
                 raise QueryError('Boss 引用无法关联')
@@ -133,7 +153,7 @@ def normalize_bosses(data, dictionaries=()):
             if len(encoded) > 8192:
                 raise QueryError('Boss 刷新条件过长')
             name = '三狗（GOONS）' if mob_id == 'bossKnight' else translated(mobs[mob_id].get('name'), dictionaries, mob_id)
-            rows.append({'mob_id': mob_id, 'boss_name': name,
+            rows.append({'mob_id': mob_id, 'boss_name': name, 'event': event,
                          'rule': encoded, 'condition': condition_text(rule, dictionaries), 'chance': chance})
         rows.sort(key=lambda row: (row['mob_id'], row['rule'], Decimal(row['chance'])))
         map_name = '中心区' if map_id == '65b8d6f5cdde2479cb2a3125' or normalized_name == 'ground-zero-21' else translated(game_map.get('name'), dictionaries, map_id)
@@ -180,7 +200,7 @@ def build_table(before, after):
                     elif old['chance'] != new['chance']:
                         delta = (Decimal(new['chance'])-Decimal(old['chance']))*100
                         note = ('+' if delta > 0 else '')+format(delta.normalize(), 'f')+' 个百分点'
-                output.append({'map_id': map_id, 'map_name': game_map['map_name'], 'mob_id': row['mob_id'], 'boss_name': row['boss_name'],
+                output.append({'map_id': map_id, 'map_name': game_map['map_name'], 'mob_id': row['mob_id'], 'boss_name': row['boss_name'], 'event': row.get('event', False),
                                'condition': row['condition'], 'previous': old['chance'] if old else None,
                                'current': new['chance'] if new else None, 'change': note, 'changed': bool(note)})
                 changed |= bool(note)
