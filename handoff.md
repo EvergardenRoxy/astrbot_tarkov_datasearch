@@ -2,8 +2,11 @@
 
 Audience: engineers or LLM agents debugging or reviewing this repository. This is a record of what was built,
 why, what evidence the decisions rest on, and where the risk is. It is not user documentation (see README /
-CHANGELOG for that). `checklist.md` is the plain-language Chinese companion; keep the two consistent when either
-changes. The layout and conventions follow the maintainer's earlier plugin `astrbot_plugin_spark_analyse`.
+CHANGELOG for that). `checklist.md` is the plain-language Chinese companion. The layout and conventions follow the
+maintainer's earlier plugin `astrbot_plugin_spark_analyse`.
+
+Current documentation rule (maintainer, 2026-10-24): record work in `handoff.md`; do not modify `README.md` or
+`checklist.md`, which will be organized separately later.
 
 ## 1. Context
 
@@ -833,3 +836,465 @@ Maintainer: "需要实现从设置页切换两种不同的帮助和全部的操�
   suggestion command — all killed.
 - Release 0.4.4 (maintainer: "实现功能后检测无问题则自行推送分支v0.4.4"): version bumped in the usual places. Branch
   `v0.4.4` is one commit on top of `v0.4.3` with the work branch's tree.
+
+## 25. Open review finding: binding treats failed mode requests as missing profiles (2026-10-24)
+
+Status: recorded on branch `1024` at the maintainer's request; no code fix has been made.
+
+- Scope: the second finding from the repository review only. The shared nickname-to-account-id mapping identifies
+  the same account across modes; it does not establish whether that account has a profile in each mode. A timeout
+  cannot establish that the player has never been searched in that mode on tarkov.dev.
+- Reproduction: make the PVE profile request succeed, the PVP request raise `TimeoutError`, and the season request
+  return HTTP 404, then bind the account with `tarkov 绑定 <account id>`. Binding succeeds using the PVE profile,
+  but the reply both reports the PVP timeout and includes PVP in the modes whose profiles supposedly need a website
+  search before they will appear.
+- Cause: `main.py`, `TarkovPlugin.bind()`, computes `missing` as every mode absent from `found`, including those in
+  `failed`. `profiles()` already distinguishes an HTTP 404 (`NotFound`) from a timeout or other request failure,
+  but this binding-success hint loses that distinction.
+- Suggested fix: exclude modes in `failed` from `missing`. Keep the failure/retry message for failed modes; use the
+  website-search hint only for modes confirmed missing by HTTP 404. This does not require changing the shared name
+  mapping or which modes are queried.
+- Suggested regression check: PVE succeeds, PVP times out, and season returns 404. Assert binding succeeds, PVP is
+  reported as temporarily unconfirmed with a retry hint, and only season appears in the website-search hint.
+- Review evidence: reproduced with synthetic profiles and mocked transport responses; the existing 193 tests passed
+  on Python 3.12.14 after allowing sockets for the local HTTP test server. Existing tests do not assert this mixed
+  success/timeout/404 binding reply. No live AstrBot or external tarkov.dev request was used for this reproduction.
+
+## 26. Public game-data API inventory and request conventions (2026-10-24)
+
+Maintainer request: inspect `https://json.tarkov.dev/endpoints`, `https://tarkov.dev/api/`, and upstream manager
+implementation where necessary; document available data and standardized requests. Documentation only, on branch
+`1024`; no plugin behavior change or fix for §25. README and checklist were left unchanged per the current rule.
+
+- Deliverable: `docs/tarkov-api-reference.md`, a Chinese reference covering all 10 advertised JSON endpoint families,
+  response shapes and important fields, mode identifiers, ID joins, local filtering, translation dictionaries and
+  JSONPath replacement, HTTP caching/error handling, examples, and a separate legacy GraphQL appendix.
+- Sources: live endpoint manifest and responses; the official site's API page source and client implementation at
+  `the-hideout/tarkov-dev` commit `ec44177bd3c21aa2b33938153acd0a96dbd939aa`; data generation at
+  `the-hideout/tarkov-data-manager` commit `59bc50d9cbcb1a0abe80e02f7137ce98d8445dbf`. Exact links are in the reference.
+- Main findings: `/api/` now documents JSON GET resources. The official GraphQL page source labels GraphQL as
+  maintenance mode and recommends JSON for future use. JSON resources contain ID references and localization keys,
+  rather than the expanded relationships / already-translated strings a GraphQL caller might expect. Base data and
+  `_<language>` dictionaries must be fetched separately; use the response's `translations` JSONPaths to localize.
+- Scope boundary: these endpoints describe shared game data, prices and rules, not an individual player's live
+  profile, quest progress, stash or inventory. `regular` is the JSON API mode identifier for PVP; the existing
+  player-snapshot service uses `profile` instead. Arena is not advertised in this JSON manifest.
+- Validation: public, read-only GETs returned parsable JSON for all 10 families using regular-mode resources where
+  applicable, global `/status`, and `/pvp-season/season`. Also checked items and a sample item's historical prices in
+  all three modes; checked Chinese dictionaries for items, maps, hideout, tasks, traders and season, plus English
+  items fallback. A conditional `/status` GET with its ETag returned 304. The reference's Salewa lookup was verified
+  against the downloaded responses (`Salewa急救包`). No authenticated endpoints or player-profile requests were used.
+- Live observations: regular items ~17.3 MB, maps ~8.9 MB, tasks ~2.1 MB decoded; `Cache-Control: max-age=691200`
+  with ETag and Last-Modified was observed. Upstream generation purges CDN cache after changed data is uploaded;
+  this is not a guaranteed update schedule. Historical prices combine archived and recent points, with epoch-ms
+  timestamps and optional offer-count fields. The GraphQL GET probe returned an `errors` response saying the server
+  was unavailable; its appendix examples are source-verified, not claimed as successful live queries.
+- Verification for this documentation change: validate the examples against captured JSON, check source links and
+  `git diff --check`; no application test rerun is needed because no runtime or dependency files changed. Source
+  responses were kept under `/tmp/tarkov-api-research` for this session only, not added to the repository.
+
+## 27. Proposed next-stage feature design (2026-10-24)
+
+The initial proposal below is historical; §28 and the revised `docs/development-plan.md` supersede its item command
+semantics, text/Markdown output options, monitoring filters, and interval bounds.
+
+Maintainer goals: feature switches for server-status checks/broadcasts, item flea/trader prices and properties,
+Boss spawn-rate change polling/broadcasts, and official QQ support using `@机器人 /命令`.
+
+- Deliverable: `docs/development-plan.md`, the Chinese design proposal. No runtime implementation, schema change,
+  actual message send, commit or push in this planning step; work remains on `1024`. README/checklist untouched.
+- Config proposal: independent feature gates, nested behavior through dependent query/broadcast switches, individual
+  flea/trader/details switches, explicit UMO recipient lists, mode/map/Boss filters, intervals and quiet/cooldown
+  behavior. New game-data features default off; QQ compatibility defaults on without disabling old QQ behavior.
+- Commands: `/status`, `/item`, `/boss`, plus stable `/tarkov ...` forms; short routes can be disabled to resolve
+  conflicts. Item names accept spaces; explicit `id:` avoids name ambiguity. QQ adds a `mention_slash` display style
+  plus actual framework-aware command normalization, rather than only changing the displayed command string.
+- Shared implementation: dedicated public-resource client/cache, status/item/Boss modules, a common notification
+  dispatcher with durable baselines/events/per-target attempts, and a platform compatibility boundary. Large data
+  limits and thread-based parsing/indexing are separate from player-profile limits. Shutdown cancels and awaits
+  pollers; config reload must not duplicate workers or let stale worker results overwrite current state.
+- State handling: first successful poll establishes a silent baseline; failed requests preserve the last successful
+  baseline and never mean game downtime / 0% Boss probability. Probability comparison is per mode/map/mob and
+  preserves conditional spawn entries without summing them. Changes use percentage points, not ambiguous percent
+  growth; invalid or absent data is distinguished from a confirmed complete-record change.
+- Delivery: explicit targets only; no subscriptions inferred from access lists. Persist baseline and events together,
+  track each recipient separately, merge during quiet/cooldown periods, and bound retries/history. Do not claim
+  exactly-once delivery or equate `context.send_message()`'s matched-platform boolean with a delivered message.
+- QQ evidence: inspected AstrBot commit `0cd42bd4dd216d8810da4e3f5fb2e381d3c6817e` docs, command/wake filters,
+  official QQ adapter, and send context; Tencent bot-docs commit `645787a45937e5d9c4f0f61afefdffde0f38696e`.
+  New AstrBot docs/adapter support configured proactive group messages, while older Tencent docs and a Context
+  docstring retain contrary limitations. Treat proactive delivery as version/scene/permission-dependent and require
+  actual target-platform verification; keep user-triggered `/status` and `/boss 变化` available where push cannot work.
+  Do not claim support on the current minimum AstrBot 4.16.0 solely from current-master evidence.
+- Order: shared infrastructure + QQ route proof; status query + notification backbone; item queries; Boss monitoring;
+  QQ WebSocket/Webhook live acceptance and release review. §25's failure/missing distinction is a prerequisite cleanup.
+- Validation at design time: source/response inspection and documentation consistency checks only. The proposal lists
+  meaningful behavior tests and a live QQ acceptance matrix; no new application test results are claimed.
+
+## 28. Design revision: image queries, item layers, configurable polling and Boss tables (2026-10-24)
+
+Maintainer requirements incorporated into `docs/development-plan.md`; this is still documentation only on `1024`.
+README/checklist, runtime code and configuration schema remain unchanged.
+
+- All queries return images, including existing player profiles, status, items, Boss tables, change summaries and
+  candidate/empty/error results. Help remains an image. Plain text can accompany permitted links or report a final
+  image generation/delivery failure, but must not replace a successful query with a full text/Markdown report.
+  The implementation plan migrates existing text/Markdown output preferences to images. Binding confirmations are
+  control replies rather than query reports and may stay short text.
+- Item command semantics: `/item <name>` means common attributes shared across modes, with no default-mode assumption or
+  price; `/item <mode> <name>` means that mode's prices, trading/unlock conditions and actual attribute differences.
+  Item IDs connect common identity and separate mode records; common-field whitelists are checked across snapshots,
+  and unavailable/mismatched fields are not silently promoted to shared facts. Candidate results are images too.
+- Polling cadence: Boss polling has a configurable 2–30 minute interval (integer minute steps). The general requirement
+  applies to every polling feature, so status gets an independent 2–30 minute setting too; proposed defaults are
+  status 5 minutes and Boss 10 minutes. On-demand cache freshness is named separately and is not a hidden poller.
+  Rescheduling must not overlap runs or catch up missed ticks; rate-limit/failure backoff is separate from normal cadence.
+- Boss image format: results and broadcasts are complete image tables for every map and Boss in each selected mode,
+  keeping unchanged rows, preserving separate spawn conditions, and marking changed values/rules/new/removed records
+  red with explicit text. Proposed monitoring defaults cover all three modes. Remove map/Boss filters that would
+  truncate the requested full tables; modes remain separately labeled and paginated.
+- Event images retain fixed old/new snapshot references and comparison timestamps; later manual queries or 304s
+  must not erase or relabel the change. Readable pagination repeats headers and covers all rows. Page-level delivery
+  tracking and snapshot-bound continuation queries handle QQ scene limits without silently losing rows.
+- Add image renderers and a common configurable polling scheduler to the implementation plan. Image rendering is a
+  first-stage acceptance requirement for each feature, not a later optional enhancement. The revised test plan covers
+  output migration, common-vs-mode data, full-table coverage/red marks, pagination, independent 2/30 minute bounds,
+  invalid settings, and reload/reschedule behavior with a controlled clock.
+- Validation: documentation consistency and whitespace checks; no new runtime tests or actual message sends in this
+  planning revision. Prior §27 is retained as history and explicitly marked superseded where these requirements differ.
+
+## 29. Implemented foundation: public resource cache and QQ slash routing (2026-10-24)
+
+Maintainer authorized the first implementation stage, "公共缓存与 QQ 路由验证". Work stays on `1024`; no commit,
+push or release/version bump requested. README/checklist remain unchanged. The approved design is still in
+`docs/development-plan.md`, now with a stage-progress section; remaining feature commands and image migration are
+not claimed as implemented.
+
+### Public resources and persistence
+
+- `tarkov_core/public_api.py`: fixed `https://json.tarkov.dev` host; structured `ResourceKey` validates the resource,
+  canonical mode, supported language and historical item ID before connecting. `mode_path()` explicitly translates
+  plugin pvp/season to regular/pvp-season; no accidental use of the player's `profile` path. Global status/endpoints,
+  season-only data, translations and price-history paths have distinct validation rules.
+- Public-resource limits are 32 MiB received / 64 MiB decoded, separate from player-profile limits; a compressed
+  synthetic 17 MiB item resource is accepted, while over-limit documents are rejected. Envelopes and primary resource
+  shapes are validated and JSON is parsed off the event loop; translation dictionaries remain separate documents.
+- `transport.http_get()` factors out the bounded reader without changing the existing `transport.get()` return shape.
+  Supports ETag and Last-Modified (ETag preferred), 304, no redirects, honest plugin agent and the existing explicit
+  proxy / `trust_env=False` policy. HTTP failures retain status and bounded parsed Retry-After; connection details and
+  proxy credentials stay out of chat errors. Player and index transport regression tests continue to pass.
+- `tarkov_core/resource_cache.py`: lazy SQLite file `public-data/resources.sqlite3`, under the existing plugin data
+  directory. Initialization does not create a cache file, download anything or schedule a task. Rows contain body,
+  validators, cache-control and fetched/checked/access times; transactional replacement keeps body/metadata together.
+- Cache identity is the canonical resource path, including mode/language/item ID. TTL defaults to 5 minutes via
+  `public_data_cache_minutes` (0 means check each time); stored Cache-Control can shorten TTL, no-cache revalidates,
+  and no-store removes persistent entries. 304 preserves the body's original fetch time but updates check time.
+- Defaults: at most 32 entries and 128 MiB of stored response bodies, with least-recently-used eviction; SQLite file
+  overhead/free pages/journals are additional, so this is a payload budget, not a strict filesystem-size quota. Network
+  downloads are capped at 2 and pending resource tasks at 32. One in-flight lookup/check per path is shared; cancelled
+  readers do not cancel others, and a fresh reader upgrades an in-flight TTL lookup to a conditional check.
+- Failures do not overwrite a valid document. Stale fallback is opt-in for HTTP/connection/timeout/invalid-JSON-shape
+  failures and returns `stale=True` plus a safe error while retaining successful timestamps. Configuration errors such
+  as an invalid/empty enabled proxy are not masked; confirmed 404 invalidates the row and is not served as fallback.
+  Retry-After suppresses repeat network attempts for that path. Corrupt JSON rows rebuild without stale validators.
+- Snapshots share immutable body bytes; `await snapshot.json()` returns a newly decoded document for each consumer,
+  preventing localization/rendering code from mutating the shared cache. Complete localization and item search indexes
+  remain for the item stage.
+- `TarkovPlugin.public_resource()` translates plugin modes and applies the cache setting; downloads reuse the plugin's
+  proxy and timeout settings. `terminate()` closes the public cache, cancels pending requests and awaits SQLite workers;
+  it now also awaits cancellation of the existing profile tasks. No new status/item/Boss commands or pollers are registered.
+
+### QQ route implementation and evidence
+
+- Adds `qq_official_compat_enabled` (default true) and `command_style=mention_slash`, including schema labels/help-image
+  wording. Existing mention/slash styles remain. No global wake-prefix configuration is modified.
+- A second standard command handler matches a slash-prefixed tarkov/塔科夫 only on qq_official or
+  qq_official_webhook, gated by the compatibility setting before it performs any query. It delegates to the existing
+  handler, preserving plugin access rules and active-query guards. It is not a catch-all message/regex listener.
+- With '/' in AstrBot wake_prefix, the framework strips it and selects the original handler. If the slash is retained
+  after a genuine bot mention (or normal private-chat wake), the supplemental handler matches it. The patterns are
+  disjoint, avoiding duplicate handling. Disabling compatibility skips only the supplemental handler; original framework
+  routing still works. Other platforms do not acquire the supplemental slash route.
+- `tools/verify_qq_routes.py` reads an official AstrBot wheel and executes the original registration, wake stage,
+  command/custom filters and QQ parser bodies with external SDK/service boundaries replaced. It validates actual
+  decorator registration and handler selection, rather than calling the plugin handler as if routing already worked.
+- Verified against the PyPI `astrbot==4.16.0` wheel (SHA256
+  `d2374bea6aaba1e27a764194d7163e97bdf65a972138584ebfae05a077dda174`): 33 cases pass, covering both official platform
+  names, group/private input, stripped/retained slash, Chinese alias, original no-slash command, fake textual mention,
+  a mention of another user, lookalike command/URL, other-platform isolation, compatibility disabled and access denied.
+- Reproduce after downloading the wheel: `python tools/verify_qq_routes.py /path/to/astrbot-4.16.0-py3-none-any.whl`.
+  Output includes `boundary_doubles: true` and `live_qq_delivery: false`. This is **not** a running AstrBot installation,
+  QQ credentials test, WebSocket/Webhook connection, media upload or proactive message delivery verification.
+
+### Related prerequisite and validation
+
+- Fixed §25: `bind()`'s missing-mode hint now excludes modes in `failed`; regression test covers PVE success, PVP timeout
+  and season 404. Binding still succeeds, PVP stays a failure message, and only season gets the website-search hint.
+- Added public API/cache tests and plugin wiring/QQ/style tests. Rebuilt the bundled Noto Sans SC subset for new
+  Chinese error strings after the existing font-coverage test detected missing glyphs. Used the upstream Google Fonts
+  source SHA256 `a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da`; other bundled fonts/licenses
+  were preserved. `fonttools` was installed only as a development tool, not added to runtime requirements.
+- Final full suite: **218 tests pass**, `python -m unittest discover -s tests`, Python 3.12.14. Local HTTP test servers
+  need network-enabled execution in this sandbox. Tests cover persistence/restart, TTL/304, last-modified fallback,
+  independent modes/dictionaries, immutable readers, cancellation, concurrency, byte/entry eviction, cache directives,
+  Retry-After, invalid JSON, corruption, proxy plumbing, closing workers and the binding regression.
+- Read-only live smoke using the new client/cache with the session proxy passed for `/status` and
+  `/regular/items_zh`; both returned valid data, followed by **304** on conditional checks. Temporary responses and the
+  wheel/replay report remain under `/tmp`, not packaged. No chat messages were sent.
+- `git diff --check` passes. API inventory/design documents and the prior handoff edits remain in the working tree;
+  README/checklist are unchanged. Next stage can build the server-status image query and poller on this foundation.
+
+## 30. TarkovTracker data-source research and implementation references (2026-10-24)
+
+Maintainer requested inspection of `https://github.com/tarkovtracker-org/TarkovTracker`, then clarified that existing
+implementations relevant to our planned features should serve as references. Read-only GitHub research, pinned to
+main commit `d07b3da5d4ebd5c83195fd3f1d6a0b2cd40f91de`; no runtime changes, remote writes or private-data access.
+
+- Deliverable: `docs/tarkovtracker-reference.md`, covering source ownership, actual code paths and a feature-reference
+  matrix. README/checklist remain unchanged; work remains on `1024`.
+- Public game definitions come from `json.tarkov.dev`, with per-mode base JSON and separate language dictionaries.
+  `tarkov-json.ts` fetches/translates/adapts; internal `/api/tarkov/*` routes combine/cache/project and may apply overlay.
+  The project no longer uses the old GraphQL service for its game-data path. KV precompute and browser IndexedDB are
+  caching/distribution layers, not independent raw game sources.
+- Corrections/additions come from a separately hosted `tarkov-data-overlay` JSON. `overlay.ts` names the raw GitHub
+  default URL; `overlayAuth.ts` and deployment docs explicitly identify a private read-token dependency. Its payload
+  was not retrieved. Reference the merge/version/provenance design without treating it as an available public feed.
+- Player import uses the same `players.tarkov.dev` snapshots as our plugin: profile/pve/pvp-season by numeric account
+  ID. Tracker's proxy adds caching, conditional refetch, validation and a freshness gate; it does not make these live
+  game-account queries. Their own Turnstile/cooldown controls are not a new upstream access grant.
+- Actual Tracker progress originates from user edits, local logs/backups and authorized integration writes. Browser
+  persistence includes IndexedDB with legacy localStorage recovery; cloud progress is mode/season-scoped Supabase
+  `user_game_mode_progress`, with account metadata in `user_progress`, and RPC-based sync. The authenticated public
+  `api.tarkovtracker.org` progress API exposes authorized Tracker state, not arbitrary official player progress by ID.
+- Assets: `GameItem.vue` uses upstream item image URLs and assets.tarkov.dev icon fallback; local maps.json describes
+  coordinate/tile configuration, including assets.tarkov.dev map tiles. These are useful renderer input references,
+  not an existing Python/static-image rendering implementation.
+- Highest-priority references for our next steps: base+dictionary translation/fallback, raw-to-domain adapters,
+  ID-based sparse-reference hydration, lite/full item separation, mode/language/version-sensitive caching, stale
+  indicators and snapshot provenance. Preserve our two distinct common-item / mode-item query semantics; no existing
+  shared-field extraction was established in the inspected Tracker implementation.
+- Full item adaptation retains raw fields (including potentially price data); this alone does not establish a finished
+  price-query UI. `adaptMapSpawnsResponse()` only projects map id/name/spawns, not Boss probability. No ready-made
+  server-status broadcasts, Boss probability-change broadcasts or QQ integration were found in the inspected paths.
+  Continue implementing those from our design instead of equating data availability with a complete feature.
+- Their API docs explicitly define `/api/tarkov/*` as internal browser routes and direct external game-data consumers
+  to `json.tarkov.dev`. We will reference implementation, not switch to scraping their site proxy. A separate Worker
+  API repository is linked by current progress docs; unavailable legacy worker files in this repo were not treated as
+  inspected implementation.
+- Validation: checked pinned source/docs and source-path links; `git diff --check`. No application test rerun is needed
+  for this documentation-only addition. The prior 218-test result belongs to §29 and is not a new run for this research.
+
+## 31. Tracker profile import versus current plugin profile queries (2026-10-24)
+
+Maintainer asked what differs and where Tracker has advantages. Extended `docs/tarkovtracker-reference.md` §6 after
+checking the pinned Tracker proxy, import composable, payload parser and cooldown code against current local
+`main.py`, `transport.py`, `profile.py`, `accounts.py` and `card.py`. Documentation only; no behavior changes.
+
+- Same snapshot origin and website-refresh dependency. Tracker imports account metadata/skills/derived level into
+  its user-progress state after preview/confirmation; our plugin reads/displays statistics and stores only binding/name
+  relations, with profile summaries in memory. Tracker's own progress store is not a newly available live game API.
+- Tracker defaults: server cache 15 minutes; 404 cache 60 seconds; IP quotas 5/minute and 20/hour; client URL-import
+  cooldown 60 minutes after confirmed import. Explicit fresh checks may send ETag and reuse a validated 304 body.
+  Turnstile, when configured, protects Tracker's proxy, not the upstream snapshot generation.
+- Tracker rejects imports older than 7 days when a valid updated timestamp exists; it checks cache/304 bodies too,
+  but missing updated bypasses that age gate. It validates identity and XP more strictly for writes, previews first,
+  guards stale asynchronous results and account/mode context, and surfaces save/UID-conflict errors.
+- Current plugin profile path: 10-minute default memory summary TTL, 128-entry cap, max 60-second negative TTL,
+  shared in-flight fetches and 6 network slots; links/binds skip serving TTL cache but fetch_profile does not supply
+  conditional validators. The new §29 persistent public cache is not yet used by player snapshots.
+- Our display-oriented path intentionally tolerates many missing statistics and continues showing >30-day snapshots
+  with warnings. Fixed-host/no-redirect/gzip size bounds are already present. Do not treat strict whole-document
+  rejection or website-specific quotas/confirmation as automatically beneficial to a chat query.
+- Proposed borrowings: player-specific ETag checks, requested-ID/response-ID validation for binding/name identity,
+  clear separation of snapshot-updated/fetched/checked times on images, and optional per-user/account rate controls.
+  Keep stale-data rejection configurable and retain historical-mode viewing. Any future knobs/features must follow
+  the agreed settings/image rules. No new implementation is claimed by this research response.
+- `git diff --check` validation; README/checklist and runtime code unchanged by this follow-up. No tests rerun for docs.
+
+## 32. Server-status image queries and broadcast foundation (2026-10-24)
+
+Maintainer requested proceeding with status queries and broadcast infrastructure. Implemented on `1024`, building
+on §29's public cache and QQ routes. This is working-tree implementation, not a release or deployed bot configuration.
+README/checklist remain unchanged. Current usage and limits are also recorded in `docs/development-plan.md` §12.
+
+- Commands: `status` / `状态`, plus stable `tarkov status` / `塔科夫 状态` namespace routes. Use the configured
+  AstrBot wake prefix on ordinary platforms; QQ official mention + slash uses the supplemental route. No mode argument
+  is needed because the public status feed is global. Existing access/origin restrictions apply to manual queries.
+- All new status results are locally rendered JPEGs: success, disabled, denied, invalid arguments, busy and upstream
+  errors. They show overall/component state, recent nonempty notices, checked/fetched/resource-version times (GMT+8),
+  cache/stale flags and provenance. Unknown status codes remain explicit, never silently healthy. Only rendering failure
+  falls back to a brief error sentence. Existing player output migration is outside this stage.
+- New default-off settings: `status_enabled`, `status_broadcast_enabled`, `status_qq_push_enabled`. Targets default
+  empty (`status_notify_targets`); `status_poll_minutes` defaults to 5, slider/clamp 2–30 minutes. Save/reload applies
+  changes. Targets are explicit full UMO strings (`/sid`), deduplicated, max 50, intersected with allowed origins and
+  known proactive platform capability. QQ requires the extra switch and suitable actual platform permission.
+  Query access mode controls users; administrator-configured targets separately authorize automatic broadcasts.
+- `short_commands_enabled` defaults true. `platform_compat.set_short_status_routes()` changes actual AstrBot handler
+  metadata, not just early-return guards; disabling it leaves namespace commands and other plugins' `status` routes
+  usable. It touches only the two status handlers. The internal registry boundary is verified against SDK 4.16.0.
+- `server_status.py` validates/canonicalizes the public feed. Global duplication is removed; component identity uses
+  ID with normalized-name fallback. Compare status codes, component addition/removal, nonempty global explanations
+  and unseen notices; ignore array ordering/display-name changes. Notice identity includes ID, cleaned content and
+  timestamp so revisions are visible. Empty notices are ignored. `public_api.decode()` rejects malformed status data
+  before cache replacement, retaining a valid last-good snapshot for explicitly marked manual stale fallback.
+- `status_image.py` builds state/change/error cards using bundled fonts and the existing local Pillow style. Status
+  images show at most three notice excerpts (400 characters each) with a count/truncation indication. Full normalized
+  notices remain available to bounded persistence/deduplication. The CJK subset was rebuilt from the same licensed
+  pinned source files; no runtime font download or extra runtime dependency was introduced.
+- `polling.py` owns one cancellable, nonoverlapping task for all status targets. No target/disabled means no dedicated
+  download or worker. First enabled check is immediate; subsequent delay starts after a cycle finishes, with no catch-up
+  calls. Settings may reconfigure the existing task; repeated initialization does not duplicate it. Fetch errors back
+  off to at most 30 minutes. Termination cancels/awaits polling, then drains SQLite workers and closes the shared cache.
+- `notifications.py` lazily creates separate `notifications.sqlite3`. Successful baseline advancement and immutable
+  event creation are atomic. First success is silent; later state/announcement changes enqueue an image event. Failed
+  requests and stale/manual queries do not advance the monitor baseline. Restart preserves baseline and per-target
+  submission records. A failed later fetch can still drain a previously queued, unexpired event.
+- Each target gets at most one event per polling cycle, preserving fault/recovery transitions without a burst.
+  Explicit false results/transient exceptions are bounded to three attempts (120/240 second minimum eligibility,
+  executed by the configured poll cycle). Already submitted targets are not retried. Explicit permission errors pause
+  that target durably across subsequent events/restarts and log a settings/permissions reset hint. Fix permissions,
+  disable broadcasts and save/reload, then enable/save/reload to reset. Removing a target retires its pending work;
+  disabling broadcasts retires the old baseline/backlog and resets pauses before a new silent baseline.
+- Submission semantics: `context.send_message()` true means submitted/matched platform, not a receipt. A `None` result
+  is terminal unknown, not delivered or automatically retried. There remains a crash window between remote acceptance
+  and local acknowledgement; no exactly-once guarantee. Exceptions are logged by type rather than remote payloads.
+- Bounded storage: seven-day event retention (also enforced while draining after fetch failures), 200 event rows,
+  64 MiB aggregate event payload, 2048 seen-notice keys. Dedicated quiet-hours/coalescing configuration remains future
+  work; the foundation enforces one image per target per polling cycle. Items/Boss monitoring remain future work.
+
+Validation:
+
+- Full suite: **241 tests passed** with the project's Python 3.12 venv. Added normalized-state, unknown code, fault/
+  recovery, ordering, notice revisions/reappearance, image/timestamp/stale, transaction rollback, restart persistence,
+  target-specific retries/pause/reset, retention, controlled-clock scheduling, cancellation and plugin integration
+  coverage. A malformed HTTP 200 cannot overwrite last-good status or swallow a transition. Real disk/HTTP cache
+  and fake platform submission paths cover 200 → changed 200 → 304 without duplicate submission.
+- `tools/verify_qq_routes.py` against the official AstrBot 4.16.0 wheel: **67 cases passed**, including short/namespaced
+  state commands, both QQ official transports, group/private, differing wake prefixes, permission/feature gates and
+  another plugin's short command when ours is disabled. SDK/network boundaries remain doubled; no QQ delivery claim.
+- Live read-only smoke: two status requests via the configured session proxy, first uncached then conditional cache
+  reuse, `stale=false`, nine distinct components. Rendered and visually inspected the status and error images; the
+  status preview was 174,485 bytes. No broadcast task or notification DB was created for manual-only use. Temporary
+  previews/report/scripts remain under `/tmp`; no chat messages were sent, and no external writes were performed.
+- `git diff --check` passes. QQ passive image delivery, proactive permission and real platform rejection behavior
+  still require bot-side acceptance testing. No commit/push or release metadata change was made.
+
+## 33. Boss monitoring, reference matrix and manual portrait cache (2026-10-24)
+
+Implemented the Boss module before item queries at the maintainer's request. Final scope, reference-image layout
+and portrait-update behavior below incorporate all in-turn corrections. Work remains on `1024`, without commit,
+push or release. README/checklist are unchanged. See `docs/development-plan.md` §§6/13 for current design/usage.
+The later map-column selection in §34 supersedes this section's original sixteen-map scope.
+
+- Scope: the eleven named daily bosses (Tagilla, Reshala, Shturman, Sanitar, Killa, Glukhar, Zryachiy, Kaban,
+  Kollontay, Partisan and sectant priest), plus GOONS. Use a stable mob-ID allowlist; `bossKnight` represents squad
+  probability and displays as `三狗（GOONS）`. Exclude ordinary BEAR/USEC, followers and unlisted event variants.
+  Exclude Icebreaker by stable map ID or normalized name; keep other maps, including columns with no listed boss.
+- Commands: `boss`/`刷率`, optional pvp/pve/season, optional `变化`/`changes`; namespace `tarkov boss ...`;
+  immutable continuation `boss 页 <12-hex-token> <page>`. QQ official mention+slash routes reuse the proven SDK
+  filter path. The short-command setting changes actual metadata for all four status/Boss short handlers; namespace
+  routes and another plugin's standard short commands remain available when ours are disabled.
+- Settings: `boss_enabled`, `boss_broadcast_enabled`, `boss_qq_push_enabled` default false; targets default empty,
+  monitor/default-query modes pvp/pve/season. `boss_poll_minutes` defaults 10, independent 2–30 minute slider/clamp.
+  Save/reload applies settings. Targets use explicit UMO validation (max 50), origin restrictions and known proactive
+  platform capability. Boss and status QQ permissions are independent and do not grant platform permission.
+- `boss_monitor.py`: preserve conditional records/multiplicity and compare stable map+mob+rule identities before
+  probability pairs; never sum conditions. Rule changes remain distinct internally, but conditions are not printed.
+  Ignore array order, positions, images, translations and escort equipment. Require finite numeric 0–1 probabilities,
+  rejecting booleans/nulls. Normalize float tails to twelve decimal places while preserving values just below 100%.
+  Base maps are validated before public-cache publication; malformed 200 cannot poison the last-good resource.
+- `boss_table_image.py`: the maintainer's dark reference matrix, Boss rows, map columns, mode in the top-left cell,
+  portraits/name in the left column. Fixed twelve Boss rows, at most sixteen map columns/page, repeated Boss rows
+  when more map columns need pagination. No refresh-condition, previous-rate or change-explanation columns.
+  Distinct same-cell rates stay separate, equal rates may display once, raw comparison retains all records.
+  Unlisted cells stay blank, explicit 0% is printed; an observed removal can be a red dash. Changes are red; exact
+  100% and the corresponding Boss name are always bold red, including unchanged/first snapshots. Other values in
+  mixed cells keep their own style. Width is column-dependent (standard 16-map matrix: 2240px), normal cell font 22px.
+- New errors are image replies; rendering failure alone returns a short error sentence. Metadata/footer carries
+  mode/page, checked/fetched/compared/upstream version (GMT+8), stale/cache notes and provenance. Query replies show
+  one page with immutable continuation when needed. All selected maps remain retrievable. Query snapshots are
+  bounded to 24 hours, sixteen groups, 32 MiB payload; capacity pressure can evict earlier. Manual/304 queries do not
+  rewrite the last monitor event's highlights or comparison time. All default/current maps fit one matrix per mode.
+- `boss_portraits.py`: the API exposes `data.mobs[BossID].imagePortraitLink` and `imagePosterLink`. Portrait paths
+  are fixed from those known upstream links under assets.tarkov.dev, never arbitrary feed/user URLs. GOONS uses the
+  Knight portrait. Artwork is not bundled in the repository/package; THIRD_PARTY now attributes runtime game art.
+- **Manual-only portraits**: `boss_portraits_update` defaults false. An administrator opens this one-shot setting
+  and saves/reloads; initialize clears and persists the flag before network work, then manually updates all twelve.
+  Retry/force update requires another explicit settings action. Ordinary query/poll/startup and cache expiry never
+  download portraits. Local sanitized thumbnails expire after 365 days, including memory/disk checks; missing or
+  expired entries use a drawn placeholder. Failed updates preserve still-valid old thumbnails. This cache is separate
+  from public game-data TTL and does not create any background refresh interval.
+- Portrait transport reuses proxy/no-redirect/timeout/decoded-size protections, three download slots, at most twelve
+  fixed files, 128px RGBA sanitized PNG thumbnails. Accept PNG/WebP/JPEG and application/octet-stream (the live source
+  labels seven PNGs with that generic MIME), then require actual Pillow image decoding and bounded dimensions.
+  JSON callers retain their strict default MIME. No new runtime dependency; CJK subset rebuilt from pinned sources.
+- `boss_notifications.py`: separate `boss-notifications.sqlite3`, reusing cancellation-safe worker draining. Atomic
+  mode baseline/event writes, immutable matrix groups, per-target/page states, paused targets and query snapshots.
+  First successful mode observation is silent; adding modes starts silently, removing modes retires their backlog.
+  Scope/layout policy is `daily-goons-no-icebreaker-matrix-v3`: opening older Boss data retires old baselines, events
+  and query snapshots before use, preserving permission pauses. Filtering/layout changes are not rate-change alerts.
+  Status notifications, account bindings, raw public resources and valid portraits are unaffected by the migration.
+- One cancellable/nonoverlapping Boss poller serves all targets, fresh conditional checks independent of manual TTL.
+  Equivalent bodies reuse normalized state. Fetch/format/stale failure does not advance baselines. Successful modes
+  can enqueue/submit while another fails, with whole-cycle backoff. Disabled/no effective modes or targets means no
+  dedicated Boss poller. Shutdown awaits pollers, database workers, explicit portrait work and local I/O workers.
+- At most five pages per target per cycle, sharing the budget across modes in event/page order; the current three
+  one-page mode events can submit in one cycle. Temporary failure blocks later pages for that target and retries at
+  most three times; submitted pages are not resent. Permission failures pause that target durably. True means
+  submitted/matched platform, not receipt; None is terminal unknown for that page, never complete delivery. Disable/
+  save/reload then enable/save/reload resets pause/backlog and starts a silent baseline. Events are bounded to seven
+  days, 200 and 64 MiB payload. Quiet-hours/coalescing and exactly-once delivery are not implemented.
+
+Validation:
+
+- **275 tests passed** with the project Python 3.12 venv: scope/GOONS/Icebreaker, dark matrix axes/all fixed Boss rows,
+  mixed rates and exact 100% styling, immutable column paging, policy migration, atomic rollback/restart, mode
+  isolation, target/page retry and pause/unknown states, cross-mode page budgets, cache 200→changed 200→304 and
+  malformed fallback, lifecycle, manual portrait trigger/persistence/reset, 365-day memory/disk expiry with no
+  download, explicit update failure, image MIME/decode bounds and cancellation. Package remains under 1 MiB.
+- AstrBot 4.16.0 original registration/wake/filter/parser replay: **101 cases passed** across both QQ transports,
+  group/private, slash/namespace/localized commands, differing prefixes, access/settings gates and short-command
+  opt-out coexistence. External boundaries are doubles; real QQ image/proactive delivery still needs bot acceptance.
+- Live read-only smoke: base maps plus zh/en and conditional rechecks for all three modes, no stale/translation
+  warnings, normalized-state reuse. Sixteen included maps per mode; pvp/pve/season yielded 29/29/27 original selected
+  records, one matrix per mode, two exact-100% records per mode. Explicit portrait-update action was exercised in a
+  temporary fixture configuration; ordinary image preparation only reads its local cache. Checked matrix previews
+  against the reference, without BEAR/USEC, Icebreaker or removed detail columns. No chat messages were sent.
+  Previews/scripts/replay reports remain under `/tmp`; no downloaded portraits are packaged.
+- `git diff --check` passes. README/checklist unchanged. Item queries and legacy-player full image migration remain
+  future work. No commit/push/release metadata change or deployed configuration update was performed.
+
+## 34. Boss map selection and Ground Zero label (2026-10-24)
+
+Maintainer requested removing the original Ground Zero, Lab Dark, Labyrinth and Ground Zero tutorial, and renaming
+the retained Ground Zero 21+ column to `中心区`. Icebreaker remains excluded. Applied to shared normalization,
+monitoring and matrix headers, with settings hints and `docs/development-plan.md` updated; README/checklist unchanged.
+
+- Excluded map IDs: `653e6760052c01c1c805532f` (original Ground Zero), `6a294a5b5eb5f9a1700417b7` (Lab Dark),
+  `6733700029c367a3d40b02af` (Labyrinth), `68236e8153654e8c1200798a` (tutorial), plus the existing Icebreaker ID.
+  Equivalent normalized names are excluded too. Retain `65b8d6f5cdde2479cb2a3125` / `ground-zero-21`; both normalized
+  display name and matrix header are `中心区`. Its own probabilities remain intact; do not merge the removed map.
+- Current columns: 中心区、白天工厂、夜间工厂、海关、森林、海岸线、立交桥、储备站、灯塔、塔科夫街区、实验室、码头.
+  The current twelve-map matrix is 1760px wide. Boss rows, red/bold rules and manual-only 365-day portraits are unchanged.
+- Scope policy is now `daily-goons-selected-maps-matrix-v4`. Existing migration retires older Boss baselines, events
+  and query snapshots, so removed columns cannot return through history/continuation and scope changes do not emit
+  false removal alerts. Re-establish the normal silent baseline; account/status data and portraits remain untouched.
+- Extended the existing scope regression to cover all excluded IDs and normalized-name aliases, retained 21+ identity,
+  its 2% synthetic value, and resulting headers. Full suite: **275 passed**. Checked the existing cached real regular
+  maps/zh response offline: twelve columns, one matrix, center data still from the retained 21+ ID. No portrait or
+  upstream downloads, chat messages, commit or push were performed for this map-only change. `git diff --check` passes.
+
+## 35. Publish accumulated work on branch 1024 (2026-10-24)
+
+Maintainer explicitly requested pushing `1024` to GitHub after finding no remote branch. Checked the local branch
+and GitHub: `1024` was local at `966d0fc` with the accumulated §§29–34 implementation/documentation uncommitted;
+no matching remote branch existed. This commit packages the public cache, QQ routing, status queries/broadcasts,
+Boss monitoring/matrix/manual portraits, latest twelve-map scope, research/design notes and regression coverage.
+
+- Publication target: `https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/tree/1024`, through origin with
+  upstream tracking. Use a normal push and verify the remote head against the local commit; no force push or merge.
+- Validation reused from the completed implementation: 275 tests passed after the final map selection; the most
+  recent SDK routing replay passed 101 cases. No runtime code changed during publication preparation, so these
+  checks were not unnecessarily repeated. Staged whitespace validation is checked before committing.
+- README/checklist remain untouched. Temporary research/downloads, portrait caches, SQLite files and generated
+  distributions are not included. No pull request or release was requested as part of this branch publication.

@@ -26,8 +26,13 @@ https://github.com/google/fonts, rebuilt by `tools/build_fonts.py`):
 - `ShareTechMono-Regular.ttf`: Share Tech Mono, Copyright (c) 2012 Carrois Type Design, Ralph du Carrois, with
   Reserved Font Name 'Share', unmodified (a modified copy could not keep the reserved name).
 
-**Drawings.** The image reply draws its game references itself (a military dog tag, exit-status bars, a dossier
-page). No game assets, logos or the game's own fonts are used.
+**Drawings and Boss portraits.** Player/status cards draw their game references themselves (a military dog tag,
+exit-status bars, a dossier page). The Boss matrix can display game character portraits identified by
+`data.mobs.*.imagePortraitLink` in `https://json.tarkov.dev/{mode}/maps`, served by `https://assets.tarkov.dev`.
+Portraits are game artwork of Battlestate Games; they are not bundled in this GPL source/package. An explicit
+administrator settings action downloads fixed known portrait paths into the plugin's local runtime data directory,
+sanitizes them to small thumbnails and caches them for 365 days. Ordinary queries never download portraits. This
+attribution does not relicense the artwork. Missing/expired portraits use a locally drawn placeholder.
 
 This plugin is not affiliated with Battlestate Games or tarkov.dev. Plugin source is distributed under
 GPL-3.0-or-later (see LICENSE). aiohttp is a runtime dependency, not vendored; its own license applies.

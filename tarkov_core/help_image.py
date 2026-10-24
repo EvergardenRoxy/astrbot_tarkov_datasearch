@@ -16,7 +16,7 @@ def help_rows(card):
     """(what, command, remark) of the command table."""
     arena = '不写名字时查自己' + ('；不写模式的查询也会看竞技场' if card['arena_by_default'] else '')
     command = card['command']
-    return [
+    rows = [
         ('查自己', f'{command} [模式]', '需要先绑定'),
         ('查别人', f'{command} [模式] <昵称、账号ID 或网址>', ''),
         ('竞技场', f'{command} 竞技场 <昵称、账号ID 或网址>', arena),
@@ -24,6 +24,11 @@ def help_rows(card):
         ('解绑', f'{command} 解绑', ''),
         ('帮助', f'{command} 帮助', ''),
     ]
+    if card.get('status_enabled'):
+        rows.append(('服务器状态', f'{command} status', '图片查询；播报需要单独开启'))
+    if card.get('boss_enabled'):
+        rows.append(('Boss 刷率', f'{command} boss [模式] [变化]', '全表分页；100% 红字加粗，播报单独开启'))
+    return rows
 
 
 MODE_CHIPS = (('pvp', 'PVP', 'pvp / 常规'), ('pve', 'PVE', 'pve'), ('season', 'PVP 赛季', '赛季 / season'),

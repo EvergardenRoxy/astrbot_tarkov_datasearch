@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class Event:
     unified_msg_origin = 'platform:group:1'
     admin = False
+    platform_name = 'platform'
 
     def __init__(self, text='/tarkov pve Test_Player', sender='alice'):
         self.message_str = text
@@ -27,6 +28,7 @@ class Event:
         self.stopped = False
 
     def get_sender_id(self): return self.sender
+    def get_platform_name(self): return self.platform_name
     def plain_result(self, text): return text
     def chain_result(self, chain): return chain
     def is_admin(self): return self.admin
@@ -43,6 +45,10 @@ class ImageStub:
 
 class PlainStub:
     def __init__(self, text): self.text = text
+
+
+class MessageChainStub:
+    def __init__(self, chain=None): self.chain = chain or []
 
 
 class FakeNames:
@@ -80,8 +86,11 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         api.logger = types.SimpleNamespace(**{level: (lambda *a: self.logs.append(a)) for level in ('warning', 'info', 'debug')})
         event = types.ModuleType('astrbot.api.event')
         decorator = lambda *a, **k: lambda f: f
-        event.filter = types.SimpleNamespace(command=decorator)
+        class CustomFilter:
+            def __init__(self, raise_error=True): pass
+        event.filter = types.SimpleNamespace(command=decorator, custom_filter=decorator, CustomFilter=CustomFilter)
         event.AstrMessageEvent = Event
+        event.MessageChain = MessageChainStub
         star = types.ModuleType('astrbot.api.star')
 
         class Star:
@@ -95,7 +104,9 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         components.Plain = PlainStub
         self.modules = patch.dict(sys.modules, {'astrbot': types.ModuleType('astrbot'), 'astrbot.api': api,
                                                 'astrbot.api.event': event, 'astrbot.api.star': star,
-                                                'astrbot.api.message_components': components})
+                                                'astrbot.api.message_components': components,
+                                                'astrbot.core.star.star_handler': types.SimpleNamespace(
+                                                    star_handlers_registry=types.SimpleNamespace(get_handlers_by_module_name=lambda name: []))})
         self.modules.start()
         package = types.ModuleType('tarkov_test_plugin')
         package.__path__ = [str(ROOT)]
@@ -998,3 +1009,64 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
             await self.collect(plugin, Event('/tarkov pve 1'))
         self.assertEqual(seen, {'proxy': 'http://proxy:8080', 'timeout_seconds': 60})
         self.assertIsNone(self.plugin({'proxy_url': 'http://proxy:8080'}).proxy())
+
+    async def test_qq_slash_entry_reuses_permissions_and_can_be_disabled(self):
+        self.profiles[('pve', 7)] = profile(aid=7)
+        for platform in ('qq_official', 'qq_official_webhook'):
+            event = Event('/tarkov pve 7')
+            event.platform_name = platform
+            plugin = self.plugin({'command_style': 'mention_slash'})
+            with patch.object(self.transport, 'fetch_profile', self.fake_fetch):
+                result = [r async for r in plugin.qq_slash_command(event)]
+            self.assertIn('【塔科夫 PVE 档案】', result[0])
+            self.assertTrue(event.stopped)
+            blocked = Event('/tarkov pve 7')
+            blocked.platform_name = platform
+            plugin = self.plugin({'access_mode': 'admin_only'})
+            self.assertEqual([r async for r in plugin.qq_slash_command(blocked)], ['此会话或用户没有塔科夫查询权限。'])
+            self.assertTrue(blocked.stopped)
+            disabled = Event('/tarkov pve 7')
+            disabled.platform_name = platform
+            plugin = self.plugin({'qq_official_compat_enabled': False})
+            self.assertEqual([r async for r in plugin.qq_slash_command(disabled)], [])
+            self.assertFalse(disabled.stopped)
+        other = Event('/tarkov pve 7')
+        other.platform_name = 'telegram'
+        self.assertEqual([r async for r in self.plugin().qq_slash_command(other)], [])
+        self.assertFalse(self.module.QQOfficialFilter().filter(other, {}))
+
+    async def test_mention_slash_style_is_used_in_help_and_hints(self):
+        plugin = self.plugin({'command_style': 'mention_slash'})
+        self.assertEqual(plugin.cmd('帮助'), '@机器人 /tarkov 帮助')
+        self.assertEqual(plugin.help_card()['command'], '@机器人 /tarkov')
+        self.assertIn('@机器人 /tarkov', plugin.help_text())
+        result = await self.run_command(plugin, Event('/tarkov'))
+        self.assertIn('@机器人 /tarkov 绑定', result[0])
+
+    async def test_bind_failure_is_not_listed_as_a_missing_profile(self):
+        self.profiles[('pve', 7)] = profile(aid=7)
+        plugin = self.plugin()
+        with patch.object(self.transport, 'fetch_profile', self.failing({'profile'}, TimeoutError('timeout'))):
+            result = await self.collect(plugin, Event('/tarkov 绑定 7'))
+        self.assertIn('已绑定', result[0])
+        self.assertIn('PVP 模式这次没有查到（连接超时）', result[0])
+        self.assertIn('PVP 赛季 模式的档案要在', result[0])
+        self.assertNotIn('PVP、PVP 赛季 模式的档案要在', result[0])
+
+    async def test_public_cache_is_lazy_and_preserves_plugin_proxy_and_timeout(self):
+        from unittest.mock import AsyncMock
+        plugin = self.plugin({'public_data_cache_minutes': 9, 'proxy_enabled': True,
+                              'proxy_url': 'http://proxy:8080', 'download_timeout_seconds': 300})
+        self.assertFalse(plugin.public_data.path.exists())
+        fetch = AsyncMock(return_value=({'status': 200, 'etag': '"items"'}, b'{"data":{"items":{}}}'))
+        with patch.object(self.module, 'fetch_public', fetch):
+            first = await plugin.public_resource('items', mode='pvp')
+            second = await plugin.public_resource('items', mode='pvp')
+        self.assertEqual(first.body, second.body)
+        fetch.assert_awaited_once()
+        key = fetch.call_args.args[0]
+        self.assertEqual(key.path, '/regular/items')
+        self.assertEqual(fetch.call_args.kwargs, {'etag': None, 'last_modified': None,
+                                                'timeout_seconds': 60, 'proxy': 'http://proxy:8080'})
+        await plugin.terminate()
+        self.assertFalse(plugin.public_data.pending)

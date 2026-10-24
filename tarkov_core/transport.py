@@ -1,5 +1,7 @@
 """HTTP access to players.tarkov.dev: one fixed host, no redirects, bounded size and time."""
 import asyncio
+import datetime
+import email.utils
 import io
 import json
 import time
@@ -30,9 +32,35 @@ class QueryError(Exception):
     """A failure whose message is safe and meant for the chat."""
 
 
+class ConnectionFailure(QueryError):
+    """A transport failure, eligible for an explicitly labelled cached fallback."""
+
+
 class NotFound(QueryError):
     def __init__(self, message='tarkov.dev 上没有这份数据'):
         super().__init__(message)
+
+
+class HTTPError(QueryError):
+    """A refused request, retaining status and Retry-After without exposing connection details."""
+    def __init__(self, message, status, retry_after=None):
+        super().__init__(message)
+        self.status = status
+        self.retry_after = retry_after
+
+
+def retry_seconds(value):
+    if not value:
+        return None
+    try:
+        if value.isascii() and value.isdigit():
+            return min(86400, int(value))
+        deadline = email.utils.parsedate_to_datetime(value)
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=datetime.timezone.utc)
+        return min(86400, max(0, deadline.timestamp()-time.time()))
+    except (ValueError, TypeError, OverflowError):
+        return None
 
 
 def validate_proxy(value):
@@ -51,28 +79,45 @@ async def get(path, sink, *, limits, timeout_seconds, proxy=None, etag=None):
     Returns {'status': 200 or 304, 'etag': str or None}. 304 only happens when `etag` was sent.
     Raises NotFound for 404, QueryError for other refusals and limits, TimeoutError with the phase reached.
     """
+    result = await http_get(HOST, path, sink, limits=limits, timeout_seconds=timeout_seconds, proxy=proxy, etag=etag)
+    # Keep the player/index transport contract; public resources also use Last-Modified.
+    return {key: result[key] for key in ('status', 'etag')}
+
+
+async def http_get(host, path, sink, *, limits, timeout_seconds, proxy=None, etag=None, last_modified=None,
+                   content_types=('application/json',)):
+    """Shared bounded HTTP reader. Callers own the fixed host and validated resource path."""
     proxy = validate_proxy(proxy) if proxy else None
     compressed_limit, decoded_limit = limits
-    headers = {'User-Agent': USER_AGENT, 'Accept': 'application/json', 'Accept-Encoding': 'gzip'}
+    headers = {'User-Agent': USER_AGENT, 'Accept': ', '.join(content_types), 'Accept-Encoding': 'gzip'}
     if etag:
         headers['If-None-Match'] = etag
+    elif last_modified:
+        headers['If-Modified-Since'] = last_modified
     stats = {'phase': '连接/等待响应头', 'received': 0, 'written': 0, 'started': time.monotonic()}
     timeout = aiohttp.ClientTimeout(total=timeout_seconds, connect=min(30, timeout_seconds))
     try:
         # trust_env=False: only the plugin's own proxy setting applies, never the host's environment.
         async with aiohttp.ClientSession(timeout=timeout, auto_decompress=False, trust_env=False) as session:
-            async with session.get(HOST+path, allow_redirects=False, proxy=proxy, headers=headers) as response:
-                if response.status == 304 and etag:
-                    return {'status': 304, 'etag': etag}
+            async with session.get(host+path, allow_redirects=False, proxy=proxy, headers=headers) as response:
+                metadata = {'status': response.status, 'etag': response.headers.get('ETag'),
+                            'last_modified': response.headers.get('Last-Modified'),
+                            'cache_control': response.headers.get('Cache-Control')}
+                if response.status == 304 and (etag or last_modified):
+                    metadata['etag'] = metadata['etag'] or etag
+                    metadata['last_modified'] = metadata['last_modified'] or last_modified
+                    return metadata
                 if response.status == 404:
                     raise NotFound()
                 if response.status == 403:
-                    raise QueryError(BLOCKED)
+                    raise HTTPError(BLOCKED, 403)
                 if response.status == 429:
-                    raise QueryError('tarkov.dev 暂时限制了访问频率（HTTP 429），请过几分钟再试')
+                    raise HTTPError('tarkov.dev 暂时限制了访问频率（HTTP 429），请过几分钟再试', 429,
+                                    retry_seconds(response.headers.get('Retry-After')))
                 if response.status != 200:
-                    raise QueryError(f'tarkov.dev 返回 HTTP {response.status}，请稍后再试')
-                if response.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
+                    raise HTTPError(f'tarkov.dev 返回 HTTP {response.status}，请稍后再试', response.status,
+                                    retry_seconds(response.headers.get('Retry-After')))
+                if response.headers.get('Content-Type', '').split(';')[0].strip().lower() not in content_types:
                     raise QueryError('tarkov.dev 返回的不是数据文件，请稍后再试')
                 encoding = response.headers.get('Content-Encoding', '').lower()
                 if encoding not in ('', 'identity', 'gzip'):
@@ -92,7 +137,7 @@ async def get(path, sink, *, limits, timeout_seconds, proxy=None, etag=None):
                     raise QueryError('tarkov.dev 返回的数据不完整，请稍后再试')
                 if not stats['written']:
                     raise QueryError('tarkov.dev 返回了空数据，请稍后再试')
-                return {'status': 200, 'etag': response.headers.get('ETag')}
+                return metadata
     except TimeoutError as exc:
         elapsed = time.monotonic()-stats['started']
         detail = f"阶段={stats['phase']}，已接收={stats['received']}字节，耗时={elapsed:.1f}秒"
@@ -100,7 +145,7 @@ async def get(path, sink, *, limits, timeout_seconds, proxy=None, etag=None):
         raise TimeoutError(detail) from exc
     except aiohttp.ClientError as exc:
         # aiohttp messages can include the proxy URL (with credentials); show the type only.
-        raise QueryError(f'连接 tarkov.dev 失败（{type(exc).__name__}），请稍后再试') from None
+        raise ConnectionFailure(f'连接 tarkov.dev 失败（{type(exc).__name__}），请稍后再试') from None
     except zlib.error:
         raise QueryError('tarkov.dev 返回的数据无法解压，请稍后再试') from None
 

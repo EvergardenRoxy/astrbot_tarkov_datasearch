@@ -43,13 +43,108 @@
         "default": "mention",
         "options": [
             "mention",
-            "slash"
+            "slash",
+            "mention_slash"
         ],
         "labels": [
             "@机器人 tarkov（QQ 官方机器人等）",
-            "/tarkov（支持 / 唤醒的平台）"
+            "/tarkov（支持 / 唤醒的平台）",
+            "@机器人 /tarkov（QQ 官方机器人提及后加斜杠）"
         ],
-        "hint": "帮助（文字和图片）以及所有回复里的操作提示，按哪种写法显示命令。“@机器人 tarkov”：适合只能通过 @机器人 调用、指令不加 / 的平台（如未经验证的 QQ 官方机器人）。“/tarkov”：适合支持 / 唤醒的平台（如 aiocqhttp、Telegram）。只影响显示的写法，两种写法插件都能识别。"
+        "hint": "帮助及所有操作提示的命令写法。可选 @机器人 tarkov、/tarkov 或 @机器人 /tarkov。只影响显示；QQ 官方提及后的斜杠路由由下一项兼容开关控制。"
+    },
+    "qq_official_compat_enabled": {
+        "type": "bool",
+        "description": "QQ 官方机器人提及后斜杠命令兼容",
+        "default": true,
+        "hint": "支持 @机器人 /tarkov 和 @机器人 /塔科夫。在 AstrBot 未将 / 配为唤醒前缀时补充 QQ 官方命令入口；关闭不影响框架本来能识别的命令。不启用主动推送，也不修改 AstrBot 全局唤醒配置。"
+    },
+    "public_data_cache_minutes": {
+        "type": "int",
+        "description": "公共游戏数据按需缓存时间（分钟）",
+        "default": 5,
+        "slider": {"min": 0, "max": 1440, "step": 1},
+        "hint": "状态查询及后续物品、Boss 功能共用。按资源、模式、语言保存；过期后查询才检查更新，不启动后台轮询。0 表示每次条件检查。状态播报每轮会条件复查，不受此缓存时间阻止。"
+    },
+    "status_enabled": {
+        "type": "bool",
+        "description": "服务器状态图片查询",
+        "default": false,
+        "hint": "开启后可用 status、状态或 tarkov status 查询服务器公开状态。无论原输出设置为何值，此功能均回复图片。关闭时不为本功能下载数据。"
+    },
+    "status_broadcast_enabled": {
+        "type": "bool",
+        "description": "服务器状态变化图片播报",
+        "default": false,
+        "hint": "依赖状态查询开关，并且必须填写播报目标。首次只保存基线，随后故障、恢复或新增有效公告才播报；不变时静默，网络失败不当作游戏停服。明确权限错误会暂停对应目标；修复权限后先关闭播报并保存重载，再开启并保存重载以重置。"
+    },
+    "status_poll_minutes": {
+        "type": "int",
+        "description": "服务器状态轮询间隔（分钟）",
+        "default": 5,
+        "slider": {"min": 2, "max": 30, "step": 1},
+        "hint": "2～30 分钟，保存后重载生效。慢请求不会重叠，失败会退避。检查频率不代表上游数据更新频率。"
+    },
+    "status_notify_targets": {
+        "type": "list",
+        "description": "服务器状态播报目标",
+        "default": [],
+        "hint": "每项填写完整 AstrBot 会话标识（/sid 查看），最多 50 项。留空不播报。目标还必须符合限定聊天设置；不会自动向所有聊天群发。查询权限控制查询用户，播报由管理员在此明确授权目标会话。"
+    },
+    "status_qq_push_enabled": {
+        "type": "bool",
+        "description": "允许向 QQ 官方机器人会话播报状态",
+        "default": false,
+        "hint": "仅在已验证当前 AstrBot、机器人及群权限支持主动图片消息后开启。此项不授予 QQ 平台权限；未开启不影响用户主动查询状态。"
+    },
+    "boss_enabled": {
+        "type": "bool",
+        "description": "日常 Boss 刷率全表图片查询",
+        "default": false,
+        "hint": "仅含指定 11 类日常 Boss 和三狗（GOONS，以 Knight 记录为准），不含普通 AI 或活动变体。排除破冰船、原中心区、实验室 Dark、迷宫和中心区教程；原中心区 21+ 显示为中心区。深色矩阵中多概率分别显示不相加，变化标红，100% 红字加粗。头像仅通过下方手动更新项下载。"
+    },
+    "boss_portraits_update": {
+        "type": "bool",
+        "description": "手动拉取/更新 Boss 头像（执行一次后自动关闭）",
+        "default": false,
+        "hint": "打开并保存重载后从 assets.tarkov.dev 拉取 12 个头像，执行前自动复位。缓存有效期 365 天；普通查询、轮询、启动或缓存过期均不自动下载。缺失、过期或下载失败时使用占位图，不影响刷率。要重试或强制更新，请再次打开并保存重载。"
+    },
+    "boss_broadcast_enabled": {
+        "type": "bool",
+        "description": "Boss 刷率变化图片播报",
+        "default": false,
+        "hint": "依赖 Boss 查询开关、监控模式和播报目标。首次静默，后续成功快照有变化才生成全表。每目标每轮最多提交 5 页并保存逐页结果，剩余页下轮继续；已提交页不重发。权限错误暂停目标，修复后关闭保存重载，再开启保存重载以重置。"
+    },
+    "boss_poll_minutes": {
+        "type": "int",
+        "description": "Boss 刷率轮询间隔（分钟）",
+        "default": 10,
+        "slider": {"min": 2, "max": 30, "step": 1},
+        "hint": "2～30 分钟，保存重载生效；慢请求不重叠，失败退避。此频率不保证上游同步更新。"
+    },
+    "boss_modes": {
+        "type": "list",
+        "description": "Boss 监控模式及默认查询模式",
+        "default": ["pvp", "pve", "season"],
+        "hint": "可填 pvp、pve、season（赛季）。各模式分别保存基线；新加模式首次静默。空列表不监控，仍可显式 boss pve 等查询。覆盖约定地图范围内的日常 Boss 及三狗。"
+    },
+    "boss_notify_targets": {
+        "type": "list",
+        "description": "Boss 刷率播报目标",
+        "default": [],
+        "hint": "填写完整 AstrBot 会话标识（/sid 查看），最多 50 项；留空不轮询、不播报。目标还须符合限定聊天及平台主动消息能力，不会向所有可用会话发送。"
+    },
+    "boss_qq_push_enabled": {
+        "type": "bool",
+        "description": "允许向 QQ 官方会话播报 Boss 刷率",
+        "default": false,
+        "hint": "验证当前 AstrBot、机器人及群权限支持主动图片消息后启用；不授予平台权限。关闭不影响主动查询。与状态播报的 QQ 开关独立。"
+    },
+    "short_commands_enabled": {
+        "type": "bool",
+        "description": "启用简短查询命令",
+        "default": true,
+        "hint": "控制 status/状态、boss/刷率（含 QQ 斜杠入口）的实际处理器启用状态。冲突时关闭并保存重载，仍可用 tarkov status、tarkov boss。"
     },
     "access_mode": {
         "type": "string",

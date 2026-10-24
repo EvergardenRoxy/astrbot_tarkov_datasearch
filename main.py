@@ -6,7 +6,7 @@ import sqlite3
 import time
 
 from astrbot.api import AstrBotConfig, logger
-from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.message_components import Image, Plain
 from astrbot.api.star import Context, Star, StarTools, register
 
@@ -17,10 +17,21 @@ from .tarkov_core.names import NAME, SUGGESTIONS, NameIndex
 from .tarkov_core.arena import build_arena_card, render_arena_markdown, render_arena_text, summarize_arena
 from .tarkov_core.arena_image import render_arena_image
 from .tarkov_core.card import BOT_LIMIT, build_card
+from .tarkov_core.boss_monitor import build_table, normalize_bosses
+from .tarkov_core.boss_notifications import BossNotifications, BossStore
+from .tarkov_core.boss_portraits import BossPortraits
+from .tarkov_core.boss_table_image import paginate_table, render_boss_page
 from .tarkov_core.help_image import render_help_image
 from .tarkov_core.image import render_image
 from .tarkov_core.output import render_markdown, render_text
+from .tarkov_core.platform_compat import QQ_OFFICIAL, is_qq_official, set_short_status_routes
+from .tarkov_core.notifications import NotificationStore, PermanentDeliveryError, StatusNotifications
+from .tarkov_core.polling import PollingTask
 from .tarkov_core.profile import summarize
+from .tarkov_core.public_api import ResourceKey, fetch as fetch_public, mode_path as public_mode_path
+from .tarkov_core.resource_cache import ResourceCache
+from .tarkov_core.server_status import normalize_status
+from .tarkov_core.status_image import render_status_image
 from .tarkov_core.transport import NotFound, QueryError
 
 COMMAND = re.compile(r'^/?(?:tarkov|塔科夫)(?:\s+|$)', re.I)
@@ -39,10 +50,17 @@ OUTPUT_MODES = ('image', 'text', 'markdown')
 HELP_WORDS = ('help', '帮助')
 BIND_WORDS = ('bind', '绑定')
 UNBIND_WORDS = ('unbind', '解绑')
+STATUS_WORDS = ('status', '状态')
+BOSS_WORDS = ('boss', '刷率')
 
 
 class IndexTimeout(TimeoutError):
     """A name index download timed out (the one download the timeout setting can help with)."""
+
+
+class QQOfficialFilter(filter.CustomFilter):
+    def filter(self, event, config):
+        return is_qq_official(event)
 
 
 def every(seconds):
@@ -72,6 +90,58 @@ class TarkovPlugin(Star):
         self.pending = {}
         self.fetches = asyncio.Semaphore(FETCHES_AT_ONCE)
         self.active = set()
+        self.public_data = ResourceCache(self.root/'public-data', self.download_public)
+        self.status_store = NotificationStore(self.root/'notifications.sqlite3')
+        self.status_image_slots = asyncio.Semaphore(2)
+        self._terminated = False
+        self.status_notifications = StatusNotifications(self.status_store,
+            self.fetch_status_for_monitor, self.prepare_status_image, self.send_status_notification,
+            self.status_targets, self.status_broadcast_active, self.status_monitor_error)
+        self.status_poller = PollingTask(self.status_notifications.cycle, self.status_broadcast_active,
+                                        self.status_interval, self.status_monitor_error)
+        self.boss_store = BossStore(self.root/'boss-notifications.sqlite3')
+        self.boss_image_slots = asyncio.Semaphore(2)
+        self.boss_portraits = BossPortraits(self.root/'boss-portraits')
+        self.boss_normalized = {}
+        self.boss_notifications = BossNotifications(self.boss_store,
+            self.fetch_boss_for_monitor, self.prepare_boss_image, self.send_boss_notification,
+            self.boss_modes, self.boss_targets, self.boss_broadcast_active, self.boss_monitor_error)
+        self.boss_poller = PollingTask(self.boss_notifications.cycle, self.boss_broadcast_active,
+                                      self.boss_interval, self.boss_monitor_error)
+        set_short_status_routes(self.__module__, self.config.get('short_commands_enabled', True) is True)
+
+    async def initialize(self):
+        if self.config.get('boss_portraits_update', False) is True:
+            # Consume the administrator's one-shot action before any network work, preventing reload loops.
+            self.config['boss_portraits_update'] = False
+            save = getattr(self.config, 'save_config', None)
+            try:
+                if callable(save):
+                    await asyncio.to_thread(save)
+                count = await self.boss_portraits.refresh(proxy=self.proxy())
+                logger.info('Tarkov Boss portraits manually updated: %s/12; local cache lifetime is 365 days', count)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning('Tarkov manual portrait update failed: %s', type(exc).__name__)
+        if self.status_broadcast_active():
+            self.status_poller.reconfigure()
+        else:
+            await self.status_poller.close()
+            if self.status_enabled() and self.config.get('status_broadcast_enabled', False) is True:
+                logger.info('Tarkov status broadcasts idle: no eligible configured targets; check origins, platform capability and QQ push setting')
+            if self.status_store.path.exists():
+                # Disabled monitoring establishes a new silent baseline when enabled again.
+                await self.status_store.thread(self.status_store.retire)
+        if self.boss_broadcast_active():
+            await self.boss_store.thread(self.boss_store.reconcile, self.boss_modes(), self.boss_targets())
+            self.boss_poller.reconfigure()
+        else:
+            await self.boss_poller.close()
+            if self.boss_store.path.exists():
+                await self.boss_store.thread(self.boss_store.retire)
+            if self.boss_enabled() and self.config.get('boss_broadcast_enabled', False) is True:
+                logger.info('Tarkov Boss broadcasts idle: no eligible configured modes/targets; check settings and platform capability')
 
     def int_setting(self, key, default, low, high):
         try:
@@ -147,6 +217,8 @@ class TarkovPlugin(Star):
 
     def help_text(self):
         index = f'；另外会查 tarkov.dev 的昵称名单（{every(self.names.refresh_seconds)}更新一次）' if self.index_enabled() else ''
+        status = f"服务器状态图片：{self.cmd('status')}\n" if self.status_enabled() else ''
+        boss = f"Boss 全表图片：{self.cmd('boss [模式]')}；最近变化：{self.cmd('boss [模式] 变化')}\n" if self.boss_enabled() else ''
         return ('塔科夫玩家档案查询（数据来自 tarkov.dev）\n'
                 f"{self.style()['help']}\n"
                 f"绑定自己：{self.cmd('绑定 <tarkov.dev 玩家页网址或账号ID>')}　解绑：{self.cmd('解绑')}\n"
@@ -158,7 +230,7 @@ class TarkovPlugin(Star):
                 '第一次查某个玩家前，请先在 tarkov.dev 用对应模式搜索他（链接见最后一行），'
                 '再把跳转后的网址发给我；之后就能直接用名字查（按 ID 或网址查到过的名字会被记住' + index + '）。\n'
                 '如果需要查询最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面。\n'
-                + self.search_line())
+                + status + boss + self.search_line())
 
     def search_line(self):
         """The search page as a text line. Every help reply ends with it, the image included (maintainer: the link
@@ -168,9 +240,14 @@ class TarkovPlugin(Star):
     def help_card(self):
         """What the help image shows; the same settings as help_text."""
         mode = self.default_mode()
-        return {'command': self.style()['command'], 'note': self.style()['note'], 'mode': mode, 'label': label_of(mode), 'search': search_url(mode), 'example': page_url(mode, 1234567),
+        card = {'command': self.style()['command'], 'note': self.style()['note'], 'mode': mode, 'label': label_of(mode), 'search': search_url(mode), 'example': page_url(mode, 1234567),
                 'arena_by_default': self.arena_by_default(),
                 'index': every(self.names.refresh_seconds) if self.index_enabled() else None}
+        if self.status_enabled():
+            card['status_enabled'] = True
+        if self.boss_enabled():
+            card['boss_enabled'] = True
+        return card
 
     async def help_reply(self, event):
         """The help in the configured output: an image (maintainer: the text is hard to read on phones) followed by
@@ -189,15 +266,71 @@ class TarkovPlugin(Star):
         text = COMMAND.sub('', event.message_str.strip(), count=1).strip()
         if not self.allowed(event):
             logger.info('Tarkov access denied; mode=%s', self.config.get('access_mode', 'all'))
-            yield event.plain_result('此会话或用户没有塔科夫查询权限。')
+            if text.split() and text.split()[0].lower() in STATUS_WORDS:
+                yield await self.status_picture(event, {'error': '此会话或用户没有塔科夫查询权限。'})
+            elif text.split() and text.split()[0].lower() in BOSS_WORDS:
+                yield await self.boss_picture(event, {'error': '此会话或用户没有塔科夫查询权限。'})
+            else:
+                yield event.plain_result('此会话或用户没有塔科夫查询权限。')
             event.stop_event()
             return
         async for result in self.handle(event, text):
             yield result
         event.stop_event()
 
+    @filter.command('/'+'tarkov', alias={'/'+'塔科夫'})
+    @filter.custom_filter(QQOfficialFilter)
+    async def qq_slash_command(self, event: AstrMessageEvent):
+        # QQ mentions wake AstrBot even when '/' is not configured as a wake prefix. In that case the
+        # standard command filter still sees the slash. Its normal wake/permission/plugin checks apply here too.
+        if not is_qq_official(event) or self.config.get('qq_official_compat_enabled', True) is not True:
+            return
+        async for result in self.tarkov_command(event):
+            yield result
+
+    @filter.command('status', alias={'状态'})
+    async def status_command(self, event: AstrMessageEvent):
+        if self.config.get('short_commands_enabled', True) is not True:
+            return
+        yield await self.status_query(event, arguments=self.status_arguments(event))
+        event.stop_event()
+
+    @filter.command('/'+'status', alias={'/'+'状态'})
+    @filter.custom_filter(QQOfficialFilter)
+    async def qq_status_command(self, event: AstrMessageEvent):
+        if not is_qq_official(event) or self.config.get('qq_official_compat_enabled', True) is not True:
+            return
+        async for result in self.status_command(event):
+            yield result
+
+    @filter.command('boss', alias={'刷率'})
+    async def boss_command(self, event: AstrMessageEvent):
+        if self.config.get('short_commands_enabled', True) is not True:
+            return
+        yield await self.boss_query(event, self.status_arguments(event))
+        event.stop_event()
+
+    @filter.command('/'+'boss', alias={'/'+'刷率'})
+    @filter.custom_filter(QQOfficialFilter)
+    async def qq_boss_command(self, event: AstrMessageEvent):
+        if not is_qq_official(event) or self.config.get('qq_official_compat_enabled', True) is not True:
+            return
+        async for result in self.boss_command(event):
+            yield result
+
+    @staticmethod
+    def status_arguments(event):
+        words = event.message_str.strip().split(maxsplit=1)
+        return words[1] if len(words) > 1 else ''
+
     async def handle(self, event, text):
         words = text.split()
+        if words and words[0].lower() in STATUS_WORDS:
+            yield await self.status_query(event, arguments=' '.join(words[1:]))
+            return
+        if words and words[0].lower() in BOSS_WORDS:
+            yield await self.boss_query(event, ' '.join(words[1:]))
+            return
         action = 'query'
         if words and words[0].lower() in HELP_WORDS:
             yield await self.help_reply(event)
@@ -384,7 +517,7 @@ class TarkovPlugin(Star):
                                       + self.first_time(mode, '自己', self.cmd('绑定'), explicit=mode == 'arena'))
         nickname = (found.get(mode) or next(iter(found.values())))['nickname']
         await asyncio.to_thread(self.accounts.bind, self.binding_key(event), aid, nickname)
-        missing = [m for m in self.looked_at(mode) if m not in found]
+        missing = [m for m in self.looked_at(mode) if m not in found and m not in failed]
         later = (f'{self.modes_text(missing)} 模式的档案要在 tarkov.dev 用该模式搜索一次自己才会出现。' if missing else '')
         unknown = f'{self.failure_text(failed)}。' if failed else ''
         return event.plain_result(f'已绑定：{nickname}（账号 ID {aid}），目前在 {self.modes_text(found)} 模式下有档案。'
@@ -596,8 +729,266 @@ class TarkovPlugin(Star):
         except TimeoutError as exc:
             raise IndexTimeout(str(exc)) from exc
 
+    async def download_public(self, key, *, etag=None, last_modified=None):
+        return await fetch_public(key, etag=etag, last_modified=last_modified,
+                                  timeout_seconds=min(60, self.timeout()), proxy=self.proxy())
+
+    async def public_resource(self, resource, *, mode=None, language=None, item_id=None, fresh=False, allow_stale=False):
+        """Shared infrastructure for the forthcoming feature-gated queries; never downloads on initialization."""
+        key = ResourceKey(resource, public_mode_path(mode) if mode is not None else None, language, item_id)
+        return await self.public_data.get(key,
+                                          ttl_seconds=self.int_setting('public_data_cache_minutes', 5, 0, 1440)*60,
+                                          fresh=fresh, allow_stale=allow_stale)
+
+    def status_enabled(self):
+        return self.config.get('status_enabled', False) is True
+
+    def status_interval(self):
+        return self.int_setting('status_poll_minutes', 5, 2, 30)*60
+
+    def target_metadata(self, target):
+        platforms = getattr(getattr(self.context, 'platform_manager', None), 'platform_insts', [])
+        for platform in platforms:
+            metadata = platform.meta()
+            if metadata.id == target.split(':', 1)[0]:
+                return metadata
+        return None
+
+    def status_targets(self):
+        return self.notification_targets('status_notify_targets', self.config.get('status_qq_push_enabled', False) is True)
+
+    def notification_targets(self, setting, qq_enabled):
+        targets = self.config.get(setting, [])
+        if not isinstance(targets, list) or len(targets) > 50:
+            return []
+        allowed = self.config_list('allowed_origins')
+        if allowed is None:
+            return []
+        valid = []
+        for target in targets:
+            if not isinstance(target, str):
+                continue
+            target = target.strip()
+            parts = target.split(':', 2)
+            if len(parts) != 3 or not all(parts) or parts[1] not in ('GroupMessage', 'FriendMessage', 'OtherMessage') or any(c.isspace() for c in target):
+                continue
+            if allowed and target not in allowed:
+                continue
+            metadata = self.target_metadata(target)
+            if metadata is not None:
+                if getattr(metadata, 'support_proactive_message', True) is False:
+                    continue
+                if metadata.name in QQ_OFFICIAL and not qq_enabled:
+                    continue
+            valid.append(target)
+        return list(dict.fromkeys(valid))
+
+    def status_broadcast_active(self):
+        return (not self._terminated and self.status_enabled()
+                and self.config.get('status_broadcast_enabled', False) is True and bool(self.status_targets()))
+
+    @staticmethod
+    def status_monitor_error(exc):
+        if isinstance(exc, (PermanentDeliveryError, PermissionError)):
+            logger.warning('Tarkov status broadcast target paused; check platform permissions, then disable and re-enable broadcasts to reset')
+            return
+        logger.warning('Tarkov status monitor failed: %s', type(exc).__name__)
+
+    async def status_snapshot(self, *, fresh=False, allow_stale=False):
+        snapshot = await self.public_resource('status', fresh=fresh, allow_stale=allow_stale)
+        document = await snapshot.json()
+        state = normalize_status(document['data'])
+        return {'state': state, 'checked_at': snapshot.checked_at, 'fetched_at': snapshot.fetched_at,
+                'last_modified': snapshot.last_modified, 'from_cache': snapshot.from_cache,
+                'stale': snapshot.stale, 'error': ('连接失败，展示上次成功数据：'+snapshot.error) if snapshot.stale else None}
+
+    async def fetch_status_for_monitor(self):
+        return await self.status_snapshot(fresh=True)
+
+    async def prepare_status_image(self, card):
+        async with self.status_image_slots:
+            return await asyncio.to_thread(render_status_image, card)
+
+    async def status_picture(self, event, card):
+        try:
+            data = await self.prepare_status_image(card)
+            return event.chain_result([Image.fromBytes(data)])
+        except Exception as exc:
+            self.status_monitor_error(exc)
+            return event.plain_result('服务器状态图片生成失败，请稍后再试。')
+
+    async def status_query(self, event, arguments=''):
+        if not self.allowed(event):
+            return await self.status_picture(event, {'error': '此会话或用户没有塔科夫查询权限。'})
+        if not self.status_enabled():
+            return await self.status_picture(event, {'error': '服务器状态查询尚未开启，请联系管理员在设置中启用。'})
+        if arguments:
+            return await self.status_picture(event, {'error': '状态查询不需要参数。用法：'+self.cmd('status')})
+        owner = self.owner(event)
+        if owner in self.active:
+            return await self.status_picture(event, {'error': '你的上一次查询还没完成，请稍候。'})
+        self.active.add(owner)
+        try:
+            try:
+                card = await self.status_snapshot(allow_stale=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.status_monitor_error(exc)
+                message = str(exc) if isinstance(exc, QueryError) else '连接超时，请稍后再试。' if isinstance(exc, TimeoutError) else '本次获取失败，请稍后再试。'
+                card = {'error': '无法取得服务器状态：'+message+' 此结果不表示游戏停服。'}
+            return await self.status_picture(event, card)
+        finally:
+            self.active.discard(owner)
+
+    async def send_status_notification(self, target, image_data):
+        if not self.status_broadcast_active() or target not in self.status_targets():
+            raise PermanentDeliveryError('目标不再允许播报')
+        metadata = self.target_metadata(target)
+        if metadata is not None and metadata.name in QQ_OFFICIAL and self.config.get('status_qq_push_enabled', False) is not True:
+            raise PermanentDeliveryError('QQ 主动播报尚未确认可用')
+        return await self.context.send_message(target, MessageChain(chain=[Image.fromBytes(image_data)]))
+
+    def boss_enabled(self):
+        return self.config.get('boss_enabled', False) is True
+
+    def boss_modes(self):
+        values = self.config.get('boss_modes', ['pvp', 'pve', 'season'])
+        if not isinstance(values, list):
+            return []
+        return list(dict.fromkeys(mode for mode in map(parse_mode, values) if mode in GAME_MODES))
+
+    def boss_interval(self):
+        return self.int_setting('boss_poll_minutes', 10, 2, 30)*60
+
+    def boss_targets(self):
+        return self.notification_targets('boss_notify_targets', self.config.get('boss_qq_push_enabled', False) is True)
+
+    def boss_broadcast_active(self):
+        return (not self._terminated and self.boss_enabled() and bool(self.boss_modes())
+                and self.config.get('boss_broadcast_enabled', False) is True and bool(self.boss_targets()))
+
+    @staticmethod
+    def boss_monitor_error(exc):
+        if isinstance(exc, (PermanentDeliveryError, PermissionError)):
+            logger.warning('Tarkov Boss target paused; fix platform permissions, then disable/save/reload and enable broadcasts')
+        else:
+            logger.warning('Tarkov Boss monitor failed: %s', type(exc).__name__)
+
+    async def boss_snapshot(self, mode, *, fresh=False, allow_stale=False):
+        snapshot = await self.public_resource('maps', mode=mode, fresh=fresh, allow_stale=allow_stale)
+        translations = await asyncio.gather(*(self.public_resource('maps', mode=mode, language=language,
+            allow_stale=True) for language in ('zh', 'en')), return_exceptions=True)
+        dictionaries, warning, signatures = [], False, []
+        for translation in translations:
+            if isinstance(translation, asyncio.CancelledError): raise translation
+            if isinstance(translation, BaseException):
+                warning = True; signatures.append(None)
+            else:
+                dictionaries.append((await translation.json())['data'])
+                warning |= translation.stale
+                signatures.append(await asyncio.to_thread(hash, translation.body))
+        signature = (await asyncio.to_thread(hash, snapshot.body), *signatures)
+        cached = self.boss_normalized.get(mode)
+        if cached and cached[0] == signature:
+            state = cached[1]
+        else:
+            document = await snapshot.json()
+            state = await asyncio.to_thread(normalize_bosses, document['data'], dictionaries)
+            if not self._terminated:
+                self.boss_normalized[mode] = (signature, state)
+        return {'mode': mode, 'state': state, 'checked_at': snapshot.checked_at, 'fetched_at': snapshot.fetched_at,
+                'last_modified': snapshot.last_modified, 'stale': snapshot.stale, 'from_cache': snapshot.from_cache,
+                'translation_warning': warning}
+
+    async def fetch_boss_for_monitor(self, mode):
+        return await self.boss_snapshot(mode, fresh=True)
+
+    async def prepare_boss_image(self, page, index=1, total=1, token=None):
+        token = page.get('snapshot_token', '') if token is None else token
+        command = self.cmd('boss', '页', token, index+1 if index < total else 1) if token else ''
+        async with self.boss_image_slots:
+            portraits = await self.boss_portraits.all() if not page.get('error') else {}
+            return await asyncio.to_thread(render_boss_page, page, token, index, total, command, portraits)
+
+    async def boss_picture(self, event, page, index=1, total=1, token=None):
+        try:
+            image = await self.prepare_boss_image(page, index, total, token)
+            return event.chain_result([Image.fromBytes(image)])
+        except Exception as exc:
+            self.boss_monitor_error(exc)
+            return event.plain_result('Boss 表格图片生成失败，请稍后再试。')
+
+    async def boss_query(self, event, arguments=''):
+        if not self.allowed(event):
+            return await self.boss_picture(event, {'error': '此会话或用户没有塔科夫查询权限。'})
+        if not self.boss_enabled():
+            return await self.boss_picture(event, {'error': 'Boss 查询尚未开启，请联系管理员在设置中启用。'})
+        owner = self.owner(event)
+        if owner in self.active:
+            return await self.boss_picture(event, {'error': '你的上一次查询还没完成，请稍候。'})
+        self.active.add(owner)
+        try:
+            words = arguments.lower().split()
+            if words and words[0] in ('页', 'page'):
+                if len(words) != 3 or not re.fullmatch('[0-9a-f]{12}', words[1]) or not re.fullmatch('[0-9]{1,4}', words[2]):
+                    raise QueryError('续查用法：'+self.cmd('boss 页 <快照编号> <页码>'))
+                pages = await self.boss_store.thread(self.boss_store.query, words[1])
+                index = int(words[2])
+                if not pages: raise QueryError('表格快照已过期或被清理，请重新查询。')
+                if not 1 <= index <= len(pages): raise QueryError(f'页码超出范围，此快照共 {len(pages)} 页。')
+                return await self.boss_picture(event, pages[index-1], index, len(pages), words[1])
+            changed = any(word in ('变化', 'changes') for word in words)
+            words = [word for word in words if word not in ('变化', 'changes')]
+            modes = [parse_mode(words[0])] if len(words) == 1 and parse_mode(words[0]) in GAME_MODES else self.boss_modes() if not words else []
+            if not modes:
+                raise QueryError('请选择 pvp、pve 或赛季模式。用法：'+self.cmd('boss [模式] [变化]'))
+            pages = []
+            for mode in modes:
+                try:
+                    if changed:
+                        previous = await self.boss_store.thread(self.boss_store.latest, mode)
+                        if not previous: raise QueryError('尚无已记录的刷率变化；开启监控后首次成功只建立基线。')
+                        pages.extend(previous)
+                    else:
+                        card = await self.boss_snapshot(mode, allow_stale=True)
+                        rows, _ = await asyncio.to_thread(build_table, None, card['state'])
+                        meta = {key: value for key, value in card.items() if key != 'state'}
+                        pages.extend(await asyncio.to_thread(paginate_table, meta, rows))
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    self.boss_monitor_error(exc)
+                    message = str(exc) if isinstance(exc, QueryError) else '本次数据获取失败，请稍后再试。'
+                    pages.append({'mode': mode, 'error': message+' 此结果不表示刷率为零。'})
+            token = await self.boss_store.thread(self.boss_store.save_query, pages)
+            return await self.boss_picture(event, pages[0], 1, len(pages), token)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.boss_monitor_error(exc)
+            message = str(exc) if isinstance(exc, QueryError) else '本次表格查询失败，请稍后再试。'
+            return await self.boss_picture(event, {'error': message})
+        finally:
+            self.active.discard(owner)
+
+    async def send_boss_notification(self, target, image_data):
+        if not self.boss_broadcast_active() or target not in self.boss_targets():
+            raise PermanentDeliveryError('目标不再允许 Boss 播报')
+        return await self.context.send_message(target, MessageChain(chain=[Image.fromBytes(image_data)]))
+
     async def terminate(self):
+        self._terminated = True
+        await self.status_poller.close()
+        await self.boss_poller.close()
+        await self.status_store.close()
+        await self.boss_store.close()
+        await self.boss_portraits.close()
+        self.boss_normalized.clear()
+        await self.public_data.close()
         self.cache.clear()
-        for task in list(self.pending.values()):
+        tasks = list(self.pending.values())
+        for task in tasks:
             task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
