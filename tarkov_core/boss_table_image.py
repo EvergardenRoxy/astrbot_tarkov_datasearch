@@ -83,6 +83,28 @@ def paginate_table(card, rows):
     return pages
 
 
+MAX_CHANGE_LINES = 20
+
+
+def change_lines(rows, map_ids=None):
+    """Short statements of what changed, for the change broadcast only (the table itself shows just the new values)."""
+    lines = []
+    for row in rows:
+        if not row['changed'] or (map_ids is not None and row['map_id'] not in map_ids):
+            continue
+        if row['mob_id'] is None:
+            lines.append(f"{row['change']}：{row['map_name']}")
+        elif row['previous'] is None:
+            lines.append(f"{row['boss_name']}（{row['map_name']}）：新增 {percent(row['current'])}")
+        elif row['current'] is None:
+            lines.append(f"{row['boss_name']}（{row['map_name']}）：移除（原 {percent(row['previous'])}）")
+        else:
+            lines.append(f"{row['boss_name']}（{row['map_name']}）：{percent(row['previous'])}→{percent(row['current'])}")
+    if len(lines) > MAX_CHANGE_LINES:
+        lines[MAX_CHANGE_LINES:] = [f'另有 {len(lines)-MAX_CHANGE_LINES} 项变化未列出']
+    return lines
+
+
 def notes_for(page,token,index,total,command):
     notes = [f'Boss 刷率 · 第 {index}/{total} 页 · 红字：本次变动；红色粗体：100%']
     times = []
@@ -113,7 +135,10 @@ def render_boss_page(page,token='',index=1,total=1,command='',portraits=None):
     probe = ImageDraw.Draw(Image.new('RGB',(1,1)))
     notes = [line for text in notes_for(page,token,index,total,command)
              for line in wrap(probe,safe(text),font('sc',18,400),width-2*MARGIN)]
-    img = Image.new('RGB',(width,grid_end+len(notes)*26+48),BG)
+    summary = [line for text in page.get('change_lines',[])
+               for line in wrap(probe,safe(text),font('sc',20,600),width-2*MARGIN-20)]
+    summary_height = len(summary)*30+44 if summary else 0
+    img = Image.new('RGB',(width,grid_end+summary_height+len(notes)*26+48),BG)
     draw = ImageDraw.Draw(img)
     draw.rounded_rectangle([MARGIN,MARGIN,width-MARGIN,grid_end],radius=14,fill=BODY,outline=GRID)
     draw.rectangle([MARGIN+1,MARGIN+1,width-MARGIN-1,MARGIN+header],fill=LABEL_BG)
@@ -163,6 +188,11 @@ def render_boss_page(page,token='',index=1,total=1,command='',portraits=None):
             draw.line([x,MARGIN,x,grid_end],fill=GRID)
         draw.line([MARGIN,MARGIN+header,width-MARGIN,MARGIN+header],fill=GRID)
     y = grid_end+18
+    if summary:
+        draw.text((MARGIN,y),'本次变化',font=font('sc',22,800),fill=TEXT); y += 34
+        for line in summary:
+            draw.text((MARGIN+20,y),line,font=font('sc',20,600),fill=TEXT); y += 30
+        y += 10
     for line in notes:
         draw.text((MARGIN,y),line,font=font('sc',18,400),fill=MUTED); y += 26
     return jpeg(img)

@@ -7,7 +7,7 @@ import time
 from contextlib import closing
 
 from .boss_monitor import BOSS_SCOPE, build_table
-from .boss_table_image import paginate_table
+from .boss_table_image import change_lines, paginate_table
 from .notifications import MAX_EVENT_BYTES, MAX_EVENTS, RETENTION_SECONDS, NotificationStore, PermanentDeliveryError
 
 QUERY_SECONDS = 86400
@@ -78,7 +78,9 @@ class BossStore(NotificationStore):
                 meta = {key: value for key, value in card.items() if key != 'state'}
                 pages = paginate_table({**meta, 'compared_at': before['checked_at']}, rows)
                 token = secrets.token_hex(6)
-                for page in pages: page['snapshot_token'] = token
+                for page in pages:
+                    page['snapshot_token'] = token
+                    page['change_lines'] = change_lines(rows, {column['map_id'] for column in page['columns']})
                 payload = json.dumps(pages, ensure_ascii=False)
                 db.execute('INSERT INTO queries VALUES (?,?,?)', (token, payload, now))
                 event_id = db.execute('INSERT INTO events(mode,payload,created_at) VALUES (?,?,?)',

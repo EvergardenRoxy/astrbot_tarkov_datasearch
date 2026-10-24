@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw
 
 from tarkov_core.boss_monitor import BOSS_SCOPE, DAILY_BOSSES, build_table, normalize_bosses, percent, probability, state_fingerprint
 from tarkov_core.boss_notifications import BossNotifications, BossStore, PAGES_PER_CYCLE, QUERY_SECONDS
-from tarkov_core.boss_table_image import BOSS_ROWS, FONT_SIZE, MAPS_PER_PAGE, RED, TEXT as INK, compact_rows, paginate_table, render_boss_page
+from tarkov_core.boss_table_image import BOSS_ROWS, FONT_SIZE, MAPS_PER_PAGE, MAX_CHANGE_LINES, RED, TEXT as INK, change_lines, compact_rows, paginate_table, render_boss_page
 from tarkov_core.image import font
 from tarkov_core.public_api import DataError, ResourceKey, decode
 from tarkov_core.transport import QueryError
@@ -191,6 +191,36 @@ class BossImageTests(unittest.TestCase):
         self.assertFalse(any('135%' in text for text,_,_ in captured))
 
 
+class ChangeSummaryTests(unittest.TestCase):
+    def rows(self, **override):
+        row = {'map_id': 'm', 'map_name': '海岸线', 'mob_id': 'bossKnight', 'boss_name': '三狗（GOONS）',
+               'previous': '0.6', 'current': '0.8', 'change': '+20 个百分点', 'changed': True}
+        return [{**row, **override}]
+
+    def test_one_short_statement_per_change_kind(self):
+        self.assertEqual(change_lines(self.rows()), ['三狗（GOONS）（海岸线）：60%→80%'])
+        self.assertEqual(change_lines(self.rows(previous=None, current='1')), ['三狗（GOONS）（海岸线）：新增 100%'])
+        self.assertEqual(change_lines(self.rows(previous='1', current=None)), ['三狗（GOONS）（海岸线）：移除（原 100%）'])
+        self.assertEqual(change_lines(self.rows(mob_id=None, previous=None, current=None, change='地图新增')), ['地图新增：海岸线'])
+
+    def test_unchanged_rows_and_other_pages_are_left_out(self):
+        self.assertEqual(change_lines(self.rows(changed=False)), [])
+        self.assertEqual(change_lines(self.rows(), {'other'}), [])
+        self.assertEqual(change_lines(self.rows(), {'m'}), ['三狗（GOONS）（海岸线）：60%→80%'])
+
+    def test_long_lists_are_capped_with_a_count(self):
+        lines = change_lines(self.rows()*(MAX_CHANGE_LINES+5))
+        self.assertEqual(len(lines), MAX_CHANGE_LINES+1)
+        self.assertEqual(lines[-1], '另有 5 项变化未列出')
+
+    def test_summary_is_drawn_below_the_table_and_only_when_given(self):
+        page = paginate_table({'mode': 'pve'}, build_table(None, normalize_bosses(boss_data()))[0])[0]
+        plain = Image.open(io.BytesIO(render_boss_page(page)))
+        with_summary = Image.open(io.BytesIO(render_boss_page({**page, 'change_lines': ['A：1%→2%', 'B：新增 3%']})))
+        self.assertGreater(with_summary.height, plain.height+60)
+        self.assertEqual(with_summary.width, plain.width)
+
+
 class BossStoreTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -202,6 +232,15 @@ class BossStoreTests(unittest.TestCase):
     def event(self, count=80):
         self.store.observe(boss_card(count=count), self.targets, now=100)
         return self.store.observe(boss_card(0.4, count=count, checked=200), self.targets, now=200)
+
+    def test_only_change_events_carry_the_summary(self):
+        self.store.observe(boss_card(), self.targets, now=100)
+        self.store.observe(boss_card(0.4, checked=200), self.targets, now=200)
+        pages = self.store.latest('pvp', now=200)
+        self.assertEqual(pages[0]['change_lines'], ['Alpha（factory-name）：35%→40%'])
+        # An ordinary full-table query has no previous snapshot, so nothing is announced as changed.
+        rows, _ = build_table(None, normalize_bosses(boss_data()))
+        self.assertNotIn('change_lines', paginate_table({'mode': 'pvp'}, rows)[0])
 
     def test_first_silent_restart_stable_latest_and_new_modes_are_independent(self):
         self.assertIsNone(self.store.observe(boss_card(), self.targets, now=100))

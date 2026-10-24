@@ -101,6 +101,14 @@ class BossPluginTests(unittest.IsolatedAsyncioTestCase):
                              boss_notify_targets=['bot:GroupMessage:1'], boss_modes=['regular','pvp','赛季','arena'])
         self.assertEqual(plugin.boss_modes(), ['pvp','season'])
         self.assertTrue(plugin.boss_broadcast_active())
+        # Two switches: the feature switch rules everything, the push switch only the broadcasts.
+        plugin.config['boss_enabled'] = False
+        self.assertFalse(plugin.boss_broadcast_active())
+        plugin.config['boss_enabled'] = True
+        plugin.config['boss_broadcast_enabled'] = False
+        self.assertFalse(plugin.boss_broadcast_active())
+        self.assertTrue(plugin.boss_enabled())
+        plugin.config['boss_broadcast_enabled'] = True
         started, gate = asyncio.Event(), asyncio.Event()
         async def cycle(): started.set(); await gate.wait()
         plugin.boss_poller.cycle = cycle

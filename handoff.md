@@ -291,3 +291,21 @@ feature proved inefficient. It is sealed, not deleted from history.
 - **Validation**: 275 tests pass; the AstrBot 4.16.0 route replay passes 101 cases (was 135 with item cases).
 - **Docs**: `docs/development-plan.md` §5/§14 reduced to pointers, item settings/commands removed; checklist updated.
   README had no item section.
+
+## 12. Boss switches and change summary (2026-10-24, maintainer decisions)
+
+- **Two switches, as decided**: `boss_enabled` is the feature switch ("Boss 刷率功能总开关": off = no `boss` / `boss 变化` /
+  continuation queries, no polling, no push, no Boss download); `boss_broadcast_enabled` ("Boss 刷率变化推送") only controls
+  the background polling and push and never affects queries. Push still also needs the feature switch, a monitored mode
+  and a target (`boss_broadcast_active()`; behaviour unchanged, only the settings text and one test were added).
+- **Change summary** (change events only): `boss_table_image.change_lines(rows, map_ids)` builds short statements from the
+  `build_table` diff: `Boss（地图）：60%→80%`, `…：新增 100%`, `…：移除（原 100%）`, `地图新增/地图已移除：地图`; at most 20 lines
+  then `另有 N 项变化未列出`; filtered to the maps of each page. `BossStore.observe` stores them as `page['change_lines']`;
+  `render_boss_page` draws a "本次变化" block under the table. A full-table query has no previous snapshot, so it never
+  carries the block; the stored event (and therefore `boss 变化`, which replays the latest event) shows the same image as
+  the broadcast. Cells still show only the new value and Boss names are not red (maintainer: intended; Boss names stay
+  plain). Font subset rebuilt for the new characters.
+- Tests 275 → 280 (`ChangeSummaryTests`, `test_only_change_events_carry_the_summary`, two-switch assertions in the lifecycle
+  test); mutation check: dropping the attachment and dropping the changed-row filter both fail a test.
+- Open (maintainer): a background design for the Boss table image; the maintainer will generate it with an image model from
+  a brief (nothing drawn here). Renderer integration waits for the finished asset and the maintainer's layout notes.
