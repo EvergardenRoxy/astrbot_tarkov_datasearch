@@ -5,8 +5,10 @@ why, what evidence the decisions rest on, and where the risk is. It is not user 
 CHANGELOG for that). `checklist.md` is the plain-language Chinese companion. The layout and conventions follow the
 maintainer's earlier plugin `astrbot_plugin_spark_analyse`.
 
-Current documentation rule (maintainer, 2026-10-24): record work in `handoff.md`; do not modify `README.md` or
-`checklist.md`, which will be organized separately later.
+Current documentation rule (maintainer, 2026-10-24, revised later the same day): record work in `handoff.md`.
+`checklist.md` may be edited and is updated with development progress. `README.md` may be edited too, but only
+together with the maintainer when they ask for a release. (The earlier rule "do not modify README/checklist" is
+withdrawn; mentions of it in §26-§36 are history.)
 
 ## 1. Context
 
@@ -1381,3 +1383,27 @@ Validation:
 - QQ actual passive image delivery still needs bot-side acceptance. Existing player text/Markdown migration,
   historical price charts and barter/crafting profit features remain outside this stage. README/checklist unchanged;
   publish to `1024` using normal Git push, without a PR, merge or release.
+
+## 37. Maintainer corrections and takeover status (2026-10-24)
+
+Takeover review on branch `1024` (head `50f4ec1`, clean tree, **307 tests pass** after `pip install -r requirements.txt`).
+
+- **Documentation rule changed**: `checklist.md` is edited and tracks progress; `README.md` is edited together with the
+  maintainer when a release is requested. Header rule updated.
+- **§25 is already fixed**: `bind()` excludes `failed` modes from `missing` (§29 note at the failure/missing item;
+  `test_bind_failure_is_not_listed_as_a_missing_profile`). §25's "no code fix" text is history.
+- **Output requirement was misunderstood in §27-§28 and `docs/development-plan.md` (corrected there)**: image is the
+  *default* output; text and Markdown stay for compatibility. Player profiles/arena/help already behave this way
+  (`output_mode` image/text/markdown, image failure falls back to text). The new status, Boss and item queries are
+  image-only today, and their schema hints say "no matter the output setting, reply with an image".
+- **Planned fix (proposal, awaiting maintainer go-ahead; not implemented)**:
+  1. `output_mode` governs status, Boss tables, item cards/candidates/pages and their error/hint replies; unknown
+     value -> image. Schema hints of those features updated.
+  2. Add `render_text` / `render_markdown` for each card model next to its image renderer (status:
+     `server_status` state; Boss: `boss_table_image.paginate_table` pages incl. changed-row marks as text; item:
+     `item_image.paginate_item` blocks). Paginated text uses the same pages and `item 页 <token> <n>` continuation.
+  3. Image failure falls back to text with a note (replaces the current "图片生成失败" one-liner).
+  4. Broadcasts (status/Boss) follow `output_mode` too; images stay the default; text keeps changed-row marks.
+  5. Tests per feature x 3 outputs, fallback, no-text-when-image-succeeds, continuation tokens; mutation check.
+  6. Then update `development-plan.md` §1/§2/§9 text properly (currently only a correction banner).
+- Not started: item/Boss/status text renderers, live QQ acceptance, release (README/version) work.
