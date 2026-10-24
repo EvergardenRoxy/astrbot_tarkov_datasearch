@@ -5,7 +5,7 @@
 > [!IMPORTANT]
 > **AI 制作声明：塔科夫玩家数据查询采用生成式 AI 参与架构设计、编码、文档与测试。** AI 生成或修改的内容由项目维护者审阅、验证并承担最终维护责任。
 >
-> 参与的 AI：**Claude Opus 5.5**（通过 **Claude Code**）参与 0.1.0 至 0.4.4 版本的数据源调研与实测、方案制定、编码、测试、图片回复的设计与绘制、配置页说明，以及更新日志、核对清单（`checklist.md`）与交接文档（`handoff.md`）的编写。
+> 参与的 AI：**Claude Opus 5.5**（通过 **Claude Code**）参与 0.1.0 至 0.4.4 版本的数据源调研与实测、方案制定、编码、测试、图片回复的设计与绘制、配置页说明，以及更新日志、核对清单（`checklist.md`）与交接文档（`handoff.md`）的编写。0.4.5 版本由 **Claude**（通过 **Claude Code**）接手开发，参与服务器状态、Boss 刷率、QQ 官方机器人命令入口的实现、测试与文档；Boss 图的背景纹理由维护者用 **GPT-Image-2.5-sunburst** 生成。
 
 ## tarkov.dev 对机器人调用的限制与现状
 
@@ -28,6 +28,9 @@
 - 竞技场：分非排位和排位显示对局、击杀、死亡、K/D、最佳 ARP 和段位、最长连杀、最长连胜，以及各模式的胜场、胜率和 MVP。
 - 每次回复附上这名玩家的 tarkov.dev 页面链接和档案更新时间，超过 30 天没有更新会注明；按旧名字查到改过名的玩家时会注明现在的昵称。
 - 三种回复方式（图片、文字、Markdown 文字）；支持所有人、仅管理员、管理员和指定用户三种权限，也可限定聊天。
+- **服务器状态**（0.4.5 新增，默认关闭）：`@机器人 tarkov status` 回复服务器及各组件的状态图片，可开启状态变化推送。
+- **Boss 刷率**（0.4.5 新增，默认关闭）：`@机器人 tarkov boss` 回复各地图日常 Boss 与三狗的刷率全表图，另显示实验室等地图上的活动 Boss；刷率有变化时可推送。
+- **QQ 官方机器人**：支持 `@机器人 /命令` 写法（见“命令写法”设置）。
 
 ## 安装与配置
 
@@ -91,6 +94,50 @@
   | A+ | Professional | 7001–7900 |
   | S 及以上 | 竞技场前100名玩家 | 7900 以上（不显示具体 ARP） |
 
+## 服务器状态与 Boss 刷率（可选功能）
+
+这两项功能读取 [json.tarkov.dev](https://json.tarkov.dev) 的公开游戏数据（不是玩家档案），**默认关闭**，由管理员在配置页逐项开启。关闭时不下载对应数据，也不启动后台任务。回复目前**只有图片**，不受“输出方式”设置影响；文字和 Markdown 版本暂未提供。
+
+**命令**（`@机器人` 写法与 `/` 写法都能用，见“命令写法”）：
+
+```text
+@机器人 tarkov status                 （服务器状态；也可写 状态）
+@机器人 tarkov boss                   （Boss 刷率全表，所有监控模式各一张）
+@机器人 tarkov boss pve               （只看 PVE；也可写 pvp、赛季）
+@机器人 tarkov boss 变化              （最近一次刷率变化，变化标红，图下方文字说明）
+@机器人 tarkov boss 页 <快照编号> <页码>（长表续页，编号在图下方注明）
+```
+
+另外还有不加 `tarkov` 的短命令 `status`（状态）和 `boss`（刷率）；与其他插件冲突时，在配置里关闭“启用简短查询命令”，`tarkov status`、`tarkov boss` 仍可用。
+
+**设置**（各项都在配置页，保存后重载生效）：
+
+- **服务器状态图片查询**、**服务器状态变化图片播报**、**服务器状态轮询间隔**（2～30 分钟，默认 5）、**播报目标**、**允许向 QQ 官方机器人会话播报状态**。
+- **Boss 刷率功能总开关**：关闭后整个 Boss 功能停用，不能查询，也不会轮询或推送。
+- **Boss 刷率变化推送**：只控制后台轮询和推送，关闭后查询照常；开启还要求总开关已开、有监控模式和播报目标。**Boss 刷率轮询间隔**（2～30 分钟，默认 10）、**监控模式**（默认 pvp、pve、赛季）、**播报目标**、**允许向 QQ 官方会话播报 Boss 刷率**。
+- **播报目标**要填完整的 AstrBot 会话标识（聊天中发送 `/sid` 查看），最多 50 个；留空就不轮询、不播报。播报不会发给所有会话，只发给你填写的目标。首次成功只建立基线，不推送；之后有变化才推送。插件只能“提交”消息，不能确认对方收到。
+- **公共游戏数据缓存时间**（默认 5 分钟）：状态和 Boss 共用，只在过期后的查询里检查更新。
+- **手动拉取/更新 Boss 头像**：执行一次后自动关闭，头像从 assets.tarkov.dev 取得，缓存 365 天；平时不会自动下载，没有头像时用占位图。
+- **不当作活动 Boss 的怪物**（高级）：见下。
+
+**Boss 图怎么看**：
+
+- 行是 Boss，列是地图（中心区、白天工厂、夜间工厂、海关、森林、海岸线、立交桥、储备站、灯塔、塔科夫街区、实验室），格子里是刷率，左上角写模式。固定的行是 Tagilla、Reshala、Shturman、Sanitar、Killa、Glukhar、Zryachiy、Kaban、Kollontay、Partisan、邪教徒祭司和三狗 GOONS。同一格里有多个概率时分别显示，不相加。空白表示上游没有列出。
+- 100% 的刷率用红色粗体，该 Boss 的名字也标红。
+- **活动 Boss**：固定行之外，地图上列出的 Boss 记录，除 Raider、黑色军团、USEC、BEAR、游荡者、守军这几类普通怪物之外，都显示为“活动 <名字>”行，最多 3 行，超出时注明数量。上游新增了不想显示的普通怪物时，把它的 `normalizedName`（例如 `raider`）填进“不当作活动 Boss 的怪物”。
+- **变化推送**：图和全表相同，变化的格子标红，图下方用文字列出“本次变化”，例如“三狗 GOONS（海岸线）：60%→80%”；活动 Boss 出现或结束也会列出。格子里只显示新值。
+- 没有包含在表里的：破冰船、原中心区、实验室 Dark、迷宫、中心区教程、码头，以及普通 AI。
+
+![服务器状态示例](docs/status_preview.jpg)
+
+![Boss 刷率示例](docs/boss_preview.jpg)
+
+![Boss 变化推送示例](docs/boss_changes_preview.jpg)
+
+这些示例的数值都是虚构的，由 `tools/build_preview.py` 生成。
+
+**注意**：QQ 官方机器人的图片回复和主动推送（群权限、平台限制）还没有在真实环境里验证过；不同 AstrBot 版本和机器人权限对主动推送的支持不同，开启前请先在测试群里试一次。
+
 ## 回复方式
 
 在配置“输出方式”中选择，默认是图片：
@@ -99,7 +146,7 @@
 - **文字**：纯文字，任何平台都能正常显示。
 - **Markdown 文字**：带标题、表格和加粗，适合 Telegram、Discord 等；在 QQ 等平台上会显示出原始符号。
 
-`@机器人 tarkov 帮助` 跟随这个设置：选“图片”时回复一张用法图片，否则回复文字版用法。找不到玩家、同名列表和出错提示，无论选哪种方式都以文字回复。
+`@机器人 tarkov 帮助` 跟随这个设置：选“图片”时回复一张用法图片，否则回复文字版用法。找不到玩家、同名列表和出错提示，无论选哪种方式都以文字回复。服务器状态和 Boss 刷率只回复图片。
 
 ![图片回复示例](docs/preview.jpg)
 
@@ -126,7 +173,7 @@ Scav：战局 50，撤离 30，存活率 60.0%
 
 数据来自 tarkov.dev，档案更新于 2026-10-03 12:00（北京时间）
 数据不会自动更新：在 tarkov.dev 用该模式搜索一次这名玩家，或打开 https://tarkov.dev/players/pve/1234567，即可刷新档案，几分钟后再查。
-astrbot_tarkov_datasearch v0.4.4 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch
+astrbot_tarkov_datasearch v0.4.5 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch
 本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系
 ```
 
@@ -142,7 +189,8 @@ astrbot_tarkov_datasearch v0.4.4 · https://github.com/EvergardenRoxy/astrbot_ta
 - **默认模式**：命令里没写模式时使用，默认 PVP。
 - **不写模式时也查竞技场**：默认关闭，开启后每次多一个请求。
 - **输出方式**：图片（默认）、文字或 Markdown 文字。
-- **命令写法**：`@机器人 tarkov`（默认）或 `/tarkov`，只影响显示。
+- **命令写法**：`@机器人 tarkov`（默认）、`/tarkov`，或 QQ 官方机器人提及后加斜杠的 `@机器人 /tarkov`，只影响显示。
+- **QQ 官方机器人提及后斜杠命令兼容**：默认开启，让 `@机器人 /tarkov …`、`/status`、`/boss` 在 QQ 官方平台也能触发；关闭不影响框架本来能识别的命令。
 - **谁可以使用**：所有人（默认）、仅管理员，或管理员和指定用户。“管理员”指 AstrBot 管理员，不是 QQ 群管理员。
 - **指定用户 / 限定聊天**：填写平台用户 ID（例如 QQ 号）和 AstrBot 会话标识（聊天中发送 `/sid` 查看），留空不限制聊天。手工编辑配置文件时应为列表；写成其他类型时拒绝所有人。
 - **显示的技能数**：精英技能总是全部列出，这里设置其余技能显示几项，默认 10，设为 0 不显示。
@@ -158,6 +206,9 @@ astrbot_tarkov_datasearch v0.4.4 · https://github.com/EvergardenRoxy/astrbot_ta
   - 绑定关系：平台和用户 ID 的带密钥哈希（HMAC-SHA256）→ 账号 ID 和昵称，不保存 QQ 号等原始 ID；`@机器人 tarkov 解绑` 会删除自己的绑定。密钥是第一次运行时随机生成的 `binding.key`，删除它会让所有绑定失效。拿到数据库但没有密钥无法还原 QQ 号，同时拿到密钥的人仍可逐个尝试，请像对待聊天记录一样保管整个数据目录。
   - 所有人共享的“名字 → 账号 ID”记录：每次绑定、每次查到档案时更新，最多 20 万条，超出时删除最久没见过的。这些名字本来就在 tarkov.dev 公开。
 - `names-profile.sqlite3`、`names-pve.sqlite3`、`names-pvp-season.sqlite3`：只在开启昵称名单后生成，可以随时删除。
+- `public-data/resources.sqlite3`：服务器状态和 Boss 的公共游戏数据缓存（最多 32 项、约 128 MiB），首次查询时才生成，可以随时删除。
+- `notifications.sqlite3`、`boss-notifications.sqlite3`：只在开启并配置了对应播报后生成，保存变化基线、待发事件、逐目标的发送状态和长表快照（事件保留 7 天）；删除后下次观察会重新静默建立基线。
+- `boss-portraits/`：只在手动更新 Boss 头像后生成，是缩小的头像缓存，可以随时删除。
 - 玩家档案只缓存在内存中，图片在内存中生成后直接发送，都不写入磁盘。
 - 插件不另存“谁查询了谁”；但 AstrBot 的日志会记下每条消息的发送者和内容，插件日志里也有被查询的昵称或 ID，请像对待聊天记录一样保管日志。
 
@@ -165,7 +216,7 @@ astrbot_tarkov_datasearch v0.4.4 · https://github.com/EvergardenRoxy/astrbot_ta
 
 本项目采用 **GNU General Public License v3.0 or later（GPL-3.0-or-later）**。完整许可见 [LICENSE](LICENSE)，数据来源与第三方声明见 [THIRD_PARTY.md](THIRD_PARTY.md)。
 
-图片使用的三款字体（思源黑体 Noto Sans SC 的裁剪版、Oswald、Share Tech Mono）采用 SIL Open Font License 1.1，许可文本与字体一起放在 `tarkov_core/fonts/`。
+Boss 图的背景纹理是 AI 生成的图片（见 [THIRD_PARTY.md](THIRD_PARTY.md)）。图片使用的三款字体（思源黑体 Noto Sans SC 的裁剪版、Oswald、Share Tech Mono）采用 SIL Open Font License 1.1，许可文本与字体一起放在 `tarkov_core/fonts/`。
 
 本插件与 Battlestate Games 和 tarkov.dev 没有关联。
 
