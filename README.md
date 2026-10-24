@@ -5,7 +5,7 @@
 > [!IMPORTANT]
 > **AI 制作声明：塔科夫数据查询采用生成式 AI 参与架构设计、编码、文档与测试。** AI 生成或修改的内容由项目维护者审阅、验证并承担最终维护责任。
 >
-> 参与的 AI：**Claude Opus 5.5**（通过 **Claude Code**）参与 0.1.0 至 0.4.4 版本的数据源调研与实测、方案制定、编码、测试、图片回复的设计与绘制、配置页说明，以及更新日志、核对清单（`checklist.md`）与交接文档（`handoff.md`）的编写。0.4.5 版本由 **Claude**（通过 **Claude Code**）接手开发，参与服务器状态、Boss 刷率、QQ 官方机器人命令入口的实现、测试与文档；Boss 图的背景纹理由维护者用 **GPT-Image-2.5-sunburst** 生成。
+> 参与的 AI：**Claude Opus 5.5**（通过 **Claude Code**）参与 0.1.0 至 0.4.4 版本的数据源调研与实测、方案制定、编码、测试、图片回复的设计与绘制、配置页说明，以及更新日志、核对清单（`checklist.md`）与交接文档（`handoff.md`）的编写。0.4.5 与 0.4.5hotfix 版本由 **Claude**（通过 **Claude Code**）接手开发，参与服务器状态、Boss 刷率、QQ 官方机器人命令入口的实现、测试与文档；Boss 图的背景纹理由维护者用 **GPT-Image-2.5-sunburst** 生成。
 
 # 塔科夫数据查询
 
@@ -90,7 +90,7 @@ Scav：战局 50，撤离 30，存活率 60.0%
 
 数据来自 tarkov.dev，档案更新于 2026-10-03 12:00（北京时间）
 数据不会自动更新：在 tarkov.dev 用该模式搜索一次这名玩家，或打开 https://tarkov.dev/players/pve/1234567，即可刷新档案，几分钟后再查。
-astrbot_tarkov_datasearch v0.4.5 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch
+astrbot_tarkov_datasearch v0.4.5hotfix · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch
 本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系
 ```
 
