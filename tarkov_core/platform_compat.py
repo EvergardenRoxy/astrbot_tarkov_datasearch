@@ -7,8 +7,9 @@ def is_qq_official(event):
 
 
 def set_short_status_routes(module_name, enabled):
-    """Disable actual status/Boss metadata so opted-out short commands cannot claim another plugin's routes."""
+    """Disable actual query metadata so opted-out short commands cannot claim another plugin's routes."""
     from astrbot.core.star.star_handler import star_handlers_registry
     for handler in star_handlers_registry.get_handlers_by_module_name(module_name):
-        if handler.handler_name in ('status_command', 'qq_status_command', 'boss_command', 'qq_boss_command'):
+        if handler.handler_name in ('status_command', 'qq_status_command', 'boss_command', 'qq_boss_command',
+                                    'item_command', 'qq_item_command'):
             handler.enabled = enabled

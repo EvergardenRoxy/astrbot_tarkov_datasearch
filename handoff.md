@@ -1298,3 +1298,86 @@ Boss monitoring/matrix/manual portraits, latest twelve-map scope, research/desig
   checks were not unnecessarily repeated. Staged whitespace validation is checked before committing.
 - README/checklist remain untouched. Temporary research/downloads, portrait caches, SQLite files and generated
   distributions are not included. No pull request or release was requested as part of this branch publication.
+
+## 36. Item queries, common attributes and per-mode prices (2026-10-24)
+
+Maintainer requested implementing item queries on the existing `1024` branch. Implemented the accepted two-query
+semantics, independent feature switches, local indexing/images and QQ routes. README/checklist remain unchanged;
+current implementation/limits are in `docs/development-plan.md` §14. Continue publishing work on the existing branch.
+
+- Commands: `item <name>` for common attributes, `item <pvp|pve|season> <name>` for selected-mode data, aliases `物品`
+  and namespace `tarkov item ...`. Names support spaces, Chinese/English full names, short names, normalized names
+  and explicit `id:<24-hex>`. Quote a whole name starting with a mode word to prevent mode interpretation. Support
+  the real feed's one virtual dogtag ID (`customdogtags12345678910`) without treating it as a normal image/history ID.
+- `items_enabled` defaults false. `item_details_enabled`, `item_flea_enabled`, `item_trader_enabled` and optional
+  `item_images_enabled` default true under the parent switch. Save/reload applies. Disabled/denied/invalid queries
+  do not trigger item downloads. Disabling details blocks generic attribute queries; explicit price-only queries
+  load just the selected mode. Disabled merchant blocks do not fetch merchant/task references. No new poller.
+- Short opt-out controls all six actual status/Boss/item handler metadata entries; namespace remains usable and
+  another plugin can own `item`. Extra slash handlers apply only to official QQ scene detection and its existing
+  compatibility setting. New namespace denial paths return image hints for items too.
+- `items.py` separates raw identity/attributes from mode price payloads. The discriminator is nested
+  `properties.propertiesType`, not a root-level field. Compare all three IDs and values before labeling a field
+  common; require compatible property types for typed fields. Missing/null/zero stay distinct. Type mismatches do
+  not make equal numbers semantically common. Missing/failed modes produce explicit incomplete verification and
+  identity-only common cards; selected-mode quotes can still be shown without asserting unverified unique fields.
+- Attribute whitelist covers dimensions/weight/stack/category, major ammo/weapon/armor/container/medical/food and
+  other scalar parameters. Armor-slot summaries retain identity/class/durability/material/zones and exclude price
+  and large compatibility graphs. Unlisted raw fields/complete attachment graphs are intentionally not exposed;
+  this is not a claim of exhaustive item-object rendering. Type-specific effects are translated when dictionaries
+  provide labels, with English/raw fallback and explicit missing values.
+- Generic cards contain no prices/default player mode. Mode cards use only that mode's last low/24h stats/count,
+  scan time, flea rules and trader buy/sell offers. Distinguish buying from merchants and selling to them, preserve
+  original currency, fractional prices, RUB equivalents, LL, task unlock, limits and restock counts. Zero/negative/
+  missing monetary values are not free offers. Closed/no-flea restrictions remain visible even with historical
+  scan prices. Show item update and scan times separately from fetched/checked times, with GMT+8 labels.
+- Merchant/task names resolve only required references from that mode's resources/dictionaries; failed reference
+  loading keeps the original ID and never substitutes another mode's quotes. No personalized inventory/loyalty or
+  current availability claim. Common metadata comparisons do not use merchant prices as attribute values.
+- `item_catalog.py`: lazy independent `item-catalog.sqlite3`, per-mode projected JSON and alias tables, normalized
+  name indexes and frozen query pages. Raw source resources still use the shared bounded cache. Versioned signatures
+  include base/dictionary bodies; equal signatures only advance check metadata, changed signatures build off-loop
+  and atomically replace rows/names. One build slot bounds simultaneous large JSON projection; per-mode pending
+  tasks are shared/shielded so one canceled reader cannot cancel others. Shutdown cancels/drains builds and workers.
+- Search tiers: exact spelling, normalized case/NFKC, then substring. Rank prefixes/word starts ahead of incidental
+  substrings. Count distinct IDs across modes, show at most 25 candidates with total-count/refinement instructions,
+  never silently choose an ambiguous item. Candidate name, ID and follow-up command retain separate image lines.
+  Source integrity validation now rejects bad identities/numeric/property/offer shapes before public-cache writes.
+  A fully empty catalog cannot wipe a prior good index. Allowed upstream/data failures can explicitly fall back to
+  the last-good index with old times/stale notes; configuration errors do not silently turn into successful fetches.
+- `item_image.py`: locally rendered 940px dark identity/common/mode/candidate/error cards. Whitelist attributes,
+  all applicable offers and candidate rows paginate without dropping listed lines. Query continuation
+  `item 页 <12-hex-token> <page>` uses an immutable one-hour snapshot, bounded to 16 groups/16 MiB with early capacity
+  eviction possible. It does not refetch prices. Current feature flags are checked against saved pages to prevent
+  revealing disabled price sections through old snapshots. Images remain the result format regardless of the old
+  player output setting. Only layout/drawing failures use a short error sentence, never a complete text report.
+- `item_icons.py`: optional independent on-demand cache of selected valid IDs under fixed assets paths, with no
+  user/feed-selected host. Reuse validated thumbnail decoding/I/O without changing BossPortraits' manual-only
+  behavior. Seven-day TTL, at most 128 PNGs/32 MiB, bounded pending downloads/memory, atomic writes and failed-fetch
+  suppression. Only the chosen item downloads an image; candidates/errors do not. Missing thumbnails or asset/proxy
+  errors do not suppress the card's data. No runtime game art is bundled.
+- Expanded the licensed Noto subset with `data/item-label-chars.txt` (1,591 CJK glyphs from public projected item,
+  merchant/task labels), and taught `build_fonts.py` to read that corpus. Exclude full descriptions from the corpus
+  to keep the package under its existing 1 MiB budget. Original font source hashes/licenses remain unchanged;
+  THIRD_PARTY explains runtime item images and glyph provenance. No new runtime dependency or release version bump.
+
+Validation:
+
+- **307 tests passed** across the full suite. New coverage includes command quoting/IDs, property types, partial
+  modes, missing versus zero, armor components without embedded prices, currency/direction/unlock semantics,
+  malformed 200 protection, atomic index rollback/restart, conditional metadata reuse, concurrent cancellation,
+  candidate ranking, immutable expiry/capacity, all image/error paths, setting-dependent downloads, short-handler
+  opt-out, frozen-page switch checks and thumbnail limits. Final error-layout fault handling also had a focused
+  plugin regression after the full run. Package validation remains under 1 MiB; staged whitespace checks pass.
+- Original AstrBot 4.16.0 registration/wake/filter/parser replay: **135 cases**, including both QQ transports,
+  group/private, item/Chinese/namespace commands, differing prefixes, permissions/feature gates and another
+  plugin's item route with ours disabled. Provider/platform boundaries remain doubled, not live QQ delivery.
+- Live read-only smoke exercised the real query path and three item modes. Initial common lookup made nine public
+  resource requests (three bases + six dictionaries), selected-mode merchant/task labels added six references,
+  repeated common/candidate searches made zero extra public requests. Only one selected item thumbnail downloaded.
+  Salewa prices remained distinct in all modes; common/selected-mode/candidate images were visually inspected.
+  No background task or Boss portrait folder was created, no user/chat message sent. Temporary previews, runtime
+  smoke caches and reports remain under `/tmp`, outside the repository/package.
+- QQ actual passive image delivery still needs bot-side acceptance. Existing player text/Markdown migration,
+  historical price charts and barter/crafting profit features remain outside this stage. README/checklist unchanged;
+  publish to `1024` using normal Git push, without a PR, merge or release.

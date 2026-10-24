@@ -1,7 +1,8 @@
 """Rebuild the bundled fonts in tarkov_core/fonts/ (development only; needs `pip install fonttools`).
 
 - Noto Sans SC (variable, ~17 MB) is cut down to the characters the plugin can draw: printable ASCII plus every
-  non-ASCII character in main.py, tarkov_core/*.py and the skill names in static.json. The list is written next to
+  non-ASCII character in main.py, tarkov_core/*.py, skill names in static.json and the optional item-label glyph
+  corpus. The list is written next to
   the font; image.py draws any other character as '?'. Re-run this script after adding Chinese text to the code.
 - Oswald (variable) and Share Tech Mono are copied unmodified. Share Tech Mono's licence reserves the name "Share",
   so it must not be subset (a modified copy could not keep its name); Oswald is small enough as it is.
@@ -48,6 +49,9 @@ def characters():
     static = json.loads((ROOT/'tarkov_core'/'data'/'static.json').read_text(encoding='utf-8'))
     for skill in static['skills'].values():
         chars |= set(skill['zh'])
+    corpus = ROOT/'tarkov_core'/'data'/'item-label-chars.txt'
+    if corpus.exists():
+        chars |= {char for char in corpus.read_text(encoding='utf-8') if ord(char) > 126 and char.isprintable()}
     return ''.join(sorted(chars))
 
 

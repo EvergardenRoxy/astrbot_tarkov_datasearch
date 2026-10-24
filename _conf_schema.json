@@ -64,7 +64,37 @@
         "description": "公共游戏数据按需缓存时间（分钟）",
         "default": 5,
         "slider": {"min": 0, "max": 1440, "step": 1},
-        "hint": "状态查询及后续物品、Boss 功能共用。按资源、模式、语言保存；过期后查询才检查更新，不启动后台轮询。0 表示每次条件检查。状态播报每轮会条件复查，不受此缓存时间阻止。"
+        "hint": "状态、物品、Boss 共用。按资源、模式、语言保存；过期后查询才检查更新，不启动后台轮询。0 表示每次条件检查。状态及 Boss 播报每轮条件复查，不受此缓存时间阻止。"
+    },
+    "items_enabled": {
+        "type": "bool",
+        "description": "物品图片查询",
+        "default": false,
+        "hint": "item 名称查询三个模式已核对的共同属性；item pve/pvp/赛季 名称查询指定模式的价格、限制和属性差异。支持中文/英文/简称、多词名称和 id:物品ID，同名输出候选图片。首次按需下载并建立本地索引，关闭不启动专用下载或轮询。"
+    },
+    "item_details_enabled": {
+        "type": "bool",
+        "description": "物品属性及跨模式核对",
+        "default": true,
+        "hint": "依赖物品总开关。开启后通用属性须在 PVP/PVE/赛季一致才展示；模式查询展示已核对的属性差异。关闭后不带模式的属性查询不可用，显式模式可查询仍开启的价格功能，无需加载其他模式。"
+    },
+    "item_flea_enabled": {
+        "type": "bool",
+        "description": "物品跳蚤市场价格",
+        "default": true,
+        "hint": "依赖物品总开关，仅在指定模式查询中显示。包括最新扫描低价、24 小时统计、报价数和扫描时间；禁跳蚤、市场未开放、无有效报价分别说明，不保证即时成交。"
+    },
+    "item_trader_enabled": {
+        "type": "bool",
+        "description": "物品商人买卖价格与条件",
+        "default": true,
+        "hint": "依赖物品总开关，仅在指定模式查询中显示。从商人购买与卖给商人分开，保留币种、折合卢布、商人等级、任务解锁和限购。按需读取该模式商人/任务名称，失败保留原 ID。"
+    },
+    "item_images_enabled": {
+        "type": "bool",
+        "description": "物品卡片缩略图",
+        "default": true,
+        "hint": "依赖物品总开关，关闭仅省略卡片中的物品缩略图，结果仍为图片。仅在选中具体物品时按需读取 assets.tarkov.dev 固定 ID 图片，本地缓存 7 天、最多 128 张/32 MiB。无后台刷新，不影响 Boss 头像只手动更新的规则。"
     },
     "status_enabled": {
         "type": "bool",
@@ -144,7 +174,7 @@
         "type": "bool",
         "description": "启用简短查询命令",
         "default": true,
-        "hint": "控制 status/状态、boss/刷率（含 QQ 斜杠入口）的实际处理器启用状态。冲突时关闭并保存重载，仍可用 tarkov status、tarkov boss。"
+        "hint": "控制 status/状态、boss/刷率、item/物品（含 QQ 斜杠入口）的实际处理器启用状态。冲突时关闭并保存重载，仍可用 tarkov status、tarkov boss、tarkov item。"
     },
     "access_mode": {
         "type": "string",

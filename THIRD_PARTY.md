@@ -21,7 +21,9 @@ https://github.com/the-hideout/TarkovMonitor (revision `3cf361efc49fecf6bffce3ca
 https://github.com/google/fonts, rebuilt by `tools/build_fonts.py`):
 - `NotoSansSC-Subset.ttf`: a subset of Noto Sans SC (variable), Copyright 2014-2021 Adobe, with Reserved Font Name
   'Source'. Cut down to the characters listed in `NotoSansSC-Subset.chars.txt`; hinting removed. Source file sha256
-  `a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da`.
+  `a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da`. The item UI also seeds the subset from
+  `tarkov_core/data/item-label-chars.txt`, a glyph-only corpus derived from public regular item/merchant/task Chinese
+  labels (2026-10-24); original descriptions and price snapshots are not bundled with that corpus.
 - `Oswald-Variable.ttf`: Oswald (variable), Copyright 2016 The Oswald Project Authors, unmodified (file renamed).
 - `ShareTechMono-Regular.ttf`: Share Tech Mono, Copyright (c) 2012 Carrois Type Design, Ralph du Carrois, with
   Reserved Font Name 'Share', unmodified (a modified copy could not keep the reserved name).
@@ -33,6 +35,12 @@ Portraits are game artwork of Battlestate Games; they are not bundled in this GP
 administrator settings action downloads fixed known portrait paths into the plugin's local runtime data directory,
 sanitizes them to small thumbnails and caches them for 365 days. Ordinary queries never download portraits. This
 attribution does not relicense the artwork. Missing/expired portraits use a locally drawn placeholder.
+
+Item cards can additionally retrieve the selected item's thumbnail from fixed item-ID paths on assets.tarkov.dev
+(the same artwork referenced by `image512pxLink` / `iconLink` in the public items resource). This is a separate,
+optional on-demand cache (seven days, at most 128 images/32 MiB), not a change to manual-only Boss portraits.
+Item artwork is also not bundled or relicensed by the plugin; disabling the thumbnail setting keeps card results
+as images without fetching item artwork.
 
 This plugin is not affiliated with Battlestate Games or tarkov.dev. Plugin source is distributed under
 GPL-3.0-or-later (see LICENSE). aiohttp is a runtime dependency, not vendored; its own license applies.

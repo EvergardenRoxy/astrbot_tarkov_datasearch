@@ -81,7 +81,7 @@
 - 价格：`basePrice`、`lastLowPrice`、`avg24hPrice`、`low24hPrice`、`high24hPrice`、`changeLast48h`、`changeLast48hPercent`、`lastOfferCount`、`lastScan`、`updated`。基础价、跳蚤市场价与商人价应分别显示；价格不存在或为 0 时，不据此认定物品可免费获得。
 - 商人报价：`buyFromTrader` 表示玩家向商人购买；`sellToTrader` 表示玩家卖给商人。报价含商人 ID、`price`、`currency`、`currencyItem`、统一折算的 `priceRUB`；购买报价还可含等级、任务解锁、限购与补货数量。比较不同币种使用 `priceRUB`，展示原币价保留货币。
 - 装备关系：`containsItems`、`conflictingItems`、`conflictingSlotIds`、`conflictingCategories` 等；属性和冲突限制需结合对应类型读取。
-- `properties` 根据 `propertiesType` 分型，不能假设所有物品都有相同属性。
+- `properties` 根据其内部的 `properties.propertiesType` 分型，不能假设所有物品都有相同属性。
 
 | 属性类型举例 | 可用数据举例 |
 |---|---|
@@ -324,3 +324,5 @@ JSON 是本次整理的首选入口。下面是基于官方 schema 的兼容说�
 本次 regular 快照包含 5,480 个物品、855 条易物、214 条制造、26 个设施、17 张地图、503 个任务、138 个任务物品、128 个成就、6 个 prestige、16 个商人；这些只是核对样本的数量，不是客户端应硬编码的常量。原始 items/maps/tasks 大小约为 17.3/8.9/2.1 MB。
 
 未穷举每个端点的全部模式/语言组合；未验证数据与实际游戏完全一致；没有调用管理端写接口、个人账号接口或绕过访问限制。运行时应继续以实时目录和实际响应为准。
+
+物品查询实现补充（2026-10-24）：普通物品使用 24 位 ID，当前目录另含虚拟狗牌 `customdogtags12345678910`。不能因此拒绝整份目录；该虚拟项不适用仅接受 24 位 ID 的历史价格/固定缩略图路径。界面的共同属性需按三个模式的 ID 与属性类型核对，不能将单模式条目直接称作共同属性。当前实现范围见 [开发进度第 14 节](development-plan.md#14-物品查询阶段进度)。
