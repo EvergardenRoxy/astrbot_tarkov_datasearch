@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw
 
 from tarkov_core.boss_monitor import BOSS_SCOPE, DAILY_BOSSES, build_table, normalize_bosses, percent, probability, state_fingerprint
 from tarkov_core.boss_notifications import BossNotifications, BossStore, PAGES_PER_CYCLE, QUERY_SECONDS
-from tarkov_core.boss_table_image import BOSS_ROWS, FONT_SIZE, MAPS_PER_PAGE, MAX_CHANGE_LINES, RED, TEXT as INK, change_lines, compact_rows, paginate_table, render_boss_page
+from tarkov_core.boss_table_image import BOSS_ROWS, FONT_SIZE, MAPS_PER_PAGE, MAX_CHANGE_LINES, RED, TEXT as INK, change_lines, compact_rows, notes_for, paginate_table, render_boss_page
 from tarkov_core.image import font
 from tarkov_core.public_api import DataError, ResourceKey, decode
 from tarkov_core.transport import QueryError
@@ -45,7 +45,7 @@ class BossModelTests(unittest.TestCase):
             data['maps']['factory']['bosses'].append({'mob':mob,'spawnChance':None})
         excluded = {'69af492a4819ea4ba10a69c5':'icebreaker', '653e6760052c01c1c805532f':'ground-zero',
                     '6a294a5b5eb5f9a1700417b7':'the-lab-dark', '6733700029c367a3d40b02af':'the-labyrinth',
-                    '68236e8153654e8c1200798a':'ground-zero-tutorial'}
+                    '68236e8153654e8c1200798a':'ground-zero-tutorial', '65cc8f81a9aac3e77d0cfd3e':'terminal'}
         for map_id, name in excluded.items():
             data['maps'][map_id] = copy.deepcopy(data['maps']['factory'])
             data['maps']['other-'+name] = {**copy.deepcopy(data['maps']['factory']), 'normalizedName':name}
@@ -219,6 +219,24 @@ class ChangeSummaryTests(unittest.TestCase):
         with_summary = Image.open(io.BytesIO(render_boss_page({**page, 'change_lines': ['A：1%→2%', 'B：新增 3%']})))
         self.assertGreater(with_summary.height, plain.height+60)
         self.assertEqual(with_summary.width, plain.width)
+
+
+class FooterTests(unittest.TestCase):
+    def test_footer_is_one_source_line_unless_something_needs_saying(self):
+        page = {'mode': 'pve', 'checked_at': 100, 'fetched_at': 90, 'compared_at': 50}
+        notes = notes_for(page, 'abc123def456', 1, 1, '')
+        self.assertEqual(len(notes), 1)
+        self.assertTrue(notes[0].startswith('数据 json.tarkov.dev · 头像 assets.tarkov.dev · astrbot_tarkov_datasearch v'))
+        self.assertIn('GPL-3.0-or-later', notes[0])
+        for removed in ('第 1/1 页', '检查：', '对比：', '取得：', '空白为上游未列出'):
+            self.assertFalse(any(removed in note for note in notes), removed)
+
+    def test_warnings_and_continuation_stay(self):
+        notes = notes_for({'stale': True, 'translation_warning': True}, 'abc123def456', 2, 3, 'boss 页 abc123def456 3')
+        text = '\n'.join(notes)
+        for kept in ('获取失败', '部分翻译未取得', '第 2/3 页', 'boss 页 abc123def456 3'):
+            self.assertIn(kept, text)
+        self.assertEqual(len(notes), 4)
 
 
 class BossStoreTests(unittest.TestCase):

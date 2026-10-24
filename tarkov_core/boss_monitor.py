@@ -12,13 +12,14 @@ from .transport import QueryError
 # 工厂、夜间工厂、迷宫、实验室、破冰船、森林、灯塔、海岸线、储备站、中心区、塔科夫街区、教程、桥。
 # 邪教徒祭司、邪教徒战士、掠夺者、游荡者、黑色军团、保镖、守卫、俄军。
 
-BOSS_SCOPE = 'daily-goons-selected-maps-matrix-v4'
+BOSS_SCOPE = 'daily-goons-selected-maps-matrix-v5'
 # Explicit maintainer scope: Knight represents the GOONS squad. Ordinary AI and event variants stay excluded.
 DAILY_BOSSES = frozenset(('bossTagilla', 'bossBully', 'bossKojaniy', 'bossSanitar', 'bossKilla', 'bossGluhar',
                          'bossZryachiy', 'bossBoar', 'bossKolontay', 'bossPartisan', 'sectantPriest', 'bossKnight'))
 EXCLUDED_MAP_IDS = frozenset(('69af492a4819ea4ba10a69c5', '653e6760052c01c1c805532f',
-                              '6a294a5b5eb5f9a1700417b7', '6733700029c367a3d40b02af', '68236e8153654e8c1200798a'))
-EXCLUDED_MAP_NAMES = frozenset(('icebreaker', 'ground-zero', 'the-lab-dark', 'the-labyrinth', 'ground-zero-tutorial'))
+                              '6a294a5b5eb5f9a1700417b7', '6733700029c367a3d40b02af', '68236e8153654e8c1200798a',
+                              '65cc8f81a9aac3e77d0cfd3e'))
+EXCLUDED_MAP_NAMES = frozenset(('icebreaker', 'ground-zero', 'the-lab-dark', 'the-labyrinth', 'ground-zero-tutorial', 'terminal'))
 
 
 def canonical(value):

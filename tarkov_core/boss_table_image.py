@@ -26,8 +26,7 @@ MAP_LABELS = (
     ('56f40101d2720b2a4d8b45d6','海关'), ('5704e3c2d2720bac5b8b4567','森林'),
     ('5704e554d2720bac5b8b456e','海岸线'), ('5714dbc024597771384a510d','立交桥'),
     ('5704e5fad2720bc05b8b4567','储备站'), ('5704e4dad2720bb55b8b4567','灯塔'),
-    ('5714dc692459777137212e12','塔科夫街区'), ('5b0fc42d86f7744a585f9105','实验室'),
-    ('65cc8f81a9aac3e77d0cfd3e','码头'))
+    ('5714dc692459777137212e12','塔科夫街区'), ('5b0fc42d86f7744a585f9105','实验室'))
 
 
 def compact_rows(rows):
@@ -106,22 +105,14 @@ def change_lines(rows, map_ids=None):
 
 
 def notes_for(page,token,index,total,command):
-    notes = [f'Boss 刷率 · 第 {index}/{total} 页 · 红字：本次变动；红色粗体：100%']
-    times = []
-    for key,label in (('checked_at','检查'),('compared_at','对比'),('fetched_at','取得')):
-        if page.get(key) is not None: times.append(label+'：'+(when(page[key]) or '未知'))
-    if page.get('last_modified'):
-        try: stamp = when(email.utils.parsedate_to_datetime(page['last_modified']).timestamp())
-        except (ValueError,TypeError,OverflowError): stamp = None
-        if stamp: times.append('上游版本：'+stamp)
-    if times: notes.append(' · '.join(times)+'（GMT+8）')
+    """Footer lines: only warnings and the continuation hint when they apply, then one source line."""
+    notes = []
     if page.get('stale'): notes.append('获取失败，显示上次成功数据；本次不生成监控变化。')
     elif page.get('from_cache'): notes.append('使用已缓存或条件复查后的资源。')
     if page.get('translation_warning'): notes.append('部分翻译未取得，名称保留英文或上游标识。')
-    notes.append('空白为上游未列出；同格多概率来自不同记录，分别显示、不相加，不代表当前战局。')
-    if token and total > 1: notes.append(f'快照 {token} · 至多保留 24 小时；续查：'+command)
+    if token and total > 1: notes.append(f'快照 {token} · 第 {index}/{total} 页 · 至多保留 24 小时；续查：'+command)
     from . import NAME, NOTICE, VERSION
-    notes.extend(['数据 json.tarkov.dev · 头像 assets.tarkov.dev',f'{NAME} v{VERSION} · '+NOTICE])
+    notes.append(f'数据 json.tarkov.dev · 头像 assets.tarkov.dev · {NAME} v{VERSION} · '+NOTICE)
     return notes
 
 
