@@ -1,13 +1,13 @@
 [![AI Co-created](https://img.shields.io/badge/AI-Claude%20Opus%205.5%20%2B%20Claude%20Code-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](README.md#ai-制作声明)
 
 > [!IMPORTANT]
-> **AI 共创声明：本更新日志所记录的修改与日志本身，由项目维护者与生成式 AI 共同完成。** **Claude Opus 5.5**（通过 **Claude Code**）参与 0.1.0 至 0.4.4 版本的数据源调研、方案制定、编码、测试、图片回复的设计与绘制，以及本日志与交接文档 `handoff.md` 的编写。0.4.5 与 0.4.5hotfix 版本由 **Claude**（通过 **Claude Code**）接手开发，Boss 图背景纹理由维护者用 GPT-Image-2.5-sunburst 生成。AI 生成或修改的内容由项目维护者审阅、验证并承担最终维护责任。完整声明见 [README](README.md#ai-制作声明)。
+> **AI 共创声明：本更新日志所记录的修改与日志本身，由项目维护者与生成式 AI 共同完成。** **Claude Opus 5.5**（通过 **Claude Code**）参与 0.1.0 至 0.4.4 版本的数据源调研、方案制定、编码、测试、图片回复的设计与绘制，以及本日志与交接文档 `handoff.md` 的编写。0.4.5 与 0.4.6 版本由 **Claude**（通过 **Claude Code**）接手开发，Boss 图背景纹理由维护者用 GPT-Image-2.5-sunburst 生成。AI 生成或修改的内容由项目维护者审阅、验证并承担最终维护责任。完整声明见 [README](README.md#ai-制作声明)。
 
 # 更新日志
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## 0.4.5hotfix - 2026-10-24
+## 0.4.6 - 2026-10-24
 
 > 0.4.5 发布后维护者提出的修改：QQ 官方机器人命令不能有空格、推送目标留空的含义、检查间隔、设置页整理。由 **Claude**（通过 **Claude Code**）实现，**尚未在 QQ 等聊天平台实测。** 依据与验证见 [handoff.md](handoff.md) §18。
 
@@ -23,7 +23,7 @@
 - **“同时使用 tarkov.dev 的昵称名单”默认开启**：第一次按昵称查某个模式会下载名单（PVP 约 30 MB，需要几十秒），不需要可以关闭。
 - **命令写法**只保留 `@机器人 tarkov` 和 `/tarkov`；QQ 官方平台上的 `@机器人 /tarkov …` 一直可用，不再有开关。
 - 删除不带 `tarkov` 的 `status`、`boss`、`状态`、`刷率` 短命令，以及“启用简短查询命令”“QQ 官方机器人提及后斜杠命令兼容”两个设置；请用 `tarkov status`、`tarkov boss` 或单词命令。
-- 版本号升至 0.4.5hotfix；示例图和文档里的版本号同步。
+- 版本号升至 0.4.6；示例图和文档里的版本号同步。
 
 ### 测试
 

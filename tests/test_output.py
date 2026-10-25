@@ -81,7 +81,7 @@ class OutputTests(unittest.TestCase):
             'Scav：战局 50，撤离 30，存活率 60.0%', '　击杀 100，死亡 10，K/D 10.00，击杀 PMC 20，PMC K/D 2.00', '　匆匆逃离 5，KIA 15，最长连续存活 5 局',
             '精英技能（2 项）：耐力、力量', '其他技能（前 2 项）：魅力 40、活力 25', '', '数据来自 tarkov.dev，档案更新于 2026-10-03 12:00（北京时间）', 'n',
             # Maintainer: every text reply ends with the repository and the open-source statement.
-            'astrbot_tarkov_datasearch v0.4.5hotfix · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch', '本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系']))
+            'astrbot_tarkov_datasearch v0.4.6 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch', '本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系']))
 
     def test_pmc_kd_is_pmc_kills_per_death(self):
         # Maintainer: PMC K/D = PMC kills / deaths, after the PMC kills, in every non-Arena output.
@@ -96,10 +96,10 @@ class OutputTests(unittest.TestCase):
 
     def test_markdown_ends_with_the_source(self):
         text = render_markdown(build_card(summarize(profile()), 'PVE', now=NOW))
-        self.assertTrue(text.endswith('>\n> astrbot\\_tarkov\\_datasearch v0.4.5hotfix · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch\n'
+        self.assertTrue(text.endswith('>\n> astrbot\\_tarkov\\_datasearch v0.4.6 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch\n'
                                       '> 本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系'))
 
     def test_prestige_and_notes(self):
         text = render(summarize(profile(info_prestigeLevel=2)), 'PVP', notes=['注意：测试'], now=NOW)
         self.assertIn('声望 2', text)
-        self.assertTrue(text.endswith('注意：测试\n' + 'astrbot_tarkov_datasearch v0.4.5hotfix · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch' + '\n' + '本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系'))
+        self.assertTrue(text.endswith('注意：测试\n' + 'astrbot_tarkov_datasearch v0.4.6 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch' + '\n' + '本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系'))

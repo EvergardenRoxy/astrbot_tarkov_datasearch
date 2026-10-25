@@ -73,7 +73,7 @@ def every(seconds):
     return f'每 {hours} 小时'
 
 
-@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.4.5hotfix')
+@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.4.6')
 class TarkovPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)

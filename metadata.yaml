@@ -1,7 +1,7 @@
 name: astrbot_tarkov_datasearch
 display_name: 塔科夫数据查询
 desc: 调用 tarkov.dev 的公开数据：查询自己或其他玩家的档案（等级、阵营、K/D、存活率、技能），以及服务器状态和 Boss 刷率，生成情报档案风格的图片（玩家档案也可用文字/Markdown）。
-version: v0.4.5
+version: v0.4.6
 author: Evergarden_Roxy
 astrbot_version: '>=4.16.0'
 repo: https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch
