@@ -44,6 +44,8 @@ def source(name, cache):
 
 def characters():
     chars = {chr(code) for code in range(32, 127)}
+    # Upstream event translations need glyphs even when their labels are absent from runtime code.
+    chars |= set('感染者')
     for path in [ROOT/'main.py', *sorted((ROOT/'tarkov_core').glob('*.py'))]:
         chars |= {char for char in path.read_text(encoding='utf-8') if ord(char) > 126 and char.isprintable()}
     static = json.loads((ROOT/'tarkov_core'/'data'/'static.json').read_text(encoding='utf-8'))

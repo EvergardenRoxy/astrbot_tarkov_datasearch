@@ -13,6 +13,7 @@ import sqlite3
 import time
 
 from .names import SUGGESTIONS, spelling_variants
+from .modes import GAME_MODES
 
 # Recorded names kept at most; the least recently seen are dropped beyond this.
 MAX_NAMES = 200000
@@ -60,7 +61,21 @@ class Accounts:
         db.execute('CREATE TABLE IF NOT EXISTS names (key TEXT NOT NULL, aid INTEGER NOT NULL, name TEXT NOT NULL, seen_at REAL NOT NULL, PRIMARY KEY (key, aid))')
         db.execute('CREATE INDEX IF NOT EXISTS names_seen ON names (seen_at)')
         db.execute('CREATE TABLE IF NOT EXISTS sessions (umo TEXT PRIMARY KEY, seen_at REAL NOT NULL)')
+        db.execute('CREATE TABLE IF NOT EXISTS boss_preferences (owner TEXT PRIMARY KEY, mode TEXT NOT NULL)')
         return db
+
+    def boss_mode(self, owner):
+        """Personal Boss mode, independent of player bindings and monitor configuration."""
+        with closing(self.connect()) as db:
+            row = db.execute('SELECT mode FROM boss_preferences WHERE owner=?', (owner,)).fetchone()
+            return row[0] if row and row[0] in GAME_MODES else None
+
+    def set_boss_mode(self, owner, mode):
+        if mode not in GAME_MODES:
+            raise ValueError('invalid Boss mode')
+        with closing(self.connect()) as db, db:
+            db.execute('INSERT INTO boss_preferences VALUES (?,?) ON CONFLICT(owner) DO UPDATE SET mode=excluded.mode',
+                       (owner, mode))
 
     def bind(self, owner, aid, nickname):
         db = self.connect()

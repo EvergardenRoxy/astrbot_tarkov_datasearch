@@ -73,7 +73,7 @@ def every(seconds):
     return f'每 {hours} 小时'
 
 
-@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.4.6')
+@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.4.7')
 class TarkovPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -224,7 +224,8 @@ class TarkovPlugin(Star):
     def help_text(self):
         index = f'；另外会查 tarkov.dev 的昵称名单（{every(self.names.refresh_seconds)}更新一次）' if self.index_enabled() else ''
         status = f"服务器状态图片：{self.cmd('status')}\n" if self.status_enabled() else ''
-        boss = f"Boss 全表图片：{self.cmd('boss [模式]')}；最近变化：{self.cmd('boss [模式] 变化')}\n" if self.boss_enabled() else ''
+        boss = (f"Boss 全表图片：{self.cmd('boss [模式]')}；最近变化：{self.cmd('boss [模式] 变化')}\n"
+                f"Boss 默认模式：{self.cmd('boss 默认 <模式>')}；支持 pvp、pve、PVP S。\n") if self.boss_enabled() else ''
         words = ('QQ 官方机器人单词命令（后面的参数可以带空格）：tpvp、tpve、tseason、tarena [昵称、账号ID 或网址]；'
                  'tbind <网址或账号ID>、tunbind、thelp；tstatus、tboss [模式] [变化]\n') if self.qq_words_enabled() else ''
         return ('塔科夫玩家档案查询（数据来自 tarkov.dev）\n'
@@ -1017,9 +1018,25 @@ class TarkovPlugin(Star):
                 if not pages: raise QueryError('表格快照已过期或被清理，请重新查询。')
                 if not 1 <= index <= len(pages): raise QueryError(f'页码超出范围，此快照共 {len(pages)} 页。')
                 return await self.boss_picture(event, pages[index-1], index, len(pages), words[1])
+            # Boss-only aliases: keep player query parsing and its defaults independent.
+            def boss_mode(tokens):
+                token = ' '.join(tokens)
+                return 'season' if token in ('pvp s', 'pvps') else parse_mode(token)
+
+            if words and words[0] in ('默认', 'default'):
+                mode = boss_mode(words[1:])
+                if mode not in GAME_MODES:
+                    raise QueryError('请选择 pvp、pve 或赛季模式。用法：'+self.cmd('boss 默认 <模式>'))
+                await asyncio.to_thread(self.accounts.set_boss_mode, self.binding_key(event), mode)
+                return event.plain_result(f'Boss 默认模式已设为 {label_of(mode)}。之后发送 '+self.cmd('boss')+' 即可查询。')
             changed = any(word in ('变化', 'changes') for word in words)
             words = [word for word in words if word not in ('变化', 'changes')]
-            modes = [parse_mode(words[0])] if len(words) == 1 and parse_mode(words[0]) in GAME_MODES else self.boss_modes() if not words else []
+            if words:
+                mode = boss_mode(words)
+                modes = [mode] if mode in GAME_MODES else []
+            else:
+                preferred = await asyncio.to_thread(self.accounts.boss_mode, self.binding_key(event))
+                modes = [preferred] if preferred else self.boss_modes()
             if not modes:
                 raise QueryError('请选择 pvp、pve 或赛季模式。用法：'+self.cmd('boss [模式] [变化]'))
             pages = []

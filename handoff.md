@@ -27,9 +27,9 @@ earlier). From now on new work is appended as new sections.
 |---|---|
 | Task | AstrBot plugin to look up Escape from Tarkov player profiles in chat (maintainer request, 2026-10-13); since 2026-10-24 also public game data: server status, Boss spawn rates, items. |
 | License / AI statement | GPL-3.0-or-later. README and CHANGELOG state the plugin was written by Claude Opus 5.5 (via Claude Code) and reviewed by the maintainer. |
-| Released | 0.4.6 (2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
+| Release target | 0.4.7 (2026-11-04, pending PR review; last release 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
 | Work branch | `1024` carries 0.4.5 (status, Boss, QQ routes). `main` was overwritten with this history on 2026-10-24 (§16); the item query was archived (§11). |
-| Tests | 306 on `1024` (307 before the item query was archived, §11; 193 at 0.4.4) (`python -m unittest discover -s tests`, needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13. 0.4.4 had 193. |
+| Tests | 318 on `fix/boss-modes-v0.4.7`; previously 306 on `1024` (307 before the item query was archived, §11; 193 at 0.4.4) (`python -m unittest discover -s tests`, needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13. 0.4.4 had 193. |
 | AstrBot evidence | 4.16.0 wheel read and its registration/wake/filter/parser bodies replayed by `tools/verify_qq_routes.py` (146 cases after the hotfix; SDK and network boundaries doubled). Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. The maintainer ran a small closed test of 0.3.0. **No live AstrBot run of the 1024 features; QQ image delivery and proactive push are unverified.** |
 
 ## 2. Data sources and evidence
@@ -462,3 +462,54 @@ interval default 30, range 10–90 minutes.
   `0.4.5-hotfix` (semver pre-release, which sorts *below* 0.4.5) or `0.4.6`. The maintainer chose `0.4.5hotfix` literally.
 - `main` fast-forwarded to the release commit (no force). The example pictures were rebuilt so their footers read v0.4.5hotfix
   (player pictures from invented data; status and Boss pictures from live data with portraits, as in §17).
+
+## 20. Boss Halloween robustness, mode queries and personal defaults — v0.4.7 (2026-11-04)
+
+Maintainer-authorised scope: backend Boss handling, then only explicit-mode queries and personal default binding;
+no Boss/map search or cross-mode comparison commands. Implemented with OpenAI Codex. Delivery is a review branch
+`fix/boss-modes-v0.4.7` and PR targeting `main`; the maintainer will merge it. No deployment, tag or GitHub release.
+
+- **Observed feed**: public `regular/maps`, `pve/maps`, `pvp-season/maps` were read on 2026-11-04 KST. PvP and season
+  rates matched in the selected scope; PvE differed in 13 Boss/map cells. Partisan had no current map records in all
+  three feeds; absence must not imply it cannot spawn in game. No validation was relaxed and no rates were invented.
+- **Halloween** (`boss_monitor.py`): ordinary `normalizedName=infected` mobs and the four stable ordinary IDs
+  `infectedAssault`, `infectedCivil`, `infectedPmc`, `infectedLaborant` no longer consume event slots. The ID fallback
+  also covers missing normalized names; it is not an infected-prefix blacklist. `infectedScreamer` remains special.
+  Per the maintainer's explicit choice, `infectedTagilla` maps to resident `bossTagilla` for table display. The original
+  name and synthetic `sourceMob` rule field preserve the variant's source and prevent diff matching against ordinary
+  Tagilla. Separate conditional rates are retained, never added together. The event ignore list still applies to the
+  source variant. `BOSS_SCOPE` v7 silently retires older baselines, events and frozen tables through the existing store.
+- **Partisan** (`boss_table_image.py`): omit its fixed row when no current Partisan rates exist anywhere in the result;
+  removed-only historical records cannot keep it visible. Explicit zero counts as present. Reappearing feed records
+  restore the row automatically. Historical removal records remain available to the existing change summary.
+- **Font**: added 感染者 to the font builder's upstream-event translation corpus and rebuilt the bundled Noto Sans SC subset and charset
+  from the upstream Google Fonts source via fontTools (same subset options as `tools/build_fonts.py`). This fixes 染
+  being replaced by `?`; rendering/layout code otherwise stays intact except the authorised Partisan visibility rule.
+- **Mode queries** (`main.py::boss_query`): existing `tarkov boss <mode>` and QQ `tboss <mode>` continue to work.
+  Boss-only parsing additionally accepts case-insensitive `PVP S` and `pvps`; existing `pvp`, `pve`, `regular`,
+  `season`, `pvp-season`, `赛季` remain. No standalone `/boss` route was reintroduced. Explicit mode queries read exactly
+  that feed, independent of monitored modes, with existing per-mode caching, error pages and frozen pagination.
+- **Default binding**: `tarkov boss 默认 <mode>` / `default <mode>` (also through `tboss`) persists to the new SQLite
+  `accounts.sqlite3/boss_preferences(owner PRIMARY KEY, mode)` table. The owner is the existing keyed hash of platform
+  instance ID + sender ID (`binding_key`), shared across chats in one instance; no raw IDs are stored. This additive
+  schema needs no reset of existing player bindings. Valid modes are pvp/pve/season, not arena. The command passes the
+  existing permission, feature-switch and active-query checks, performs no public-data fetch, and confirms in text.
+  Explicit mode > personal Boss preference > existing configured multi-mode fallback. This also applies to `变化`.
+  An explicit query never rebinds the preference. Restart preserves it; player bind/unbind and admin monitor settings
+  do not affect it. No clear-default command or other new command family was added.
+- **Documentation/release**: README, command help, status/Boss guide, this handoff and checklist updated. Runtime VERSION,
+  AstrBot registration, metadata, README/footer assertions and changelog agree on 0.4.7. Historical version records are
+  preserved. All six bundled example images rebuilt with v0.4.7 footers (player/arena/help use invented fixture data;
+  Boss/status use current public game data). Packaging follows metadata and remains an ignored local ZIP.
+- **Validation**: 318 tests pass with the workspace Python 3.12 environment; this includes feed routing, aliases, SQLite
+  restart persistence, cross-user/platform isolation, cross-chat reuse, explicit override, permissions/disabled/invalid
+  binding, QQ dispatch, default-mode change lookup, Halloween family separation and Partisan missing/zero/restoration.
+  The release test checks version consistency and ZIP contents/size. `git diff --check` passes. CI retains Python 3.12
+  and 3.13 coverage; Python 3.13 and live AstrBot/QQ delivery have not been run locally for this change.
+
+### Review follow-up: event label font corpus (2026-11-04)
+
+The maintainer requested removing 感染者 from the label comment in `boss_monitor.py`, since it belongs to an event.
+Moved its font-subset input to `tools/build_fonts.py::characters`; the resulting requested character set is unchanged,
+so the bundled font does not need another rebuild. This is a corpus/comment correction only; mob classification and
+event visibility remain as implemented above. Existing image/glyph and event tests verify coverage and behaviour.

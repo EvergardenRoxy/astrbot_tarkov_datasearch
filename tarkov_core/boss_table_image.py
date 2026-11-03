@@ -86,6 +86,10 @@ def paginate_table(card, rows):
     names = dict(MAP_LABELS)
     map_ids = sorted(maps,key=lambda key:(order.get(key,len(order)),key))
     lookup = {(r['map_id'],r['mob_id']):r for r in compact}
+    # Partisan can still spawn in game when the feed omits its records. Only show its
+    # row when a current rate is supplied, including an explicit zero.
+    resident_rows = [(mob, name) for mob, name in BOSS_ROWS
+                     if mob != 'bossPartisan' or any(r['mob_id'] == mob and r['rates'] for r in compact)]
     # Event bosses (not resident, not an ordinary soldier) get up to MAX_EVENT_ROWS extra rows below the fixed ones.
     events = {r['mob_id']:r['boss_name'] for r in compact if r.get('event') and r['mob_id']}
     event_ids = sorted(events)[:MAX_EVENT_ROWS]
@@ -96,7 +100,7 @@ def paginate_table(card, rows):
         for column in columns:
             column['lines'] = wrap(draw,safe(column['name']),font('sc',20,700),MAP_WIDTH-12)
         matrix = []
-        for mob_id,name,event in [(m,n,False) for m,n in BOSS_ROWS]+[(m,events[m],True) for m in event_ids]:
+        for mob_id,name,event in [(m,n,False) for m,n in resident_rows]+[(m,events[m],True) for m in event_ids]:
             cells = []
             for column in columns:
                 source = lookup.get((column['map_id'],mob_id),{})

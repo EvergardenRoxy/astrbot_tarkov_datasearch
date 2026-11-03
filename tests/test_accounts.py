@@ -17,6 +17,22 @@ class AccountsTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_boss_preference_persists_per_owner_without_player_binding(self):
+        self.assertIsNone(self.store.boss_mode('alice'))
+        self.store.set_boss_mode('alice', 'pve')
+        self.store.set_boss_mode('bob', 'season')
+        reopened = Accounts(self.store.path)
+        self.assertEqual(reopened.boss_mode('alice'), 'pve')
+        self.assertEqual(reopened.boss_mode('bob'), 'season')
+        self.assertIsNone(reopened.bound('alice'))
+        reopened.bind('alice', 123, 'Player')
+        reopened.unbind('alice')
+        self.assertEqual(reopened.boss_mode('alice'), 'pve')
+        reopened.set_boss_mode('alice', 'pvp')
+        self.assertEqual(reopened.boss_mode('alice'), 'pvp')
+        with self.assertRaises(ValueError): reopened.set_boss_mode('alice', 'arena')
+        self.assertEqual(reopened.boss_mode('alice'), 'pvp')
+
     def test_remembered_sessions_are_newest_first_and_bounded(self):
         self.assertEqual(self.store.sessions(), [])
         for i in range(accounts.MAX_SESSIONS+5):
