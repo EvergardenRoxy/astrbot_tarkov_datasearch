@@ -482,7 +482,7 @@ no Boss/map search or cross-mode comparison commands. Implemented with OpenAI Co
 - **Partisan** (`boss_table_image.py`): omit its fixed row when no current Partisan rates exist anywhere in the result;
   removed-only historical records cannot keep it visible. Explicit zero counts as present. Reappearing feed records
   restore the row automatically. Historical removal records remain available to the existing change summary.
-- **Font**: added 感染者 to the backend's upstream-label corpus and rebuilt the bundled Noto Sans SC subset and charset
+- **Font**: added 感染者 to the font builder's upstream-event translation corpus and rebuilt the bundled Noto Sans SC subset and charset
   from the upstream Google Fonts source via fontTools (same subset options as `tools/build_fonts.py`). This fixes 染
   being replaced by `?`; rendering/layout code otherwise stays intact except the authorised Partisan visibility rule.
 - **Mode queries** (`main.py::boss_query`): existing `tarkov boss <mode>` and QQ `tboss <mode>` continue to work.
@@ -506,3 +506,10 @@ no Boss/map search or cross-mode comparison commands. Implemented with OpenAI Co
   binding, QQ dispatch, default-mode change lookup, Halloween family separation and Partisan missing/zero/restoration.
   The release test checks version consistency and ZIP contents/size. `git diff --check` passes. CI retains Python 3.12
   and 3.13 coverage; Python 3.13 and live AstrBot/QQ delivery have not been run locally for this change.
+
+### Review follow-up: event label font corpus (2026-11-04)
+
+The maintainer requested removing 感染者 from the label comment in `boss_monitor.py`, since it belongs to an event.
+Moved its font-subset input to `tools/build_fonts.py::characters`; the resulting requested character set is unchanged,
+so the bundled font does not need another rebuild. This is a corpus/comment correction only; mob classification and
+event visibility remain as implemented above. Existing image/glyph and event tests verify coverage and behaviour.
