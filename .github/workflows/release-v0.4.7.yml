@@ -1,0 +1,48 @@
+name: Publish v0.4.7
+
+on:
+  push:
+    branches: [release/v0.4.7]
+    paths: [.github/workflows/release-v0.4.7.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 982fe671b1de0dacff0b18e21ce4558ff5aa55c9
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests
+      - name: Build package and release notes
+        run: |
+          python tools/package_plugin.py
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          package = Path('dist/astrbot_tarkov_datasearch-v0.4.7.zip')
+          checksum = hashlib.sha256(package.read_bytes()).hexdigest()
+          package.with_suffix('.sha256').write_text(checksum + '  ' + package.name + '\n')
+          changelog = Path('CHANGELOG.md').read_text()
+          notes = changelog.split('## 0.4.7 - 2026-11-04\n', 1)[1].split('\n## 0.4.6 - ', 1)[0].strip()
+          notes += '\n\n### 安装包\n\n下载附件 ZIP，通过 AstrBot 插件管理安装或更新。SHA-256 校验文件一并提供。\n'
+          notes += '\n构建提交：`982fe671b1de0dacff0b18e21ce4558ff5aa55c9`（已合并 PR #7）。GitHub Actions 发布前重新运行 318 项测试。\n'
+          Path('release-notes.md').write_text(notes)
+          PY
+      - name: Publish release with assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create v0.4.7 \
+            dist/astrbot_tarkov_datasearch-v0.4.7.zip \
+            dist/astrbot_tarkov_datasearch-v0.4.7.sha256 \
+            --target 982fe671b1de0dacff0b18e21ce4558ff5aa55c9 \
+            --title 'v0.4.7：Boss 模式查询与默认绑定' \
+            --notes-file release-notes.md --latest
