@@ -387,3 +387,13 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
 
 - [x] 按维护者意见，将“感染者”从 `boss_monitor.py` 的名称注释中移除；它是活动内容。
 - [x] 字体构建脚本单独保留活动译名的字符输入，继续支持“染”字，构建所需字符集合不变。本次只调整注释与字体输入位置，未改动感染者的筛选或显示规则。
+
+### v0.4.7 正式发布（2026-11-04）
+
+- [x] 维护者已合并 PR #7 并授权发布；标签指向合并提交 `982fe67`。
+- [x] 合并后的源代码重新通过 318 项测试，主分支 CI 通过。
+- [x] 正式 Release 已发布并设为 Latest，安装包 ZIP 和 SHA-256 校验文件均已上传。
+- [x] 本地附件上传遇到凭据错误后，改由独立发布分支的 GitHub Actions 从同一合并提交构建；没有修改发布源代码。首次流水线遇到现有并发测试的时序失败，原样重跑后全部通过。
+- 发布地址：https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/releases/tag/v0.4.7
+- 发布流水线：https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/actions/runs/41694184768
+- 本段发布记录保存在 `release/v0.4.7` 分支，不改变已经合并和打标签的安装包源代码。

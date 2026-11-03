@@ -513,3 +513,22 @@ The maintainer requested removing 感染者 from the label comment in `boss_moni
 Moved its font-subset input to `tools/build_fonts.py::characters`; the resulting requested character set is unchanged,
 so the bundled font does not need another rebuild. This is a corpus/comment correction only; mob classification and
 event visibility remain as implemented above. Existing image/glyph and event tests verify coverage and behaviour.
+
+## 21. v0.4.7 release publication (2026-11-04)
+
+After the maintainer merged PR #7 and explicitly requested publication, released tag `v0.4.7` from main merge commit
+`982fe671b1de0dacff0b18e21ce4558ff5aa55c9`. Release URL:
+https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/releases/tag/v0.4.7
+
+- Re-ran all 318 tests against the merged commit locally; main CI was successful.
+- Direct GitHub CLI attachment upload returned HTTP 401 on uploads.github.com. No credential files were inspected or
+  changed. Used a one-time Actions workflow on the separate `release/v0.4.7` branch with the repository's normal
+  `GITHUB_TOKEN` and `contents: write`; checkout is pinned to the exact merged source commit above. This branch does
+  not change the source included in the tag or installation ZIP.
+- First publication run failed the existing 20ms timing-sensitive cache concurrency test (`peak` 1 vs expected 2).
+  The failed job was rerun without code changes; the entire suite passed and publishing completed successfully.
+  Evidence: https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/actions/runs/41694184768
+- Published as a normal latest release, not draft/prerelease. Assets: `astrbot_tarkov_datasearch-v0.4.7.zip`
+  (637117 bytes) and its `.sha256` checksum file. Confirmed uploaded state and that the tag points at the merge commit.
+- This release-branch audit entry records publication after the source PR was merged; it is not included in the
+  already-reviewed source commit or ZIP.
