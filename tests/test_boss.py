@@ -127,6 +127,23 @@ class BossModelTests(unittest.TestCase):
 
 
 class BossImageTests(unittest.TestCase):
+    def test_partisan_row_returns_with_upstream_records_including_zero(self):
+        for chance in (0, 0.4):
+            data = feed({'bossPartisan': 'partisan'})
+            data['maps']['5b0fc42d86f7744a585f9105']['bosses'][0]['spawnChance'] = chance
+            rows, _ = build_table(None, normalize_bosses(data))
+            page = paginate_table({'mode': 'pvp'}, rows)[0]
+            partisan = next(r for r in page['rows'] if r['mob_id'] == 'bossPartisan')
+            self.assertEqual(partisan['cells'][0]['rates'], [probability(chance)])
+
+    def test_removed_partisan_is_hidden_but_retains_change_summary(self):
+        before = normalize_bosses(feed({'bossPartisan': 'partisan'}))
+        after = normalize_bosses(feed({}))
+        rows, changed = build_table(before, after)
+        self.assertTrue(changed)
+        self.assertNotIn('bossPartisan', [r['mob_id'] for r in paginate_table({'mode': 'pvp'}, rows)[0]['rows']])
+        self.assertIn('移除', change_lines(rows)[0])
+
     def test_unchanged_guaranteed_boss_and_probability_are_red_bold_in_actual_renderer(self):
         card = boss_card(1)
         rows, changed = build_table(None, card['state'])
@@ -171,7 +188,7 @@ class BossImageTests(unittest.TestCase):
         self.assertEqual(len({column['map_id'] for page in pages for column in page['columns']}),81)
         self.assertTrue(all(len(page['columns']) <= MAPS_PER_PAGE for page in pages))
         for page in pages:
-            self.assertEqual([(r['mob_id'],r['boss_name']) for r in page['rows']],list(BOSS_ROWS))
+            self.assertEqual([(r['mob_id'],r['boss_name']) for r in page['rows']],[(m, n) for m, n in BOSS_ROWS if m != 'bossPartisan'])
             self.assertTrue(all(len(row['cells']) == len(page['columns']) for row in page['rows']))
             self.assertTrue(all('condition' not in row and 'change' not in row for row in page['rows']))
         for page in (pages[0], pages[-1]):
@@ -240,6 +257,57 @@ class EventBossTests(unittest.TestCase):
     def test_ordinary_soldier_types_are_never_events(self):
         self.assertEqual(self.mobs(normalize_bosses(feed(self.SOLDIERS))), set())
 
+    def test_halloween_wave_mobs_do_not_hide_special_boss_rates(self):
+        # Current feed identities: ordinary waves share a translated name, but are not bosses.
+        ordinary = dict.fromkeys(('infectedAssault', 'infectedCivil', 'infectedPmc', 'infectedLaborant'), 'infected')
+        data = feed({**ordinary, 'infectedScreamer': 'infectedscreamer', 'infectedTagilla': 'infected-tagilla'},
+                    '55f2d3fd4bdc2d5f408b4567')
+        data['maps']['55f2d3fd4bdc2d5f408b4567']['bosses'][-1]['spawnChance'] = 0.06
+        dictionaries = [{'infectedAssault': '感染者', 'infectedTagilla': 'Infected Tagilla'}]
+        state = normalize_bosses(data, dictionaries)
+        self.assertEqual(self.mobs(state), {('infectedScreamer', True), ('bossTagilla', False)})
+        rows, _ = build_table(None, state)
+        page = paginate_table({'mode': 'pvp'}, rows)[0]
+        self.assertNotIn('event_overflow', page)
+        tagilla = next(r for r in page['rows'] if r['mob_id'] == 'bossTagilla')
+        self.assertEqual(tagilla['label'], 'Tagilla')
+        self.assertEqual(tagilla['cells'][0]['rates'], ['0.06'])
+        # Partisan is absent from the upstream records; do not invent a rate.
+        self.assertNotIn('bossPartisan', [r['mob_id'] for r in page['rows']])
+
+    def test_infected_wave_ids_are_excluded_without_normalized_names(self):
+        data = feed({'infectedAssault': 'infected', 'infectedPmc': 'infected',
+                     'infectedLaborant': 'infected', 'infectedCivil': 'infected',
+                     'infectedTagilla': 'infected-tagilla', 'infectedScreamer': 'infectedscreamer'})
+        for mob in data['mobs'].values():
+            mob.pop('normalizedName')
+        self.assertEqual(self.mobs(normalize_bosses(data)), {('bossTagilla', False), ('infectedScreamer', True)})
+
+    def test_resident_and_infected_tagilla_keep_separate_rules_and_rates(self):
+        data = feed({'bossTagilla': 'tagilla', 'infectedTagilla': 'infected-tagilla'})
+        data['maps']['5b0fc42d86f7744a585f9105']['bosses'][0]['spawnChance'] = 0.2
+        state = normalize_bosses(data)
+        self.assertEqual({(r['mob_id'], r['chance'], r['event']) for r in state[0]['rows']},
+                         {('bossTagilla', '0.2', False), ('bossTagilla', '1', False)})
+        self.assertEqual(len({r['rule'] for r in state[0]['rows']}), 2)
+        self.assertTrue(any(json.loads(r['rule']).get('sourceMob') == 'infectedTagilla' for r in state[0]['rows']))
+        rows, _ = build_table(None, state)
+        self.assertEqual(compact_rows(rows)[0]['rates'], ['0.2', '1'])
+        self.assertEqual(self.mobs(normalize_bosses(data, (), {'infected-tagilla'})), {('bossTagilla', False)})
+
+    def test_halloween_transition_is_a_rule_change_not_a_resident_rate_change(self):
+        before = normalize_bosses(feed({'bossTagilla': 'tagilla'}))
+        after = normalize_bosses(feed({'infectedTagilla': 'infected-tagilla'}))
+        rows, changed = build_table(before, after)
+        self.assertTrue(changed)
+        self.assertEqual({r['change'] for r in rows}, {'新增记录/规则', '已移除记录/规则'})
+        self.assertNotEqual(state_fingerprint(before), state_fingerprint(after))
+        self.assertEqual(compact_rows(rows)[0]['rates'], ['1'])
+
+    def test_infected_name_is_drawable(self):
+        from tarkov_core.image import safe
+        self.assertEqual(safe('活动 感染者'), '活动 感染者')
+
     def test_resident_bosses_stay_rows_and_unknown_bosses_become_events(self):
         mobs = {**self.SOLDIERS, 'bossTagilla': 'tagilla', 'bossScourgeEventLab': 'scourge'}
         self.assertEqual(self.mobs(normalize_bosses(feed(mobs))), {('bossTagilla', False), ('bossScourgeEventLab', True)})
@@ -257,8 +325,8 @@ class EventBossTests(unittest.TestCase):
         rows, _ = build_table(None, normalize_bosses(feed(mobs)))
         page = paginate_table({'mode': 'pve'}, rows)[0]
         labels = [r['label'] for r in page['rows']]
-        self.assertEqual(len(page['rows']), len(BOSS_ROWS)+3)
-        self.assertEqual(labels[len(BOSS_ROWS):], ['活动 bossEvent0', '活动 bossEvent1', '活动 bossEvent2'])
+        self.assertEqual(len(page['rows']), len(BOSS_ROWS)-1+3)
+        self.assertEqual(labels[len(BOSS_ROWS)-1:], ['活动 bossEvent0', '活动 bossEvent1', '活动 bossEvent2'])
         self.assertEqual(page['event_overflow'], 2)
         self.assertIn('另有 2 个活动 Boss 未显示', notes_for(page, '', 1, 1, ''))
         Image.open(io.BytesIO(render_boss_page(page))).verify()
@@ -266,7 +334,7 @@ class EventBossTests(unittest.TestCase):
     def test_event_rows_without_content_on_a_page_are_left_out(self):
         rows, _ = build_table(None, normalize_bosses(feed({'bossTagilla': 'tagilla'})))
         page = paginate_table({'mode': 'pve'}, rows)[0]
-        self.assertEqual(len(page['rows']), len(BOSS_ROWS))
+        self.assertEqual(len(page['rows']), len(BOSS_ROWS)-1)
         self.assertNotIn('event_overflow', page)
 
     def test_event_appearing_and_ending_are_changes(self):

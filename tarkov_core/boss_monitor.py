@@ -10,16 +10,22 @@ from .transport import QueryError
 
 # Font-subset corpus for known upstream labels (translations still come from the API):
 # 工厂、夜间工厂、迷宫、实验室、破冰船、森林、灯塔、海岸线、储备站、中心区、塔科夫街区、教程、桥。
-# 邪教徒祭司、邪教徒战士、掠夺者、游荡者、黑色军团、保镖、守卫、俄军。
+# 邪教徒祭司、邪教徒战士、掠夺者、游荡者、黑色军团、保镖、守卫、俄军、感染者。
 
-BOSS_SCOPE = 'daily-goons-events-selected-maps-matrix-v6'
-# Explicit maintainer scope: Knight represents the GOONS squad. Ordinary AI and event variants stay excluded.
+BOSS_SCOPE = 'daily-goons-events-selected-maps-matrix-v7'
+# Explicit maintainer scope: Knight represents the GOONS squad. Known display variants are mapped below.
 DAILY_BOSSES = frozenset(('bossTagilla', 'bossBully', 'bossKojaniy', 'bossSanitar', 'bossKilla', 'bossGluhar',
                          'bossZryachiy', 'bossBoar', 'bossKolontay', 'bossPartisan', 'sectantPriest', 'bossKnight'))
 # Resident bosses are the whitelist above. Everything else a selected map lists as a boss is an event boss unless it
 # is an ordinary soldier type, identified by the mob's language-independent normalizedName (checked against the
 # three modes' feeds on 2026-10-24: Raider PmcBot, Black Division, USEC, BEAR, Rogue exUsecFree, AF Sentry).
-GENERIC_MOBS = frozenset(('raider', 'black-div', 'usec', 'bear', 'rogue', 'af'))
+GENERIC_MOBS = frozenset(('raider', 'black-div', 'usec', 'bear', 'rogue', 'af', 'infected'))
+# These ordinary Halloween wave mobs may lack metadata in older feeds. Do not exclude the
+# infected prefix: infectedTagilla and infectedScreamer are distinct special event mobs.
+GENERIC_MOB_IDS = frozenset(('infectedassault', 'infectedcivil', 'infectedpmc', 'infectedlaborant'))
+# Explicit display-family mapping. Preserve the source in the rule so a variant never
+# overwrites an ordinary spawn or matches its monitoring baseline by accident.
+BOSS_VARIANTS = {'infectedTagilla': 'bossTagilla'}
 EXCLUDED_MAP_IDS = frozenset(('69af492a4819ea4ba10a69c5', '653e6760052c01c1c805532f',
                               '6a294a5b5eb5f9a1700417b7', '6733700029c367a3d40b02af', '68236e8153654e8c1200798a',
                               '65cc8f81a9aac3e77d0cfd3e'))
@@ -94,6 +100,8 @@ def condition_text(rule, dictionaries):
 
 def is_event_mob(mob_id, mob, ignore=()):
     """True for a listed boss that is neither a resident boss nor an ordinary soldier type."""
+    if mob_id.lower() in GENERIC_MOB_IDS:
+        return False
     key = mob.get('normalizedName') if isinstance(mob, dict) else None
     if not isinstance(key, str) or not key:
         # Without a normalizedName fall back to the id: ordinary soldier ids start with pmc / exusec, followers are never bosses.
@@ -138,6 +146,8 @@ def normalize_bosses(data, dictionaries=(), ignore=()):
             # Escorts/support equipment are not conditions of the named mob's spawn. Keep unknown future rule fields.
             rule = {key: value for key, value in boss.items()
                     if key not in ('mob', 'spawnChance', 'escorts', 'supports', 'id', '_id', 'name', 'imageLink')}
+            if mob_id in BOSS_VARIANTS:
+                rule['sourceMob'] = mob_id
             locations = rule.get('spawnLocations', [])
             if not isinstance(locations, list) or any(not isinstance(loc, dict) for loc in locations):
                 raise QueryError('Boss 刷新区域格式错误')
@@ -153,7 +163,8 @@ def normalize_bosses(data, dictionaries=(), ignore=()):
             if len(encoded) > 8192:
                 raise QueryError('Boss 刷新条件过长')
             name = '三狗 GOONS' if mob_id == 'bossKnight' else translated(mobs[mob_id].get('name'), dictionaries, mob_id)
-            rows.append({'mob_id': mob_id, 'boss_name': name, 'event': event,
+            rows.append({'mob_id': BOSS_VARIANTS.get(mob_id, mob_id), 'boss_name': name,
+                         'event': event and mob_id not in BOSS_VARIANTS,
                          'rule': encoded, 'condition': condition_text(rule, dictionaries), 'chance': chance})
         rows.sort(key=lambda row: (row['mob_id'], row['rule'], Decimal(row['chance'])))
         map_name = '中心区' if map_id == '65b8d6f5cdde2479cb2a3125' or normalized_name == 'ground-zero-21' else translated(game_map.get('name'), dictionaries, map_id)

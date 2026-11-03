@@ -57,7 +57,7 @@ class BossPluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(total, 1)
         pages = plugin.boss_store.query(token)
         self.assertEqual(len({column['map_id'] for page in pages for column in page['columns']}),81)
-        self.assertTrue(all(len(page['rows']) == 12 for page in pages))
+        self.assertTrue(all(len(page['rows']) == 11 for page in pages))
         plugin.boss_snapshot.reset_mock()
         await plugin.boss_query(boundary.Event('/boss'), f'页 {token} 2')
         self.assertEqual(captured[-1][1], 2)
@@ -74,6 +74,62 @@ class BossPluginTests(unittest.IsolatedAsyncioTestCase):
         result = [r async for r in plugin.qq_tboss(event)]
         self.assertIsInstance(result[0][0], boundary.ImageStub)
         self.assertEqual(plugin.boss_snapshot.call_args.args[0], 'season')
+
+    async def test_boss_mode_aliases_choose_exactly_one_feed(self):
+        plugin = self.plugin({'boss_enabled': True, 'boss_modes': ['pvp']})
+        plugin.boss_snapshot = AsyncMock(side_effect=lambda mode, **kwargs: boss_card(mode=mode))
+        plugin.prepare_boss_image = AsyncMock(return_value=b'image')
+        for argument, mode in (('PVE', 'pve'), ('PVP', 'pvp'), ('PVP S', 'season'), ('pvps', 'season'),
+                               ('pvp-season', 'season'), ('赛季', 'season')):
+            plugin.boss_snapshot.reset_mock()
+            await plugin.boss_query(boundary.Event('/boss'), argument)
+            plugin.boss_snapshot.assert_awaited_once_with(mode, allow_stale=True)
+
+    async def test_personal_boss_default_survives_restart_and_explicit_query_does_not_rebind(self):
+        plugin = self.plugin({'boss_enabled': True, 'boss_modes': ['pvp']})
+        plugin.boss_snapshot = AsyncMock()
+        result = [r async for r in plugin.tarkov_command(boundary.Event('/tarkov boss 默认 pve'))]
+        self.assertIn('PVE', result[0])
+        plugin.boss_snapshot.assert_not_awaited()
+        reopened = self.plugin({'boss_enabled': True, 'boss_modes': ['pvp']})
+        reopened.boss_snapshot = AsyncMock(side_effect=lambda mode, **kwargs: boss_card(mode=mode))
+        reopened.prepare_boss_image = AsyncMock(return_value=b'image')
+        event = boundary.Event('/boss')
+        event.unified_msg_origin = 'platform:group:other'
+        await reopened.boss_query(event)
+        reopened.boss_snapshot.assert_awaited_once_with('pve', allow_stale=True)
+        reopened.boss_snapshot.reset_mock()
+        await reopened.boss_query(event, 'PVP S')
+        reopened.boss_snapshot.assert_awaited_once_with('season', allow_stale=True)
+        self.assertEqual(reopened.accounts.boss_mode(reopened.binding_key(event)), 'pve')
+        self.assertEqual(reopened.boss_modes(), ['pvp'])
+        for other in (boundary.Event('/boss', sender='bob'), boundary.Event('/boss')):
+            if other.sender == 'alice': other.unified_msg_origin = 'another-platform:group:1'
+            reopened.boss_snapshot.reset_mock()
+            await reopened.boss_query(other)
+            reopened.boss_snapshot.assert_awaited_once_with('pvp', allow_stale=True)
+
+    async def test_default_binding_validates_mode_permissions_and_feature_switch(self):
+        for config, arguments in (({'boss_enabled': True}, '默认 arena'),
+                                  ({'boss_enabled': True}, '默认'),
+                                  ({'boss_enabled': True}, '默认 pve extra'),
+                                  ({'boss_enabled': True, 'access_mode': 'admin_only'}, '默认 pve'),
+                                  ({'boss_enabled': False}, '默认 pve')):
+            plugin = self.plugin(config)
+            plugin.prepare_boss_image = AsyncMock(return_value=b'image')
+            event = boundary.Event('/boss')
+            await plugin.boss_query(event, arguments)
+            self.assertIsNone(plugin.accounts.boss_mode(plugin.binding_key(event)))
+
+    async def test_qq_default_alias_and_change_lookup_use_personal_mode(self):
+        plugin = self.plugin({'boss_enabled': True})
+        event = boundary.Event('/tboss default PVP S'); event.platform_name = 'qq_official'
+        result = [r async for r in plugin.qq_tboss(event)]
+        self.assertIn('PVP 赛季', result[0])
+        plugin.prepare_boss_image = AsyncMock(return_value=b'image')
+        with patch.object(plugin.boss_store, 'latest', return_value=None) as latest:
+            await plugin.boss_query(event, '变化')
+        latest.assert_called_once_with('season')
 
     async def test_failed_mode_is_an_error_page_and_other_modes_remain_in_full_snapshot(self):
         plugin = self.plugin({'boss_enabled': True, 'boss_modes': ['pvp','pve']})
