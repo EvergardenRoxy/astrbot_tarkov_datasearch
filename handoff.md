@@ -513,3 +513,16 @@ The maintainer requested removing 感染者 from the label comment in `boss_moni
 Moved its font-subset input to `tools/build_fonts.py::characters`; the resulting requested character set is unchanged,
 so the bundled font does not need another rebuild. This is a corpus/comment correction only; mob classification and
 event visibility remain as implemented above. Existing image/glyph and event tests verify coverage and behaviour.
+
+
+## Async test execution environment (2026-11-04)
+
+The managed sandbox can reject asyncio's local socketpair wakeup writes with
+`PermissionError: [Errno 1] Operation not permitted`. This also stalls a minimal
+`asyncio.to_thread(lambda: 42)` program during completion or executor shutdown.
+Run the tests with local socket access; do not change production poller logic to
+work around this executor restriction. With network permission enabled, the full
+321-test suite finished in about 10 seconds (the first run exposed a new font
+corpus character in the queue message, subsequently replaced with supported wording).
+CI now prints individual test names and limits the test step to five minutes,
+so future hangs identify the active test and terminate rather than waiting indefinitely.
