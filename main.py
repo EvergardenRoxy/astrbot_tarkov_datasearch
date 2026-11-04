@@ -46,6 +46,8 @@ NOT_FOUND_SECONDS = 60
 CACHE_NOTE_SECONDS = 60
 # Profile requests in flight at once, for all users together (one query asks for three modes).
 FETCHES_AT_ONCE = 6
+MAX_PENDING_PROFILES = 64
+PROFILE_QUEUE_SECONDS = 30
 LABEL_OF_PATH = {path: label for path, label, _ in MODES.values()}
 OUTPUT_MODES = ('image', 'text', 'markdown')
 HELP_WORDS = ('help', '帮助')
@@ -726,6 +728,8 @@ class TarkovPlugin(Star):
             return cached[1]
         task = self.pending.get(key)
         if task is None:
+            if len(self.pending) >= MAX_PENDING_PROFILES:
+                raise QueryError("玩家查询请求较多，请稍后再试")
             task = asyncio.ensure_future(self.fetch(mode, aid, ttl))
             self.pending[key] = task
             task.add_done_callback(lambda done: (self.pending.pop(key, None),
@@ -736,8 +740,14 @@ class TarkovPlugin(Star):
     async def fetch(self, mode, aid, ttl):
         key = (mode, aid)
         try:
-            async with self.fetches:
+            try:
+                await asyncio.wait_for(self.fetches.acquire(), PROFILE_QUEUE_SECONDS)
+            except TimeoutError:
+                raise QueryError('玩家查询排队超时，请稍后再试') from None
+            try:
                 raw = await transport.fetch_profile(path_of(mode), aid, timeout_seconds=min(60, self.timeout()), proxy=self.proxy())
+            finally:
+                self.fetches.release()
         except NotFound:
             self.remember_profile(key, None, ttl)
             raise

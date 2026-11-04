@@ -149,6 +149,36 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.transport, 'fetch_profile', self.fake_fetch):
             return [r async for r in plugin.tarkov_command(event)]
 
+    async def test_profile_queue_bound_preserves_shared_requests(self):
+        plugin = self.plugin()
+        gate = asyncio.Event()
+        async def fetch(*args):
+            await gate.wait()
+            return {'nickname': 'Alice'}
+        plugin.fetch = fetch
+        with patch.object(self.module, 'MAX_PENDING_PROFILES', 1):
+            first = asyncio.create_task(plugin.profile('pvp', 1))
+            await asyncio.sleep(0)
+            with self.assertRaisesRegex(self.module.QueryError, '请求较多'):
+                await plugin.profile('pvp', 2)
+            shared = asyncio.create_task(plugin.profile('pvp', 1))
+            first.cancel()
+            await asyncio.gather(first, return_exceptions=True)
+            gate.set()
+            self.assertEqual(await shared, {'nickname': 'Alice'})
+            await asyncio.sleep(0)
+            self.assertFalse(plugin.pending)
+
+    async def test_profile_queue_timeout_releases_pending_entry(self):
+        plugin = self.plugin()
+        plugin.fetches = asyncio.Semaphore(0)
+        with patch.object(self.module, 'PROFILE_QUEUE_SECONDS', 0.01):
+            with self.assertRaisesRegex(self.module.QueryError, '排队超时'):
+                await plugin.profile('pvp', 1)
+        await asyncio.sleep(0)
+        self.assertFalse(plugin.pending)
+        self.assertEqual(plugin.fetches._value, 0)
+
     async def test_help(self):
         for text in ('tarkov help', '/塔科夫 帮助', '/tarkov pve a b'):
             with self.subTest(text=text):
