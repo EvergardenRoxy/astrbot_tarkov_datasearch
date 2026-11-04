@@ -6,6 +6,8 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from tarkov_core import public_api
 
 from tarkov_core.public_api import DataError, ResourceKey
 from tarkov_core.resource_cache import ResourceCache
@@ -24,6 +26,18 @@ class ResourceCacheTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.cache.close()
         self.temp.cleanup()
+
+    async def test_snapshot_readers_reuse_validation_without_sharing_mutations(self):
+        with patch.object(public_api, 'decode', wraps=public_api.decode) as decode:
+            snapshot = await self.cache.get(self.key)
+            first = await snapshot.json()
+            first['data']['version'] = 999
+            second = await snapshot.json()
+            self.assertEqual(second['data']['version'], 1)
+            self.assertEqual(decode.call_count, 1)
+            cached = await self.cache.get(self.key)
+            await cached.json()
+            self.assertEqual(decode.call_count, 2)
 
     async def download(self, key, **validators):
         self.calls.append((key, validators))

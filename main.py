@@ -46,6 +46,8 @@ NOT_FOUND_SECONDS = 60
 CACHE_NOTE_SECONDS = 60
 # Profile requests in flight at once, for all users together (one query asks for three modes).
 FETCHES_AT_ONCE = 6
+MAX_PENDING_PROFILES = 64
+PROFILE_QUEUE_SECONDS = 30
 LABEL_OF_PATH = {path: label for path, label, _ in MODES.values()}
 OUTPUT_MODES = ('image', 'text', 'markdown')
 HELP_WORDS = ('help', '帮助')
@@ -73,7 +75,7 @@ def every(seconds):
     return f'每 {hours} 小时'
 
 
-@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.4.7')
+@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.4.8')
 class TarkovPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -91,6 +93,7 @@ class TarkovPlugin(Star):
         self.cache = {}
         # (mode, account id) -> the request in flight, shared by every query that needs it (review R-08).
         self.pending = {}
+        self.http = transport.HTTPClient()
         self.fetches = asyncio.Semaphore(FETCHES_AT_ONCE)
         self.active = set()
         self.public_data = ResourceCache(self.root/'public-data', self.download_public)
@@ -602,12 +605,9 @@ class TarkovPlugin(Star):
         if not matches and self.index_enabled() and id_missing is None:
             # The downloaded index is per mode; the default (or chosen) mode's index is used.
             where = '名单'
-            if self.names.needs_refresh(path_of(mode)):
-                if self.names.has_index(path_of(mode)):
-                    yield event.plain_result(f'正在检查 {label} 玩家名单的更新（{every(self.names.refresh_seconds)}一次），请稍候。')
-                else:
-                    size = '，约 30 MB' if mode == 'pvp' else ''
-                    yield event.plain_result(f'正在下载 {label} 玩家名单（第一次按昵称查询这个模式时需要{size}，可能需要几十秒），请稍候。')
+            if self.names.needs_refresh(path_of(mode)) and not self.names.has_index(path_of(mode)):
+                size = '，约 30 MB' if mode == 'pvp' else ''
+                yield event.plain_result(f'正在下载 {label} 玩家名单（第一次按昵称查询这个模式时需要{size}，可能需要几十秒），请稍候。')
             matches, total = await self.names.lookup(path_of(mode), target)
         logger.info('Tarkov [%s] name matches=%s source=%s', trace, total, where)
         if not matches and id_missing:
@@ -726,6 +726,8 @@ class TarkovPlugin(Star):
             return cached[1]
         task = self.pending.get(key)
         if task is None:
+            if len(self.pending) >= MAX_PENDING_PROFILES:
+                raise QueryError("玩家查询请求较多，请稍后再试")
             task = asyncio.ensure_future(self.fetch(mode, aid, ttl))
             self.pending[key] = task
             task.add_done_callback(lambda done: (self.pending.pop(key, None),
@@ -736,8 +738,14 @@ class TarkovPlugin(Star):
     async def fetch(self, mode, aid, ttl):
         key = (mode, aid)
         try:
-            async with self.fetches:
-                raw = await transport.fetch_profile(path_of(mode), aid, timeout_seconds=min(60, self.timeout()), proxy=self.proxy())
+            try:
+                await asyncio.wait_for(self.fetches.acquire(), PROFILE_QUEUE_SECONDS)
+            except TimeoutError:
+                raise QueryError('玩家查询排队超时，请稍后再试') from None
+            try:
+                raw = await transport.fetch_profile(path_of(mode), aid, timeout_seconds=min(60, self.timeout()), proxy=self.proxy(), client=self.http)
+            finally:
+                self.fetches.release()
         except NotFound:
             self.remember_profile(key, None, ttl)
             raise
@@ -764,7 +772,7 @@ class TarkovPlugin(Star):
 
     async def download_index(self, mode_path, target, etag):
         try:
-            return await transport.fetch_index(mode_path, target, etag=etag, timeout_seconds=self.timeout(), proxy=self.proxy())
+            return await transport.fetch_index(mode_path, target, etag=etag, timeout_seconds=self.timeout(), proxy=self.proxy(), client=self.http)
         except NotFound:
             raise QueryError(f'tarkov.dev 上没有 {LABEL_OF_PATH.get(mode_path, mode_path)} 模式的玩家名单') from None
         except TimeoutError as exc:
@@ -772,7 +780,7 @@ class TarkovPlugin(Star):
 
     async def download_public(self, key, *, etag=None, last_modified=None):
         return await fetch_public(key, etag=etag, last_modified=last_modified,
-                                  timeout_seconds=min(60, self.timeout()), proxy=self.proxy())
+                                  timeout_seconds=min(60, self.timeout()), proxy=self.proxy(), client=self.http, validate=False)
 
     async def public_resource(self, resource, *, mode=None, language=None, item_id=None, fresh=False, allow_stale=False):
         """Shared infrastructure for the forthcoming feature-gated queries; never downloads on initialization."""
@@ -965,7 +973,7 @@ class TarkovPlugin(Star):
             if isinstance(translation, BaseException):
                 warning = True; signatures.append(None)
             else:
-                dictionaries.append((await translation.json())['data'])
+                dictionaries.append(translation)
                 warning |= translation.stale
                 signatures.append(await asyncio.to_thread(hash, translation.body))
         signature = (await asyncio.to_thread(hash, snapshot.body), *signatures, tuple(sorted(self.boss_event_ignore())))
@@ -973,6 +981,7 @@ class TarkovPlugin(Star):
         if cached and cached[0] == signature:
             state = cached[1]
         else:
+            dictionaries = [(await translation.json())['data'] for translation in dictionaries]
             document = await snapshot.json()
             state = await asyncio.to_thread(normalize_bosses, document['data'], dictionaries, self.boss_event_ignore())
             if not self._terminated:
@@ -1075,6 +1084,7 @@ class TarkovPlugin(Star):
 
     async def terminate(self):
         self._terminated = True
+        await self.names.close()
         await self.status_poller.close()
         await self.boss_poller.close()
         await self.status_store.close()
@@ -1087,4 +1097,5 @@ class TarkovPlugin(Star):
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await self.http.close()
 

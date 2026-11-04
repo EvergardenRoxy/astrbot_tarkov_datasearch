@@ -103,13 +103,13 @@ def decode(key, body):
     return document
 
 
-async def fetch(key, *, etag=None, last_modified=None, timeout_seconds=60, proxy=None):
+async def fetch(key, *, etag=None, last_modified=None, timeout_seconds=60, proxy=None, client=None, validate=True):
     path = key.path  # Validate before opening a connection, including any proxy connection.
     buffer = io.BytesIO()
     metadata = await transport.http_get(HOST, path, buffer, limits=RESOURCE_LIMITS,
                                         timeout_seconds=timeout_seconds, proxy=proxy,
-                                        etag=etag, last_modified=last_modified)
+                                        etag=etag, last_modified=last_modified, client=client)
     body = buffer.getvalue() if metadata['status'] == 200 else None
-    if body is not None:
+    if body is not None and validate:
         await asyncio.to_thread(decode, key, body)
     return metadata, body

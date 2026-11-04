@@ -6,6 +6,7 @@ import io
 import json
 import time
 import zlib
+from contextlib import nullcontext
 
 import aiohttp
 from yarl import URL
@@ -73,19 +74,39 @@ def validate_proxy(value):
     return str(url)
 
 
-async def get(path, sink, *, limits, timeout_seconds, proxy=None, etag=None):
+class HTTPClient:
+    """Lazy plugin-owned connection pool; never uses ambient proxies or cookies."""
+    def __init__(self):
+        self.session = None
+        self.closed = False
+
+    def get_session(self):
+        if self.closed:
+            raise RuntimeError('HTTP client closed')
+        if self.session is None:
+            self.session = aiohttp.ClientSession(auto_decompress=False, trust_env=False,
+                                                cookie_jar=aiohttp.DummyCookieJar())
+        return self.session
+
+    async def close(self):
+        self.closed = True
+        if self.session is not None:
+            await self.session.close()
+
+
+async def get(path, sink, *, limits, timeout_seconds, proxy=None, etag=None, client=None):
     """GET HOST/path into the binary file-like `sink`, gunzipping on the fly.
 
     Returns {'status': 200 or 304, 'etag': str or None}. 304 only happens when `etag` was sent.
     Raises NotFound for 404, QueryError for other refusals and limits, TimeoutError with the phase reached.
     """
-    result = await http_get(HOST, path, sink, limits=limits, timeout_seconds=timeout_seconds, proxy=proxy, etag=etag)
+    result = await http_get(HOST, path, sink, limits=limits, timeout_seconds=timeout_seconds, proxy=proxy, etag=etag, client=client)
     # Keep the player/index transport contract; public resources also use Last-Modified.
     return {key: result[key] for key in ('status', 'etag')}
 
 
 async def http_get(host, path, sink, *, limits, timeout_seconds, proxy=None, etag=None, last_modified=None,
-                   content_types=('application/json',)):
+                   content_types=('application/json',), client=None):
     """Shared bounded HTTP reader. Callers own the fixed host and validated resource path."""
     proxy = validate_proxy(proxy) if proxy else None
     compressed_limit, decoded_limit = limits
@@ -98,8 +119,10 @@ async def http_get(host, path, sink, *, limits, timeout_seconds, proxy=None, eta
     timeout = aiohttp.ClientTimeout(total=timeout_seconds, connect=min(30, timeout_seconds))
     try:
         # trust_env=False: only the plugin's own proxy setting applies, never the host's environment.
-        async with aiohttp.ClientSession(timeout=timeout, auto_decompress=False, trust_env=False) as session:
-            async with session.get(host+path, allow_redirects=False, proxy=proxy, headers=headers) as response:
+        manager = nullcontext(client.get_session()) if client else aiohttp.ClientSession(
+            auto_decompress=False, trust_env=False, cookie_jar=aiohttp.DummyCookieJar())
+        async with manager as session:
+            async with session.get(host+path, allow_redirects=False, proxy=proxy, headers=headers, timeout=timeout) as response:
                 metadata = {'status': response.status, 'etag': response.headers.get('ETag'),
                             'last_modified': response.headers.get('Last-Modified'),
                             'cache_control': response.headers.get('Cache-Control')}
@@ -150,10 +173,10 @@ async def http_get(host, path, sink, *, limits, timeout_seconds, proxy=None, eta
         raise QueryError('tarkov.dev 返回的数据无法解压，请稍后再试') from None
 
 
-async def fetch_profile(mode_path, aid, *, timeout_seconds=30, proxy=None):
+async def fetch_profile(mode_path, aid, *, timeout_seconds=30, proxy=None, client=None):
     """The profile JSON of account `aid` in a mode. Raises NotFound when the mode has no profile for it."""
     buffer = io.BytesIO()
-    await get(f'/{mode_path}/{int(aid)}.json', buffer, limits=PROFILE_LIMITS, timeout_seconds=timeout_seconds, proxy=proxy)
+    await get(f'/{mode_path}/{int(aid)}.json', buffer, limits=PROFILE_LIMITS, timeout_seconds=timeout_seconds, proxy=proxy, client=client)
     try:
         # Off the event loop: the decoded limit allows a 16 MiB document.
         data = await asyncio.to_thread(json.loads, buffer.getvalue())
@@ -164,8 +187,8 @@ async def fetch_profile(mode_path, aid, *, timeout_seconds=30, proxy=None):
     return data
 
 
-async def fetch_index(mode_path, target, *, etag=None, timeout_seconds=120, proxy=None):
+async def fetch_index(mode_path, target, *, etag=None, timeout_seconds=120, proxy=None, client=None):
     """Download a mode's name index (JSON object account id -> nickname) to the file `target`."""
     with open(target, 'wb') as sink:
         return await get(f'/{mode_path}/index.json', sink, limits=INDEX_LIMITS, timeout_seconds=timeout_seconds,
-                         proxy=proxy, etag=etag)
+                         proxy=proxy, etag=etag, client=client)

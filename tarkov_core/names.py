@@ -5,6 +5,7 @@ It is converted once per refresh into a SQLite file per mode, so a lookup is one
 """
 import asyncio
 import json
+import mmap
 import os
 import re
 import secrets
@@ -16,8 +17,9 @@ from astrbot.api import logger
 from .text import clean
 from .transport import QueryError
 
-# Escape sequences inside a name are decoded; entries longer than 64 characters are junk and skipped.
-ENTRY = re.compile(rb'"(\d{1,12})"\s*:\s*"((?:[^"\\]|\\.){0,64})"')
+# Tokenize one string at a time; punctuation and EOF are checked separately.
+JSON_STRING = re.compile(rb'"(?:[^"\\\x00-\x1f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"')
+SPACE = re.compile(rb'[ \t\r\n]*')
 # Nicknames the plugin searches for: the game allows letters, digits, '_' and '-'. Chosen names are 3-15 characters,
 # but generated ones (TarkovCitizen1019349) are longer: up to 21 in the 2026-10-13 indexes.
 NAME = re.compile(r'[A-Za-z0-9_-]{3,24}')
@@ -64,18 +66,50 @@ def read_only(path):
 
 def parse_entries(raw):
     """(lowercase key, account id, nickname) for every entry of an index document."""
-    if not raw.lstrip()[:1] == b'{':
+    position = 0
+
+    def whitespace():
+        nonlocal position
+        position = SPACE.match(raw, position).end()
+
+    def take(token):
+        nonlocal position
+        whitespace()
+        if raw[position:position+1] != token:
+            raise QueryError('名单格式无法识别')
+        position += 1
+
+    def string():
+        nonlocal position
+        whitespace()
+        match = JSON_STRING.match(raw, position)
+        if match is None:
+            raise QueryError('名单格式无法识别')
+        position = match.end()
+        try:
+            return json.loads(match.group())
+        except (ValueError, UnicodeError):
+            raise QueryError('名单格式无法识别') from None
+
+    take(b'{')
+    whitespace()
+    if raw[position:position+1] != b'}':
+        while True:
+            aid = string()
+            take(b':')
+            text = string()
+            if re.fullmatch(r'[0-9]{1,12}', aid) and len(text) <= 64:
+                name = clean(text, 64)
+                if name:
+                    yield name.lower(), int(aid), name
+            whitespace()
+            if raw[position:position+1] == b'}':
+                break
+            take(b',')
+    take(b'}')
+    whitespace()
+    if position != len(raw):
         raise QueryError('名单格式无法识别')
-    for match in ENTRY.finditer(raw):
-        text = match.group(2).decode('utf-8', 'replace')
-        if '\\' in text:
-            try:
-                text = json.loads('"'+text+'"')
-            except ValueError:
-                continue
-        name = clean(text, 64)
-        if name:
-            yield name.lower(), int(match.group(1)), name
 
 
 def build(db_path, raw, etag):
@@ -115,6 +149,9 @@ class NameIndex:
         self.download = download
         self.refresh_seconds = max(1, min(720, float(refresh_hours)))*3600
         self.locks = {}
+        self.pending = {}
+        self.workers = set()
+        self.closed = False
         # mode path -> (time of the last failed refresh, reason shown to users)
         self.failed_at = {}
         for stale in list(root.glob('names-*.tmp'))+list(root.glob('names-*.download')):
@@ -163,34 +200,76 @@ class NameIndex:
     async def lookup(self, mode_path, name):
         """([(account id, nickname)], total) for nicknames equal to `name` ignoring case. At most MAX_MATCHES rows:
         exact-case matches first, then by account id; total counts every case-insensitive match."""
-        lock = self.locks.setdefault(mode_path, asyncio.Lock())
-        # Lookups and refreshes share the lock, so the database is never replaced under an open reader.
-        async with lock:
-            if self.needs_refresh(mode_path):
-                await self.refresh(mode_path)
+        if self.closed:
+            raise RuntimeError('Name index closed')
+        if self.needs_refresh(mode_path):
+            task = self.start_refresh(mode_path)
             if not self.has_index(mode_path):
-                # Only reachable while a failed first download is waiting to be retried.
-                minutes = max(1, round(self.waiting(mode_path)/60))
-                raise QueryError(f'玩家名单暂时无法下载（{self.failed_at[mode_path][1]}），请约 {minutes} 分钟后再试；'
-                                 '知道账号 ID 时可以先用 ID 查询')
+                await asyncio.shield(task)
+        if not self.has_index(mode_path):
+            minutes = max(1, round(self.waiting(mode_path)/60))
+            raise QueryError(f'玩家名单暂时无法下载（{self.failed_at[mode_path][1]}），请约 {minutes} 分钟后再试；'
+                             '知道账号 ID 时可以先用 ID 查询')
+        lock = self.locks.setdefault(mode_path, asyncio.Lock())
+        async with lock:
             try:
-                return await asyncio.to_thread(self.query, mode_path, name)
+                return await self.thread(self.query, mode_path, name)
             except sqlite3.DatabaseError as exc:
-                # meta was readable but the rest is damaged: download and build again, once.
                 logger.warning('Tarkov name index %s unreadable, rebuilding: %s', mode_path, type(exc).__name__)
                 self.db_path(mode_path).unlink(missing_ok=True)
-                await self.refresh(mode_path)
-                return await asyncio.to_thread(self.query, mode_path, name)
+        # Never hold the reader lock while waiting for a refresh to publish.
+        await self.refresh(mode_path)
+        async with lock:
+            return await self.thread(self.query, mode_path, name)
+
+    async def thread(self, function, *args):
+        task = asyncio.create_task(asyncio.to_thread(function, *args))
+        self.workers.add(task)
+        task.add_done_callback(self.workers.discard)
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # A Python worker cannot be cancelled. Keep its file and reader lock
+            # alive until it finishes, including during plugin unload.
+            await asyncio.gather(task, return_exceptions=True)
+            raise
+
+    def start_refresh(self, mode_path):
+        if self.closed:
+            raise RuntimeError('Name index closed')
+        task = self.pending.get(mode_path)
+        if task is None or task.done():
+            task = asyncio.create_task(self._refresh(mode_path))
+            self.pending[mode_path] = task
+            def finished(done):
+                if self.pending.get(mode_path) is done:
+                    self.pending.pop(mode_path)
+                if not done.cancelled():
+                    done.exception()
+            task.add_done_callback(finished)
+        return task
+
+    async def refresh(self, mode_path):
+        await asyncio.shield(self.start_refresh(mode_path))
+
+    async def close(self):
+        self.closed = True
+        tasks = list(self.pending.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*list(self.workers), return_exceptions=True)
+        self.pending.clear()
 
     async def similar(self, mode_path, name):
         """[(account id, nickname)] whose name differs from `name` only by '_' and '-', from the index already on
         disk: never downloads, [] without an index."""
         variants = spelling_variants(name)
-        if not variants or not self.has_index(mode_path):
+        if self.closed or not variants or not self.has_index(mode_path):
             return []
         async with self.locks.setdefault(mode_path, asyncio.Lock()):
             try:
-                return await asyncio.to_thread(self.query_similar, mode_path, variants)
+                return await self.thread(self.query_similar, mode_path, variants)
             except sqlite3.DatabaseError as exc:
                 logger.warning('Tarkov name index %s unreadable for suggestions: %s', mode_path, type(exc).__name__)
                 return []
@@ -217,17 +296,23 @@ class NameIndex:
         finally:
             db.close()
 
-    async def refresh(self, mode_path):
+    async def _refresh(self, mode_path):
         meta = self.meta(mode_path)
         target = self.root/f'names-{mode_path}.{unique_suffix()}.download'
+        temporary = target.with_suffix('.tmp')
         started = time.monotonic()
         try:
             result = await self.download(mode_path, target, (meta or {}).get('etag') or None)
             if result['status'] == 304:
-                await asyncio.to_thread(self.touch, mode_path)
+                async with self.locks.setdefault(mode_path, asyncio.Lock()):
+                    await self.thread(self.touch, mode_path)
                 logger.info('Tarkov name index %s unchanged', mode_path)
             else:
-                count = await asyncio.to_thread(self.rebuild, mode_path, target, result.get('etag'))
+                count = await self.thread(self.stage, temporary, target, result.get('etag'))
+                async with self.locks.setdefault(mode_path, asyncio.Lock()):
+                    if self.closed:
+                        raise asyncio.CancelledError()
+                    await self.thread(os.replace, temporary, self.db_path(mode_path))
                 logger.info('Tarkov name index %s rebuilt; entries=%s elapsed=%.1fs', mode_path, count, time.monotonic()-started)
             self.failed_at.pop(mode_path, None)
         except asyncio.CancelledError:
@@ -243,9 +328,15 @@ class NameIndex:
             logger.warning('Tarkov name index %s refresh failed, using the previous one: %s', mode_path, type(exc).__name__)
         finally:
             target.unlink(missing_ok=True)
+            temporary.unlink(missing_ok=True)
 
-    def rebuild(self, mode_path, target, etag):
-        return build(self.db_path(mode_path), target.read_bytes(), etag)
+    @staticmethod
+    def stage(temporary, target, etag):
+        with target.open('rb') as source:
+            if not os.fstat(source.fileno()).st_size:
+                raise QueryError('名单格式无法识别')
+            with mmap.mmap(source.fileno(), 0, access=mmap.ACCESS_READ) as raw:
+                return write(temporary, raw, etag)
 
     def touch(self, mode_path):
         db = sqlite3.connect(self.db_path(mode_path))

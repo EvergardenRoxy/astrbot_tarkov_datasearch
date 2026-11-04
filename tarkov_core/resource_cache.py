@@ -1,10 +1,11 @@
 """Lazy SQLite cache for public JSON resources. No poller and no network work at startup."""
 import asyncio
+import copy
 import math
 import sqlite3
 import time
 from contextlib import closing
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from . import public_api
 from .transport import ConnectionFailure, HTTPError, NotFound, QueryError
@@ -38,8 +39,12 @@ class CachedResource:
     stale: bool = False
     error: str | None = None
 
+    _document: dict | None = field(default=None, repr=False, compare=False)
+
     async def json(self):
         # Each reader gets its own mutable document. Shared in-flight results contain immutable bytes only.
+        if self._document is not None:
+            return await asyncio.to_thread(copy.deepcopy, self._document)
         return await asyncio.to_thread(public_api.decode, self.key, self.body)
 
 
@@ -78,13 +83,13 @@ class ResourceCache:
                     raise ValueError()
                 if not all(value is None or isinstance(value, str) for value in row[1:4]):
                     raise ValueError()
-                public_api.decode(key, row[0])
+                document = public_api.decode(key, row[0])
             except (ValueError, QueryError):
                 # A partial/corrupt entry must never supply validators for a 304 with no usable body.
                 db.execute('DELETE FROM resources WHERE path=?', (key.path,))
                 return None
             db.execute('UPDATE resources SET accessed_at=? WHERE path=?', (time.time(), key.path))
-            return CachedResource(key, *row)
+            return CachedResource(key, *row, _document=document)
 
     def _write(self, snapshot):
         if self._closed:
@@ -193,9 +198,9 @@ class ResourceCache:
                                    last_modified=metadata.get('last_modified') or previous.last_modified,
                                    cache_control=metadata.get('cache_control') or previous.cache_control)
             elif metadata['status'] == 200 and isinstance(body, bytes):
-                await self._thread(public_api.decode, key, body)
+                document = await self._thread(public_api.decode, key, body)
                 snapshot = CachedResource(key, body, metadata.get('etag'), metadata.get('last_modified'),
-                                          metadata.get('cache_control'), now, now, from_cache=False)
+                                          metadata.get('cache_control'), now, now, from_cache=False, _document=document)
             else:
                 raise public_api.DataError('公共数据响应无法识别')
             if self._closed:

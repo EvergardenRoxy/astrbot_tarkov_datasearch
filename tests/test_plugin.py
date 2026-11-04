@@ -62,6 +62,8 @@ class FakeNames:
         self.lookups = []
         self.similar_calls = []
 
+    async def close(self): pass
+
     def needs_refresh(self, mode_path): return self.refresh
 
     def has_index(self, mode_path): return self.indexed
@@ -148,6 +150,36 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
     async def run_command(self, plugin, event):
         with patch.object(self.transport, 'fetch_profile', self.fake_fetch):
             return [r async for r in plugin.tarkov_command(event)]
+
+    async def test_profile_queue_bound_preserves_shared_requests(self):
+        plugin = self.plugin()
+        gate = asyncio.Event()
+        async def fetch(*args):
+            await gate.wait()
+            return {'nickname': 'Alice'}
+        plugin.fetch = fetch
+        with patch.object(self.module, 'MAX_PENDING_PROFILES', 1):
+            first = asyncio.create_task(plugin.profile('pvp', 1))
+            await asyncio.sleep(0)
+            with self.assertRaisesRegex(self.module.QueryError, '请求较多'):
+                await plugin.profile('pvp', 2)
+            shared = asyncio.create_task(plugin.profile('pvp', 1))
+            first.cancel()
+            await asyncio.gather(first, return_exceptions=True)
+            gate.set()
+            self.assertEqual(await shared, {'nickname': 'Alice'})
+            await asyncio.sleep(0)
+            self.assertFalse(plugin.pending)
+
+    async def test_profile_queue_timeout_releases_pending_entry(self):
+        plugin = self.plugin()
+        plugin.fetches = asyncio.Semaphore(0)
+        with patch.object(self.module, 'PROFILE_QUEUE_SECONDS', 0.01):
+            with self.assertRaisesRegex(self.module.QueryError, '排队超时'):
+                await plugin.profile('pvp', 1)
+        await asyncio.sleep(0)
+        self.assertFalse(plugin.pending)
+        self.assertEqual(plugin.fetches._value, 0)
 
     async def test_help(self):
         for text in ('tarkov help', '/塔科夫 帮助', '/tarkov pve a b'):
@@ -287,12 +319,12 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         result = await self.run_command(self.plugin({'default_mode': 'bogus'}), Event('/tarkov 1234567'))
         self.assertIn('PVP 档案', result[0])
 
-    async def test_refresh_notice_comes_first(self):
+    async def test_background_refresh_does_not_delay_reply_with_wait_notice(self):
         self.profiles[('pve', 1)] = profile(aid=1)
         names = FakeNames({'pve': [(1, 'Test_Player')]}, refresh=True)
         result = await self.run_command(self.plugin(names=names), Event('/tarkov pve Test_Player'))
-        self.assertIn('正在检查 PVE 玩家名单的更新', result[0])
-        self.assertIn('档案', result[1])
+        self.assertEqual(len(result), 1)
+        self.assertIn('档案', result[0])
 
     async def test_name_not_found(self):
         # Index switched off: the reply explains how to make the player known.
@@ -361,7 +393,10 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(text=text, indexed=indexed):
                 result = await self.run_command(self.plugin(names=FakeNames(refresh=True, indexed=indexed)), Event(text))
                 self.assertEqual('30 MB' in result[0], size)
-                self.assertIn('下载' if not indexed else '检查', result[0])
+                if not indexed:
+                    self.assertIn('下载', result[0])
+                else:
+                    self.assertNotIn('正在检查', result[0])
 
     async def test_texts_follow_the_refresh_interval(self):
         # Review F-05: the chat texts used to say "每周" whatever the setting.
@@ -370,7 +405,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                 plugin = self.plugin(names=FakeNames(refresh=True, refresh_seconds=seconds))
                 self.assertIn(f'昵称名单（{words}更新一次）', plugin.help_text())
                 result = await self.run_command(plugin, Event('/tarkov pve Nobody'))
-                self.assertIn(words, result[1])
+                self.assertIn(words, result[0])
 
     async def test_all_digit_name_falls_back_to_the_record(self):
         self.profiles[('pve', 77)] = profile(aid=77, info_nickname='123456')
@@ -1010,7 +1045,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         plugin = self.plugin({'proxy_enabled': True, 'proxy_url': ' http://proxy:8080 ', 'download_timeout_seconds': 300})
         with patch.object(self.transport, 'fetch_profile', capture):
             await self.collect(plugin, Event('/tarkov pve 1'))
-        self.assertEqual(seen, {'proxy': 'http://proxy:8080', 'timeout_seconds': 60})
+        self.assertEqual(seen, {'proxy': 'http://proxy:8080', 'timeout_seconds': 60, 'client': plugin.http})
         self.assertIsNone(self.plugin({'proxy_url': 'http://proxy:8080'}).proxy())
 
     async def test_qq_slash_entry_reuses_permissions_and_can_be_disabled(self):
@@ -1140,6 +1175,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         key = fetch.call_args.args[0]
         self.assertEqual(key.path, '/regular/items')
         self.assertEqual(fetch.call_args.kwargs, {'etag': None, 'last_modified': None,
-                                                'timeout_seconds': 60, 'proxy': 'http://proxy:8080'})
+                                                'timeout_seconds': 60, 'proxy': 'http://proxy:8080',
+                                                'client': plugin.http, 'validate': False})
         await plugin.terminate()
         self.assertFalse(plugin.public_data.pending)

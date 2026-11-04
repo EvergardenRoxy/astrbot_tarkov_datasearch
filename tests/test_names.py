@@ -3,6 +3,7 @@ import json
 import os
 import sqlite3
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -65,6 +66,20 @@ class ParseTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT value FROM meta WHERE key='etag'").fetchone()[0], '"a"')
             db.close()
 
+    def test_invalid_documents_preserve_existing_index(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)/'names.sqlite3'
+            build(path, document(), 'good')
+            original = path.read_bytes()
+            for raw in (b'{"1":"Alice",', b'{"1":"Alice"} trailing',
+                        b'{"1":{"2":"Bob"}}', b'{"1":"Alice", "2":null}',
+                        b'{"1":"Alice",}', b'{"1":"Alice" "2":"Bob"}',
+                        b'{"1":"bad\\q"}', b'{"1":"bad\xff"}'):
+                with self.subTest(raw=raw), self.assertRaises(QueryError):
+                    build(path, raw, 'bad')
+                self.assertEqual(path.read_bytes(), original)
+                self.assertFalse(list(Path(root).glob('*.tmp')))
+
     def test_name_rule(self):
         # Review F-15: auto-generated names such as TarkovCitizen1019349 are longer than 15 (up to 21 seen).
         for name, ok in (('Some_Player', True), ('a-b', True), ('ab', False), ('TarkovCitizen1019349', True),
@@ -86,13 +101,23 @@ class IndexTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        self.indexes = []
+
+    def make_index(self, *args, **kwargs):
+        index = NameIndex(*args, **kwargs)
+        self.indexes.append(index)
+        return index
+
+    async def asyncTearDown(self):
+        for index in self.indexes:
+            await index.close()
 
     def tearDown(self):
         self.temp.cleanup()
 
     async def test_first_lookup_builds_then_reuses(self):
         download = FakeDownload([document()])
-        index = NameIndex(self.root, download)
+        index = self.make_index(self.root, download)
         self.assertTrue(index.needs_refresh('profile'))
         self.assertEqual((await index.lookup('profile', 'BUHAUS'))[0], [(15, 'Buhaus'), (16, 'buhaus')])
         self.assertEqual((await index.lookup('profile', 'stea1'))[0], [(30, 'Stea1')])
@@ -103,26 +128,37 @@ class IndexTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_refresh_sends_etag_and_handles_304(self):
         download = FakeDownload([document(), None])
-        index = NameIndex(self.root, download, refresh_hours=1)
+        index = self.make_index(self.root, download, refresh_hours=1)
         await index.lookup('pve', 'Buhaus')
         index.refresh_seconds = 0
         await index.lookup('pve', 'Buhaus')
+        refreshing = index.pending.get('pve')
+        if refreshing is not None:
+            await refreshing
         self.assertEqual(download.calls, [('pve', None), ('pve', '"v1"')])
 
     async def test_changed_index_replaces_the_old_one(self):
         download = FakeDownload([document(), document({'99': 'NewName'})])
-        index = NameIndex(self.root, download)
+        index = self.make_index(self.root, download)
         await index.lookup('pve', 'Buhaus')
         index.refresh_seconds = 0
+        self.assertEqual((await index.lookup('pve', 'newname'))[0], [])
+        refreshing = index.pending.get('pve')
+        if refreshing is not None:
+            await refreshing
+        index.refresh_seconds = 3600
         self.assertEqual((await index.lookup('pve', 'newname'))[0], [(99, 'NewName')])
         self.assertEqual((await index.lookup('pve', 'buhaus'))[0], [])
 
     async def test_failed_refresh_keeps_serving_and_waits_before_retrying(self):
         download = FakeDownload([document(), QueryError('blocked')])
-        index = NameIndex(self.root, download)
+        index = self.make_index(self.root, download)
         await index.lookup('pve', 'Buhaus')
         index.refresh_seconds = 0
         self.assertEqual((await index.lookup('pve', 'Stea1'))[0], [(30, 'Stea1')])
+        refreshing = index.pending.get('pve')
+        if refreshing is not None:
+            await refreshing
         # The failure is remembered: no second download within the retry delay.
         self.assertFalse(index.needs_refresh('pve'))
         await index.lookup('pve', 'Buhaus')
@@ -131,7 +167,7 @@ class IndexTests(unittest.IsolatedAsyncioTestCase):
     async def test_failure_without_any_index_is_reported_then_backed_off(self):
         # Review F-01: without a database, every lookup used to download the whole index again.
         download = FakeDownload([QueryError('blocked'), document()])
-        index = NameIndex(self.root, download)
+        index = self.make_index(self.root, download)
         with self.assertRaises(QueryError) as first:
             await index.lookup('pve', 'Buhaus')
         self.assertEqual(str(first.exception), 'blocked')
@@ -150,20 +186,84 @@ class IndexTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_concurrent_lookups_download_once(self):
         download = FakeDownload([document()])
-        index = NameIndex(self.root, download)
+        index = self.make_index(self.root, download)
         results = await asyncio.gather(*(index.lookup('profile', 'Buhaus') for _ in range(5)))
         self.assertEqual(len(download.calls), 1)
         self.assertTrue(all(result == results[0] for result in results))
 
+    async def test_stale_queries_keep_serving_during_one_background_refresh(self):
+        index = self.make_index(self.root, FakeDownload([document()]))
+        await index.lookup('pve', 'Stea1')
+        started, release = asyncio.Event(), asyncio.Event()
+        calls = []
+        async def slow(mode, target, etag):
+            calls.append(mode); started.set()
+            await release.wait()
+            target.write_bytes(document({'99': 'NewName'}))
+            return {'status': 200, 'etag': 'new'}
+        index.download = slow
+        index.refresh_seconds = 0
+        self.assertEqual((await asyncio.wait_for(index.lookup('pve', 'Stea1'), 1))[0], [(30, 'Stea1')])
+        await started.wait()
+        self.assertEqual((await asyncio.wait_for(index.lookup('pve', 'Stea1'), 1))[0], [(30, 'Stea1')])
+        self.assertEqual(calls, ['pve'])
+        task = index.pending['pve']
+        release.set()
+        await task
+        index.refresh_seconds = 3600
+        self.assertEqual((await index.lookup('pve', 'NewName'))[0], [(99, 'NewName')])
+
+    async def test_cancelling_first_reader_does_not_cancel_shared_download(self):
+        started, release = asyncio.Event(), asyncio.Event()
+        async def slow(mode, target, etag):
+            started.set(); await release.wait()
+            target.write_bytes(document())
+            return {'status': 200, 'etag': 'new'}
+        index = self.make_index(self.root, slow)
+        first = asyncio.create_task(index.lookup('pve', 'Stea1'))
+        await started.wait()
+        second = asyncio.create_task(index.lookup('pve', 'Stea1'))
+        first.cancel()
+        await asyncio.gather(first, return_exceptions=True)
+        release.set()
+        self.assertEqual((await second)[0], [(30, 'Stea1')])
+
+    async def test_close_waits_for_builder_and_removes_files_without_publication(self):
+        index = self.make_index(self.root, FakeDownload([document()]))
+        started, release = threading.Event(), threading.Event()
+        stage = index.stage
+        def blocked(*args):
+            started.set()
+            if not release.wait(5):
+                raise TimeoutError('test worker gate')
+            return stage(*args)
+        index.stage = blocked
+        task = index.start_refresh('pve')
+        closing = None
+        try:
+            await asyncio.wait_for(asyncio.to_thread(started.wait), 2)
+            closing = asyncio.create_task(index.close())
+            await asyncio.sleep(0.02)
+            self.assertFalse(closing.done())
+            self.assertTrue(list(self.root.glob('*.download')))
+        finally:
+            release.set()
+            if closing is not None:
+                await closing
+            await asyncio.gather(task, return_exceptions=True)
+        self.assertFalse(list(self.root.iterdir()))
+        self.assertFalse(index.workers)
+        self.assertFalse(index.pending)
+
     async def test_matches_are_capped(self):
         many = {str(i): 'Same' for i in range(1, 20)}
-        index = NameIndex(self.root, FakeDownload([document(many)]))
+        index = self.make_index(self.root, FakeDownload([document(many)]))
         self.assertEqual(len((await index.lookup('pve', 'same'))[0]), MAX_MATCHES)
 
     async def test_corrupt_database_is_rebuilt(self):
         (self.root/'names-pve.sqlite3').write_bytes(b'not a database')
         download = FakeDownload([document()])
-        index = NameIndex(self.root, download)
+        index = self.make_index(self.root, download)
         self.assertTrue(index.needs_refresh('pve'))
         self.assertEqual((await index.lookup('pve', 'Stea1'))[0], [(30, 'Stea1')])
 
@@ -174,7 +274,7 @@ class IndexTests(unittest.IsolatedAsyncioTestCase):
                 root = self.root/name
                 root.mkdir()
                 download = FakeDownload([document()])
-                index = NameIndex(root, download)
+                index = self.make_index(root, download)
                 self.assertEqual((await index.lookup('pve', 'Stea1'))[0], [(30, 'Stea1')])
                 self.assertFalse(index.needs_refresh('pve'))
                 await index.lookup('pve', 'Stea1')
@@ -188,7 +288,7 @@ class IndexTests(unittest.IsolatedAsyncioTestCase):
         for path in (old, fresh):
             path.write_bytes(b'x')
         os.utime(old, (time.time()-7200, time.time()-7200))
-        NameIndex(self.root, FakeDownload([]))
+        self.make_index(self.root, FakeDownload([]))
         self.assertEqual([p.name for p in self.root.iterdir()], [fresh.name])
 
     async def test_reload_during_a_download_does_not_break_it(self):
@@ -199,10 +299,10 @@ class IndexTests(unittest.IsolatedAsyncioTestCase):
             started.set()
             await release.wait()
             return {'status': 200, 'etag': '"a"'}
-        old = NameIndex(self.root, slow)
+        old = self.make_index(self.root, slow)
         task = asyncio.create_task(old.lookup('pve', 'Stea1'))
         await started.wait()
-        NameIndex(self.root, FakeDownload([]))
+        self.make_index(self.root, FakeDownload([]))
         release.set()
         self.assertEqual((await asyncio.wait_for(task, 10))[0], [(30, 'Stea1')])
         self.assertEqual(sorted(p.name for p in self.root.iterdir()), ['names-pve.sqlite3'])
@@ -215,7 +315,7 @@ class IndexTests(unittest.IsolatedAsyncioTestCase):
             await gate.wait()
             Path(target).write_bytes(document())
             return {'status': 200, 'etag': '"a"'}
-        a, b = NameIndex(self.root, slow), NameIndex(self.root, slow)
+        a, b = self.make_index(self.root, slow), self.make_index(self.root, slow)
         tasks = [asyncio.create_task(index.lookup('pve', 'Stea1')) for index in (a, b)]
         while len(targets) < 2:
             await asyncio.sleep(0.01)
@@ -234,7 +334,7 @@ class IndexTests(unittest.IsolatedAsyncioTestCase):
     async def test_damaged_names_table_is_rebuilt(self):
         # Review F-07: meta readable, names table damaged (simulated by dropping it).
         download = FakeDownload([document(), document()])
-        index = NameIndex(self.root, download)
+        index = self.make_index(self.root, download)
         await index.lookup('pve', 'Stea1')
         db = sqlite3.connect(index.db_path('pve'))
         db.execute('DROP TABLE names')
@@ -247,14 +347,14 @@ class IndexTests(unittest.IsolatedAsyncioTestCase):
         # Review F-13: the exact-case entry is returned even when it would fall past the cap.
         many = {str(i): 'same' for i in range(1, 10)}
         many['99'] = 'Same'
-        index = NameIndex(self.root, FakeDownload([document(many)]))
+        index = self.make_index(self.root, FakeDownload([document(many)]))
         rows, total = await index.lookup('pve', 'Same')
         self.assertEqual(rows[0], (99, 'Same'))
         self.assertEqual((len(rows), total), (MAX_MATCHES, 10))
 
     async def test_similar_names_from_the_index_on_disk_only(self):
         download = FakeDownload([document({'5': 'demo-player', '6': 'Demo_Player', '7': 'other_name', '8': 'demo-play-er'})])
-        index = NameIndex(self.root, download)
+        index = self.make_index(self.root, download)
         # No index yet: nothing is downloaded or opened for a suggestion.
         with patch.object(names_module.logger, 'warning') as warning:
             self.assertEqual(await index.similar('arena', 'demo_player'), [])
@@ -274,10 +374,10 @@ class IndexTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await index.similar('arena', 'demo_player'), [])
 
     def test_default_check_is_weekly(self):
-        self.assertEqual(NameIndex(self.root, FakeDownload([])).refresh_seconds, 7*24*3600)
+        self.assertEqual(self.make_index(self.root, FakeDownload([])).refresh_seconds, 7*24*3600)
 
     async def test_refresh_interval(self):
-        index = NameIndex(self.root, FakeDownload([document()]), refresh_hours=24)
+        index = self.make_index(self.root, FakeDownload([document()]), refresh_hours=24)
         await index.lookup('pve', 'Buhaus')
         db = sqlite3.connect(index.db_path('pve'))
         with db:

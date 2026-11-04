@@ -94,7 +94,7 @@ Scav：战局 50，撤离 30，存活率 60.0%
 
 数据来自 tarkov.dev，档案更新于 2026-10-03 12:00（北京时间）
 数据不会自动更新：在 tarkov.dev 用该模式搜索一次这名玩家，或打开 https://tarkov.dev/players/pve/1234567，即可刷新档案，几分钟后再查。
-astrbot_tarkov_datasearch v0.4.7 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch
+astrbot_tarkov_datasearch v0.4.8 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch
 本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系
 ```
 
