@@ -56,6 +56,24 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(request.headers['User-Agent'].startswith('astrbot_tarkov_datasearch/'))
         self.assertEqual(request.headers['Accept-Encoding'], 'gzip')
 
+    async def test_owned_client_reuses_connection_and_closes(self):
+        connections = []
+        def serve(request):
+            connections.append(request.transport)
+            return self.json_response(profile())
+        self.routes['/pve/1.json'] = serve
+        client = transport.HTTPClient()
+        try:
+            await transport.fetch_profile('pve', 1, client=client)
+            await transport.fetch_profile('pve', 1, client=client)
+            self.assertIs(connections[0], connections[1])
+            self.assertFalse(client.session.closed)
+        finally:
+            await client.close()
+        self.assertTrue(client.session.closed)
+        with self.assertRaises(RuntimeError):
+            client.get_session()
+
     async def test_plain_body_is_accepted(self):
         self.routes['/profile/1.json'] = lambda r: self.json_response(profile(), gzipped=False)
         self.assertEqual((await transport.fetch_profile('profile', 1))['aid'], 1234567)

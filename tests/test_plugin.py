@@ -1040,7 +1040,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         plugin = self.plugin({'proxy_enabled': True, 'proxy_url': ' http://proxy:8080 ', 'download_timeout_seconds': 300})
         with patch.object(self.transport, 'fetch_profile', capture):
             await self.collect(plugin, Event('/tarkov pve 1'))
-        self.assertEqual(seen, {'proxy': 'http://proxy:8080', 'timeout_seconds': 60})
+        self.assertEqual(seen, {'proxy': 'http://proxy:8080', 'timeout_seconds': 60, 'client': plugin.http})
         self.assertIsNone(self.plugin({'proxy_url': 'http://proxy:8080'}).proxy())
 
     async def test_qq_slash_entry_reuses_permissions_and_can_be_disabled(self):
@@ -1170,6 +1170,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         key = fetch.call_args.args[0]
         self.assertEqual(key.path, '/regular/items')
         self.assertEqual(fetch.call_args.kwargs, {'etag': None, 'last_modified': None,
-                                                'timeout_seconds': 60, 'proxy': 'http://proxy:8080'})
+                                                'timeout_seconds': 60, 'proxy': 'http://proxy:8080',
+                                                'client': plugin.http, 'validate': False})
         await plugin.terminate()
         self.assertFalse(plugin.public_data.pending)

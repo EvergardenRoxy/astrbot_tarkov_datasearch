@@ -93,6 +93,7 @@ class TarkovPlugin(Star):
         self.cache = {}
         # (mode, account id) -> the request in flight, shared by every query that needs it (review R-08).
         self.pending = {}
+        self.http = transport.HTTPClient()
         self.fetches = asyncio.Semaphore(FETCHES_AT_ONCE)
         self.active = set()
         self.public_data = ResourceCache(self.root/'public-data', self.download_public)
@@ -745,7 +746,7 @@ class TarkovPlugin(Star):
             except TimeoutError:
                 raise QueryError('玩家查询排队超时，请稍后再试') from None
             try:
-                raw = await transport.fetch_profile(path_of(mode), aid, timeout_seconds=min(60, self.timeout()), proxy=self.proxy())
+                raw = await transport.fetch_profile(path_of(mode), aid, timeout_seconds=min(60, self.timeout()), proxy=self.proxy(), client=self.http)
             finally:
                 self.fetches.release()
         except NotFound:
@@ -774,7 +775,7 @@ class TarkovPlugin(Star):
 
     async def download_index(self, mode_path, target, etag):
         try:
-            return await transport.fetch_index(mode_path, target, etag=etag, timeout_seconds=self.timeout(), proxy=self.proxy())
+            return await transport.fetch_index(mode_path, target, etag=etag, timeout_seconds=self.timeout(), proxy=self.proxy(), client=self.http)
         except NotFound:
             raise QueryError(f'tarkov.dev 上没有 {LABEL_OF_PATH.get(mode_path, mode_path)} 模式的玩家名单') from None
         except TimeoutError as exc:
@@ -782,7 +783,7 @@ class TarkovPlugin(Star):
 
     async def download_public(self, key, *, etag=None, last_modified=None):
         return await fetch_public(key, etag=etag, last_modified=last_modified,
-                                  timeout_seconds=min(60, self.timeout()), proxy=self.proxy())
+                                  timeout_seconds=min(60, self.timeout()), proxy=self.proxy(), client=self.http, validate=False)
 
     async def public_resource(self, resource, *, mode=None, language=None, item_id=None, fresh=False, allow_stale=False):
         """Shared infrastructure for the forthcoming feature-gated queries; never downloads on initialization."""
@@ -975,7 +976,7 @@ class TarkovPlugin(Star):
             if isinstance(translation, BaseException):
                 warning = True; signatures.append(None)
             else:
-                dictionaries.append((await translation.json())['data'])
+                dictionaries.append(translation)
                 warning |= translation.stale
                 signatures.append(await asyncio.to_thread(hash, translation.body))
         signature = (await asyncio.to_thread(hash, snapshot.body), *signatures, tuple(sorted(self.boss_event_ignore())))
@@ -983,6 +984,7 @@ class TarkovPlugin(Star):
         if cached and cached[0] == signature:
             state = cached[1]
         else:
+            dictionaries = [(await translation.json())['data'] for translation in dictionaries]
             document = await snapshot.json()
             state = await asyncio.to_thread(normalize_bosses, document['data'], dictionaries, self.boss_event_ignore())
             if not self._terminated:
@@ -1097,4 +1099,5 @@ class TarkovPlugin(Star):
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await self.http.close()
 
