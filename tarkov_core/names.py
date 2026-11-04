@@ -64,18 +64,18 @@ def read_only(path):
 
 def parse_entries(raw):
     """(lowercase key, account id, nickname) for every entry of an index document."""
-    if not raw.lstrip()[:1] == b'{':
-        raise QueryError('名单格式无法识别')
-    for match in ENTRY.finditer(raw):
-        text = match.group(2).decode('utf-8', 'replace')
-        if '\\' in text:
-            try:
-                text = json.loads('"'+text+'"')
-            except ValueError:
-                continue
+    try:
+        document = json.loads(raw)
+        if not isinstance(document, dict) or any(not isinstance(value, str) for value in document.values()):
+            raise ValueError()
+    except (ValueError, UnicodeError, RecursionError):
+        raise QueryError('名单格式无法识别') from None
+    for aid, text in document.items():
+        if not re.fullmatch(r'[0-9]{1,12}', aid) or len(text) > 64:
+            continue
         name = clean(text, 64)
         if name:
-            yield name.lower(), int(match.group(1)), name
+            yield name.lower(), int(aid), name
 
 
 def build(db_path, raw, etag):

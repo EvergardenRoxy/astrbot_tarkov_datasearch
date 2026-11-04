@@ -65,6 +65,18 @@ class ParseTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT value FROM meta WHERE key='etag'").fetchone()[0], '"a"')
             db.close()
 
+    def test_invalid_documents_preserve_existing_index(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)/'names.sqlite3'
+            build(path, document(), 'good')
+            original = path.read_bytes()
+            for raw in (b'{"1":"Alice",', b'{"1":"Alice"} trailing',
+                        b'{"1":{"2":"Bob"}}', b'{"1":"Alice", "2":null}'):
+                with self.subTest(raw=raw), self.assertRaises(QueryError):
+                    build(path, raw, 'bad')
+                self.assertEqual(path.read_bytes(), original)
+                self.assertFalse(list(Path(root).glob('*.tmp')))
+
     def test_name_rule(self):
         # Review F-15: auto-generated names such as TarkovCitizen1019349 are longer than 15 (up to 21 seen).
         for name, ok in (('Some_Player', True), ('a-b', True), ('ab', False), ('TarkovCitizen1019349', True),
