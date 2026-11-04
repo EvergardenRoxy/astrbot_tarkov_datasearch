@@ -62,6 +62,8 @@ class FakeNames:
         self.lookups = []
         self.similar_calls = []
 
+    async def close(self): pass
+
     def needs_refresh(self, mode_path): return self.refresh
 
     def has_index(self, mode_path): return self.indexed
@@ -317,12 +319,12 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         result = await self.run_command(self.plugin({'default_mode': 'bogus'}), Event('/tarkov 1234567'))
         self.assertIn('PVP 档案', result[0])
 
-    async def test_refresh_notice_comes_first(self):
+    async def test_background_refresh_does_not_delay_reply_with_wait_notice(self):
         self.profiles[('pve', 1)] = profile(aid=1)
         names = FakeNames({'pve': [(1, 'Test_Player')]}, refresh=True)
         result = await self.run_command(self.plugin(names=names), Event('/tarkov pve Test_Player'))
-        self.assertIn('正在检查 PVE 玩家名单的更新', result[0])
-        self.assertIn('档案', result[1])
+        self.assertEqual(len(result), 1)
+        self.assertIn('档案', result[0])
 
     async def test_name_not_found(self):
         # Index switched off: the reply explains how to make the player known.
@@ -391,7 +393,10 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(text=text, indexed=indexed):
                 result = await self.run_command(self.plugin(names=FakeNames(refresh=True, indexed=indexed)), Event(text))
                 self.assertEqual('30 MB' in result[0], size)
-                self.assertIn('下载' if not indexed else '检查', result[0])
+                if not indexed:
+                    self.assertIn('下载', result[0])
+                else:
+                    self.assertNotIn('正在检查', result[0])
 
     async def test_texts_follow_the_refresh_interval(self):
         # Review F-05: the chat texts used to say "每周" whatever the setting.
@@ -400,7 +405,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                 plugin = self.plugin(names=FakeNames(refresh=True, refresh_seconds=seconds))
                 self.assertIn(f'昵称名单（{words}更新一次）', plugin.help_text())
                 result = await self.run_command(plugin, Event('/tarkov pve Nobody'))
-                self.assertIn(words, result[1])
+                self.assertIn(words, result[0])
 
     async def test_all_digit_name_falls_back_to_the_record(self):
         self.profiles[('pve', 77)] = profile(aid=77, info_nickname='123456')

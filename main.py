@@ -605,12 +605,9 @@ class TarkovPlugin(Star):
         if not matches and self.index_enabled() and id_missing is None:
             # The downloaded index is per mode; the default (or chosen) mode's index is used.
             where = '名单'
-            if self.names.needs_refresh(path_of(mode)):
-                if self.names.has_index(path_of(mode)):
-                    yield event.plain_result(f'正在检查 {label} 玩家名单的更新（{every(self.names.refresh_seconds)}一次），请稍候。')
-                else:
-                    size = '，约 30 MB' if mode == 'pvp' else ''
-                    yield event.plain_result(f'正在下载 {label} 玩家名单（第一次按昵称查询这个模式时需要{size}，可能需要几十秒），请稍候。')
+            if self.names.needs_refresh(path_of(mode)) and not self.names.has_index(path_of(mode)):
+                size = '，约 30 MB' if mode == 'pvp' else ''
+                yield event.plain_result(f'正在下载 {label} 玩家名单（第一次按昵称查询这个模式时需要{size}，可能需要几十秒），请稍候。')
             matches, total = await self.names.lookup(path_of(mode), target)
         logger.info('Tarkov [%s] name matches=%s source=%s', trace, total, where)
         if not matches and id_missing:
@@ -1087,6 +1084,7 @@ class TarkovPlugin(Star):
 
     async def terminate(self):
         self._terminated = True
+        await self.names.close()
         await self.status_poller.close()
         await self.boss_poller.close()
         await self.status_store.close()
