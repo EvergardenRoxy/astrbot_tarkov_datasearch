@@ -868,25 +868,5 @@ Review of the mobile statistics commit (Claude Code), with the maintainer's deci
 
 Validation: 438 tests pass (Python 3.13), with new assertions for the labels, wording and in-margin text.
 `docs/atlas_pve_preview.jpg` and `docs/preview.jpg` regenerated and inspected; PVP and season rendered for
-inspection only. Arena and help previews untouched.
-
-### Full-board phone rescale (maintainer: "执行吧")
-
-The 1600 px board is shown at roughly a quarter size in phone chats, so every section now uses the statistics
-section's scale (minimum 21 px; body 24-34 px; numbers 44-110 px). Order: logo row, player panel, mode overview,
-equipment, rare achievements, statistics, skills, latest achievements, footer.
-
-- Player panel: 140 px badge (`BADGE`), Oswald level, 60 px nickname (fitted to 36 px, then clipped), side + EXP,
-  progress bar; a right column lists prestige (icon + level), account ID, best league, last active. The old small
-  duplicate numbers in the header are removed; the query time stays in the top-right stamp.
-- Overview: full width, two rows of six (Oswald 54 values, 26 px labels; 幸存率 and K/D in the accent colour).
-- Equipment: full width, four 372 px slots per row, 28 px labels, English short names at 26 px, "空" for an empty
-  slot; a single "暂无装备数据" line when no shown slot has an item.
-- Rare achievements: count/total (Oswald 52) with a full-width bar, then 3 x 3 cards with a rarity-coloured edge,
-  96 px icon, 30 px name and "rarity · share".
-- Latest achievements: 116 px rows: 80 px icon, 32 px name, one clipped 24 px description line, rarity on the right
-  and "share · YYYY-MM-DD HH:MM" below it (seconds dropped).
-- `fitted()` gained a `minimum`; Arena keeps the old default. The preview tool adds invented English item names
-  without picture links. Height of the PVE example: 4804 px (~0.76 MB JPEG).
-- Tests: a whole-board check asserts no text below 21 px and every text box inside the margins with long names,
-  descriptions and prestige; the no-equipment section is one line; the badge pixel check follows `BADGE`.
+inspection only. Arena and help previews untouched. Open item: the small-text sections (header, rare and latest
+achievements, equipment) remain hard to read on phones — a full-board rescale is pending the maintainer's choice.

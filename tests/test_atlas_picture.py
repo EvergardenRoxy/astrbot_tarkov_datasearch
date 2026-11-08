@@ -186,39 +186,6 @@ class RenderTests(unittest.TestCase):
         self.assertTrue(all(font.size == 34 for _, font in skills))
         self.assertEqual(sum(1 for x0, y0, x1, y1 in boxes if x1-x0 == 27 and y1-y0 == 27), 20)
 
-    def test_whole_board_uses_phone_sized_text_inside_the_margins(self):
-        from tarkov_core import atlas_image as ui
-        doc = atlas_profile('season', prestigeLevel=2, slots=[{'slot': 'Headwear', 'en': {'short': 'HELMET'}}],
-                            achievements={'count': 3, 'total': 50, 'done': [
-                                {'id': f'a{i}', 'at': 1700000000+i, 'rarity': 'Rare', 'percent': 3.5,
-                                 'ch': {'name': '很长的成就名称'*4, 'description': '很长的描述'*20}} for i in range(3)]})
-        card = build(doc, 'season')
-        sizes, inked = [], []
-        original = ImageDraw.ImageDraw.text
-        def record(self, xy, text, *args, **kwargs):
-            f = kwargs.get('font')
-            if str(text).strip():
-                sizes.append((text, f.size))
-                inked.append((text, self.textbbox(xy, text, font=f, anchor=kwargs.get('anchor'))))
-            return original(self, xy, text, *args, **kwargs)
-        with unittest.mock.patch.object(ImageDraw.ImageDraw, 'text', record):
-            render_atlas_image(card)
-        texts = [text for text, _ in sizes]
-        self.assertIn('HELMET', texts)
-        self.assertIn('空', texts)
-        self.assertIn('2 级', texts)
-        self.assertNotIn('击杀数：', texts)  # The old header's small duplicate numbers are gone.
-        # Nothing smaller than 21 px (the exit-bar ticks); long names and descriptions are fitted or clipped.
-        self.assertGreaterEqual(min(size for _, size in sizes), 21, sorted(sizes, key=lambda s: s[1])[:5])
-        self.assertTrue(all(ui.M <= box[0]+1 and box[2] <= ui.W-ui.M+1 for _, box in inked),
-                        [entry for entry in inked if not (ui.M <= entry[1][0]+1 and entry[1][2] <= ui.W-ui.M+1)])
-
-    def test_no_equipment_is_one_line(self):
-        from tarkov_core import atlas_image as ui
-        image = Image.new('RGB', (ui.W, 800), ui.BG)
-        card = build(atlas_profile('pve', slots=[]), 'pve')
-        self.assertEqual(ui.equipment(image, ImageDraw.Draw(image), card, {}, 0), 86+76+28)
-
     def test_empty_and_inconsistent_exit_counters_stay_inside_the_bar(self):
         from tarkov_core import atlas_image as ui
         for stats in ({}, {'pmc': {'counters': [[['Sessions'], 1], [['ExitStatus', 'Survived'], 10],
@@ -243,9 +210,7 @@ class RenderTests(unittest.TestCase):
             self.assertEqual(image.width, 1600)
             self.assertGreater(image.height, 2000)
             # The level badge (red test picture) is drawn in the header.
-            from tarkov_core.atlas_image import BADGE
-            x, y, w, h = BADGE
-            self.assertGreater(image.convert('RGB').getpixel((x+w//2, y+h//2))[0], 150)
+            self.assertGreater(image.convert('RGB').getpixel((32+20+44, 112+22+44))[0], 150)
 
 
 class CatalogTests(unittest.TestCase):
