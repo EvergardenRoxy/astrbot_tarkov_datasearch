@@ -102,6 +102,25 @@ class CardTests(unittest.TestCase):
         self.assertEqual(card['skills'], [])
         self.assertEqual(build(atlas_profile('pve'), 'pve')['skills'], [('耐力', 51, True), ('力量', 25, False)])
 
+    def test_achievement_chinese_is_from_atlas_with_per_field_english_fallback(self):
+        done = [
+            {'id': 'cn', 'ch': {'name': '中文成就', 'description': '中文描述'},
+             'en': {'name': 'English name', 'description': 'English description'}},
+            {'id': 'mixed', 'ch': {'name': '中文名称', 'description': ' '},
+             'en': {'name': 'English name', 'description': 'English description'}},
+            {'id': 'en', 'ch': {'name': None}, 'en': {'name': 'English only'}},
+            {'id': 'missing'},
+        ]
+        for mode in ('pvp', 'pve', 'season', 'arena'):
+            with self.subTest(mode=mode):
+                card = build(atlas_profile(mode, achievements={'count': 4, 'total': 86, 'done': done}), mode)
+                entries = card['achievement_details'] if mode == 'arena' else card['achievements']['rare']
+                by_id = {entry['id']: entry for entry in entries}
+                self.assertEqual((by_id['cn']['name'], by_id['cn']['description']), ('中文成就', '中文描述'))
+                self.assertEqual((by_id['mixed']['name'], by_id['mixed']['description']), ('中文名称', 'English description'))
+                self.assertEqual(by_id['en']['name'], 'English only')
+                self.assertEqual(by_id['missing']['name'], '—')
+
     def test_odd_fields_never_raise(self):
         fields = ('stats', 'slots', 'achievements', 'skills', 'levelExp', 'league', 'experience', 'level', 'looked_up',
                   'prestigeLevel', 'side', 'accountId')

@@ -336,6 +336,9 @@ def footer(d, top):
 def render_atlas_image(card, icons=None):
     """JPEG bytes of the player picture. icons: {'level_badge': PNG bytes, 'prestige': PNG bytes,
     'items': {url: PNG bytes}, 'achievements': {achievement id: PNG bytes}}; anything missing draws a placeholder."""
+    if card.get('arena'):
+        from .atlas_arena_image import render_atlas_arena_image
+        return render_atlas_arena_image(card)
     icons = icons or {}
     img = Image.new('RGB', (W, 6000), BG)
     d = ImageDraw.Draw(img)

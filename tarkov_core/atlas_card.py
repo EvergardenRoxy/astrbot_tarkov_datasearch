@@ -161,9 +161,23 @@ def league(doc):
                     'en': block.get('maxName', {}).get('en') if isinstance(block.get('maxName'), dict) else None}) or '—'
 
 
+def achievement_data(doc):
+    """Shared achievement text and ordering for the main game and Arena. Text comes from Atlas, ch before en."""
+    count, _ = achievement_count(doc)
+    block = doc.get('achievements') if isinstance(doc.get('achievements'), dict) else {}
+    available = number(block.get('total'))
+    done = achievement_list(doc)
+    return {'count': count, 'total': int(available) if available is not None and available >= count else None,
+            'rare': sorted(done, key=lambda a: (a['rank'], -(a['at'] or 0)))[:RARE_COUNT],
+            'latest': sorted(done, key=lambda a: -(a['at'] or 0))[:LATEST_COUNT]}
+
+
 def build(doc, mode, *, skill_limit=10, now=None):
     """The picture's content. Picture links are collected in 'assets' (item pictures only; icons that come from
     tarkov.dev's public data are looked up by the caller)."""
+    if mode == 'arena':
+        from .atlas_arena_image import build_arena
+        return build_arena(doc, now=now)
     name = nickname(doc)
     now = time.time() if now is None else now
     stats = doc.get('stats') if isinstance(doc.get('stats'), dict) else {}
@@ -181,12 +195,9 @@ def build(doc, mode, *, skill_limit=10, now=None):
     if experience is not None and start is not None and goal is not None and goal > start:
         progress = min(1, max(0, (experience-start)/(goal-start)))
     side = clean(doc.get('side') if isinstance(doc.get('side'), str) else '', 16)
-    count, total_achievements = achievement_count(doc)
-    block = doc.get('achievements') if isinstance(doc.get('achievements'), dict) else {}
-    available = number(block.get('total'))
+    achievement = achievement_data(doc)
     done = achievement_list(doc)
-    rare = sorted(done, key=lambda a: (a['rank'], -(a['at'] or 0)))[:RARE_COUNT]
-    latest = sorted(done, key=lambda a: -(a['at'] or 0))[:LATEST_COUNT]
+    rare, latest = achievement['rare'], achievement['latest']
     skills = profile.skills({'Common': common_skills(doc)})
     shown = skills if skill_limit > 0 else []
     elite = [s for s in shown if s[2]]
@@ -211,8 +222,7 @@ def build(doc, mode, *, skill_limit=10, now=None):
                                 + [a['at'] or 0 for a in done]+[0]) or None),
         'headline': headline(total, play),
         'columns': [('总览', column(total, play)), ('PMC', column(pmc, play)), ('SCAV', column(scav, play))],
-        'achievements': {'count': count, 'total': int(available) if available and available >= count else None,
-                         'rare': rare, 'latest': latest},
+        'achievements': achievement,
         'skills': elite+rest,
         'equipment': [[(key, label, wide, equipment.get(key)) for key, label, wide in row] for row in SLOT_ROWS],
         'assets': sorted({item['image'] for item in equipment.values() if item['image']}),

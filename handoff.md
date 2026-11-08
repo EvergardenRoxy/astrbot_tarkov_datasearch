@@ -720,3 +720,38 @@ back, holster), the melee slot and the secure container: eight slots in two rows
 removed (no weapon pictures or attachment lists at all now). Rare achievements are a full-width bar under the
 equipment/headline panels: completion line and bar, then the nine achievements in one row (icon, name, share,
 rarity). The equipment and headline panels share one height.
+
+## Atlas Arena register and achievement text provenance (2026-11-08)
+
+Implemented with OpenAI Codex on `feat/arena-query-display`, based on the maintainer's requested
+`claude/vibrant-newton-lxci9c` head `13ae46c`. The maintainer reviewed a dark prototype, chose the original
+Arena Masters register, then approved six-column totals tables, completed/total achievement counts and the
+nine rarest achievements. This section supersedes the earlier temporary Arena-on-tarkov.dev routing decision.
+
+- `main.py`: Atlas now handles explicit Arena queries/bindings through the same single-mode lookup, nickname
+  resolution, quota, cache, refresh and history flow as the other modes. Only failed Atlas lookups fall back
+  to labelled tarkov.dev snapshots; an explicit no-profile response does not. Snapshot-source behaviour remains.
+- `atlas_card.build(..., 'arena')` uses `atlas_arena_image.build_arena()`, then `atlas_image.render_atlas_image()`
+  dispatches to the Arena register. The shared old renderer accepts local typography/footer providers and can
+  return its Pillow image, avoiding process-wide preview monkeypatches and repeated JPEG encoding. Default
+  snapshot rendering is unchanged. Full-font loading still uses the existing first-use download mechanism.
+- Register: original paper/leather/ARP medallion/W-L bars; per-section six-column totals tables, mode rows,
+  completed/total achievements and up to nine achievement text cards in three columns, with rarity, share and date.
+  No Arena icon fetch/catalog read: the known catalog has no Arena achievement artwork. Missing sections and
+  totals are not invented. The former "last bout" label is now "latest achievement", since Arena does not return
+  a last-match timestamp. The source header carries the unmodified Atlas logo and link; footer gives looked_up,
+  server cache status, Atlas thanks and plugin attribution. Reply text retains clickable links and refresh hints.
+- `atlas_card.achievement_data()` shares rarity order (seasonal, legendary, rare, common, unknown last), then
+  newest achievement time, with PVP/PVE/season. Text provenance checked: `achievement_list()` reads each entry's
+  `ch.name` / `ch.description` using `text_of()`, with independent `en` fallback for each field. The plugin does
+  not translate these strings; the tarkov.dev catalog supplies icons only. No claim is made about Atlas' own
+  upstream translation source. This behaviour now has regression coverage across all four modes.
+- Preview: `tools/build_arena_legacy_preview.py [pinned-full-font.ttf]` invokes the production renderer with
+  invented fixture data and marks the result as a preview. `docs/arena_legacy_atlas_reference_v2.jpg` includes
+  invented ranked records for layout review; the live Atlas probe had only unranked records. No live player
+  lookups were made for this work. Earlier visual experiments remain as comparison artifacts.
+
+Validation: all 425 tests passed on Python 3.12 (12.748 s), including Arena Atlas routing, real JPEG rendering,
+cache/refresh/name/url paths, history persistence, fallback vs missing profiles, rarity ordering, empty/odd fields,
+text provenance and concurrent snapshot/Atlas rendering. Release ZIP contents/size and font coverage checks pass.
+The updated preview was visually inspected. Live AstrBot/QQ delivery and Python 3.13 were not run here.

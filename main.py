@@ -590,8 +590,7 @@ class TarkovPlugin(Star):
         try:
             if action == 'unbind':
                 yield await self.unbind(event)
-            elif self.player_source() == 'atlas' and mode != 'arena':
-                # Arena keeps the tarkov.dev snapshot until its Atlas picture is made (maintainer: done separately).
+            elif self.player_source() == 'atlas':
                 async for result in self.atlas_player(event, action, mode, target, url, trace, refresh, owner):
                     yield result
             elif action == 'bind':
@@ -1019,7 +1018,7 @@ class TarkovPlugin(Star):
     async def reply(self, event, summary, game_mode, aid, notes, trace):
         """The profile in the configured output: an image (text if drawing fails), plain text or Markdown.
         Every reply says the data is a snapshot and links the player's page, where it can be refreshed."""
-        if summary.get('source') == 'atlas' and game_mode != 'arena':
+        if summary.get('source') == 'atlas':
             return await self.atlas_picture(event, summary, game_mode, aid, notes, trace)
         refresh = page_url(game_mode, aid)
         if game_mode == 'arena':
@@ -1075,7 +1074,10 @@ class TarkovPlugin(Star):
         lines = [f'数据来源：Atlas {ATLAS_URL}　tarkov.dev 玩家页：{page}', *notes, self.refresh_hint(mode, aid)]
         try:
             card = await asyncio.to_thread(build_atlas_card, summary['doc'], mode, skill_limit=self.skill_count())
-            icons = await self.atlas_icons(card, trace)
+            # Always display the requested account id, matching the reply's links even with a malformed upstream id.
+            card['aid'] = aid if mode == 'arena' else str(aid)
+            # Arena achievements have no known icons in tarkov.dev's catalog; the register uses text cards.
+            icons = {} if mode == 'arena' else await self.atlas_icons(card, trace)
             # The full Chinese font once downloaded (first use starts the download; until then the bundled subset).
             font_path = await self.full_font.path_or_start()
             use_full_font(str(font_path) if font_path else None)

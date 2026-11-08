@@ -433,15 +433,50 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         # The icons asked for: item pictures, the known achievement icon and the level badge.
         self.assertIn('https://assets.tarkov.dev/player-level-group-1.png', self.assets.asked[0])
 
-    async def test_one_mode_per_query_and_arena_stays_on_tarkov_dev(self):
+    async def test_one_mode_per_query_including_arena_uses_atlas(self):
         plugin = self.plugin({'arena_by_default': True})
         self.atlas.put(1, 'season')
-        self.profiles[('arena', 1)] = arena_profile(aid=1)
+        self.atlas.put(1, 'arena')
         await self.ask(plugin, '/tarkov 赛季 1')
         self.assertEqual(self.cards[0]['mode_label'], 'PVP 赛季')
         reply = (await self.ask(plugin, '/tarkov 竞技场 1'))[0]
         self.assertIn('https://tarkov.dev/players/arena/1', self.text(reply))
-        self.assertEqual(self.atlas.calls, [('lookup', 1, 'season')])
+        self.assertEqual(self.atlas.calls, [('lookup', 1, 'season'), ('lookup', 1, 'arena')])
+        self.assertEqual(self.fetched, [])
+        self.assertIsInstance(reply[0], ImageStub)
+        self.assertTrue(self.cards[-1]['overall_table'])
+        self.assertEqual(self.cards[-1]['achievement_total'], ATLAS_ARENA['achievements']['total'])
+        self.assertEqual(len(self.assets.asked), 1)  # Only season needs the main game's icons.
+        entry = await asyncio.to_thread(plugin.atlas_history.latest, 1, 'arena')
+        self.assertEqual(entry['document']['mode'], 'arena')
+
+    async def test_arena_cached_refresh_url_name_and_real_picture(self):
+        plugin = self.plugin(draw=True)
+        self.atlas.put(1, 'arena')
+        url = 'https://tarkov.dev/players/arena/1'
+        [reply] = await self.ask(plugin, f'/tarkov {url}')
+        self.assertTrue(reply[0].data.startswith(b'\xff\xd8'))
+        self.assertIn('@机器人 tarkov 竞技场 1 刷新', self.text(reply))
+        await self.ask(plugin, '/tarkov arena 1')
+        self.assertEqual(self.atlas.calls, [('lookup', 1, 'arena')])
+        await self.ask(plugin, '/tarkov arena Test_Player')
+        self.assertEqual(self.atlas.calls, [('lookup', 1, 'arena')])
+        await self.ask(plugin, '/tarkov arena 1 刷新')
+        self.assertEqual(self.atlas.calls, [('lookup', 1, 'arena')]*2)
+        self.assertEqual(self.assets.asked, [])
+
+    async def test_arena_failure_falls_back_but_missing_profile_does_not(self):
+        plugin = self.plugin({'output_mode': 'text'})
+        self.profiles[('arena', 1)] = arena_profile(aid=1)
+        self.atlas.docs[(1, 'arena')] = [self.error(429, 'busy', 5)]*2
+        [reply] = await self.ask(plugin, '/tarkov arena 1')
+        self.assertIn('tarkov.dev 的快照', reply)
+        self.assertIn('【塔科夫竞技场档案】', reply)
+        self.assertEqual(self.fetched, [('arena', 1)])
+        self.assertIsNone(await asyncio.to_thread(plugin.atlas_history.latest, 1, 'arena'))
+        self.atlas.docs[(2, 'arena')] = self.error(404, 'no_profile')
+        [reply] = await self.ask(plugin, '/tarkov arena 2')
+        self.assertIn('竞技场 模式下没有档案（Atlas）', reply)
         self.assertEqual(self.fetched, [('arena', 1)])
 
     async def test_names_use_the_record_then_the_list_then_atlas_search(self):

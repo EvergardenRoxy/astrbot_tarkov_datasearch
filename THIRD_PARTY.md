@@ -38,7 +38,7 @@ the provider's current terms if the use changes.
 
 **Atlas logo.** `tarkov_core/assets/atlas-logo.png` is the Atlas wordmark and map logo, supplied by the project maintainer
 on 2026-11-08 as required by the Atlas developer: every output of Atlas data must carry this logo and name "Atlas" with a
-link to https://eftforge.com/atlas. It is drawn unmodified (only scaled) on the matching-time picture. Atlas belongs to its
+link to https://eftforge.com/atlas. It is drawn unmodified (only scaled) on matching-time and player pictures, including the Arena register. Atlas belongs to its
 author; it is not covered by this plugin's licence. Atlas is a fan-made project, not affiliated with Battlestate Games.
 
 **Drawings and Boss portraits.** Player/status cards draw their game references themselves (a military dog tag,
