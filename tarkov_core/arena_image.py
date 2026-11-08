@@ -147,8 +147,6 @@ def rare_achievements(d, entries, y, pw, font=font):
             if k == 1 and len(lines) > 2:
                 line = line[:-1]+'…'
             d.text((x+10, top+29+k*20), line, font=f, fill=INK)
-        share = f"{entry['percent']:g}% 玩家" if entry['percent'] is not None else '完成比例 —'
-        right(d, x+width-10, top+10, share, font('sc', 11, 400), BROWN)
         from .atlas_card import when
         date = when(entry['at'], '%Y-%m-%d') if entry['at'] else None
         d.text((x+10, top+77), date or '—', font=font('mono', 12), fill=BROWN)

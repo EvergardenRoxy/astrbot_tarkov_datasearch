@@ -870,3 +870,23 @@ Validation: 438 tests pass (Python 3.13), with new assertions for the labels, wo
 `docs/atlas_pve_preview.jpg` and `docs/preview.jpg` regenerated and inspected; PVP and season rendered for
 inspection only. Arena and help previews untouched. Open item: the small-text sections (header, rare and latest
 achievements, equipment) remain hard to read on phones — a full-board rescale is pending the maintainer's choice.
+
+### Revert and real-data annotations (2026-11-08)
+
+The full-board rescale (`b35b71a`) was reverted (`e78ee0f`) at the maintainer's request. The maintainer then
+annotated a real PVE picture (one Atlas search + one lookup through the plugin's client; data and picture kept in
+the session scratchpad only, never committed) and asked for:
+
+- Atlas logo and source link moved into the player header's right side, replacing the small duplicate numbers; the
+  top row now holds the mode title (left) and the query time (right). Badge position unchanged.
+- Headline panel: Oswald 44 values and 22 px labels (fitted/clipped per cell).
+- Rare achievements: the "% 玩家" line removed; names 24 px (min 18, then clipped) and rarity 20 px.
+- Latest achievements: same table, larger type (header 22, name 26, description 22 with two wrapped lines, rarity
+  24, time mono 24, 60 px icons); the "% 玩家" column removed in all modes. The Arena register's achievement cards
+  also lose their share label (maintainer: all modes). Atlas reports 0 % for every PVE achievement.
+- Maintainer decisions: transit counts as survival; "幸存数" stays survived-only; the empty body-armour slot with a
+  plate-carrier rig is correct; a missing rarity ("—") is a game-side issue and is left alone.
+- `fitted()`/`centered()` regain an optional `minimum` (default 10, so Arena output is unchanged).
+
+Validation: 439 tests pass. The PVE example and the Arena Atlas example were regenerated from invented data.
+Not yet decided: whether the rare-achievement title row, equipment labels and footer are enlarged too.

@@ -186,6 +186,25 @@ class RenderTests(unittest.TestCase):
         self.assertTrue(all(font.size == 34 for _, font in skills))
         self.assertEqual(sum(1 for x0, y0, x1, y1 in boxes if x1-x0 == 27 and y1-y0 == 27), 20)
 
+    def test_header_carries_the_atlas_link_and_no_player_share_is_drawn(self):
+        done = [{'id': f'a{i}', 'at': 1700000000+i, 'rarity': 'Rare', 'percent': 12.5,
+                 'ch': {'name': f'成就{i}', 'description': '描述'}} for i in range(3)]
+        drawn = []
+        original = ImageDraw.ImageDraw.text
+        def record(self, xy, text, *args, **kwargs):
+            drawn.append(str(text))
+            return original(self, xy, text, *args, **kwargs)
+        for mode in ('pvp', 'pve', 'season'):
+            card = build(atlas_profile(mode, achievements={'count': 3, 'total': 9, 'done': done}), mode)
+            with unittest.mock.patch.object(ImageDraw.ImageDraw, 'text', record):
+                render_atlas_image(card)
+        # The completion share is not shown anywhere (maintainer, 2026-11-08), in any mode.
+        self.assertFalse([text for text in drawn if '玩家' in text and '%' in text])
+        self.assertNotIn('% 玩家', drawn)
+        self.assertIn('数据来源：Atlas  ', drawn)
+        self.assertIn('达成时间（UTC+8）', drawn)
+        self.assertNotIn('击杀 PMC：', drawn)  # The header's small numbers were replaced by the Atlas link.
+
     def test_empty_and_inconsistent_exit_counters_stay_inside_the_bar(self):
         from tarkov_core import atlas_image as ui
         for stats in ({}, {'pmc': {'counters': [[['Sessions'], 1], [['ExitStatus', 'Survived'], 10],
