@@ -579,3 +579,7 @@ cover 900/3600-second boundaries, failure backoff, 20 concurrent callers, cancel
 Font rebuild produced no tracked changes. One live read-only matching request succeeded: 24 hours, 28 datacenters,
 288 history points; a second service call read the cache. The development smoke test explicitly selected the managed
 proxy; production still uses only plugin settings. No real player data or samples stored, no live chat-platform test.
+
+Maintainer follow-up: non-transient Atlas HTTP errors (403, 404, ...) get an independent 2-minute window
+(`HTTP_ERROR_SECONDS`). Callers receive the same error without contacting Atlas and are never served the stale
+result; the window neither shortens nor extends the 15-minute cache/failure windows. 351 tests pass.

@@ -141,6 +141,41 @@ class MatchingTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(type(error)):
                 await self.service.get()
 
+    async def test_non_transient_http_error_has_independent_two_minute_window(self):
+        first = await self.service.get()
+        self.clock.advance(900)
+        self.client.matching.side_effect = AtlasHTTPError(403)
+        for _ in range(20):
+            with self.assertRaises(AtlasHTTPError) as caught:
+                await self.service.get()
+            self.assertEqual(caught.exception.status, 403)  # Never masked by the stale result.
+        self.assertEqual(self.client.matching.await_count, 2)
+        self.clock.advance(119)
+        with self.assertRaises(AtlasHTTPError):
+            await self.service.get()
+        self.assertEqual(self.client.matching.await_count, 2)
+        self.clock.advance(1)
+        self.client.matching.side_effect = None
+        self.assertFalse((await self.service.get()).from_cache)
+        self.assertEqual(self.client.matching.await_count, 3)
+        self.assertGreater(self.service.cached.fetched_at, 0)
+        self.assertIsNot(self.service.cached, first)
+
+    async def test_non_transient_http_error_without_cache_and_window_independence(self):
+        self.client.matching.side_effect = AtlasHTTPError(404)
+        with self.assertRaises(AtlasHTTPError):
+            await self.service.get()
+        self.assertEqual(self.service.next_attempt, 0)  # The 15-minute window is untouched.
+        self.clock.advance(120)
+        self.client.matching.side_effect = ConnectionFailure('failure')
+        with self.assertRaises(QueryError):
+            await self.service.get()
+        self.assertEqual(self.client.matching.await_count, 2)
+        self.clock.advance(120)  # The transient failure's 15-minute window now applies, not the 2-minute one.
+        with self.assertRaises(QueryError):
+            await self.service.get()
+        self.assertEqual(self.client.matching.await_count, 2)
+
     async def test_concurrency_cancellation_and_close(self):
         started, release = asyncio.Event(), asyncio.Event()
         async def download():
