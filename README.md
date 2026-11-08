@@ -117,6 +117,10 @@ astrbot_tarkov_datasearch v0.4.8 · https://github.com/EvergardenRoxy/astrbot_ta
 
 数据位于 `data/plugin_data/astrbot_tarkov_datasearch/`，具体文件见两份功能文档的“数据存储”一节：[玩家功能](docs/player-query.md#数据存储玩家功能)、[状态与 Boss](docs/status-and-boss.md#数据存储状态与-boss)。绑定只保存带密钥的哈希，不保存 QQ 号等原始 ID；用过本插件命令的群会话（只存会话标识，不存用户）会被记住，作为没填推送目标时的推送对象；插件不另存“谁查询了谁”，但 AstrBot 的日志会记下每条消息的发送者和内容，请像对待聊天记录一样保管日志和整个数据目录。
 
+## 特别致谢
+
+- **[Atlas](https://www.eftforge.com/atlas)**（[EFTForge](https://github.com/SouthHorizons76/EFTForge) 项目的一部分，作者 Morph1ne / SouthHorizons76）：Atlas 开发者已向本项目授予 API 调用权限和刷新密钥，计划用于“可主动刷新的玩家数据查询”和“服务器匹配时间查询”两项功能。这两项功能还在规划中，尚未发布，当前版本的玩家数据仍来自 tarkov.dev 的公开快照（规划见 [docs/atlas-integration-plan.md](docs/atlas-integration-plan.md)）。Atlas 是独立的开源项目（AGPL-3.0-or-later），与本插件没有隶属关系，也不是 Battlestate Games 或 tarkov.dev 的项目。
+
 ## 开源许可
 
 本项目采用 **GNU General Public License v3.0 or later（GPL-3.0-or-later）**。完整许可见 [LICENSE](LICENSE)，数据来源与第三方声明见 [THIRD_PARTY.md](THIRD_PARTY.md)。
