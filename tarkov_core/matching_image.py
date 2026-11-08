@@ -10,7 +10,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from . import NAME, NOTICE, REPO, VERSION
+from . import NAME, REPO, VERSION
 from .image import FONTS, FONT_FILES, jpeg, safe
 
 ATLAS_NAME = 'Atlas'
@@ -259,7 +259,8 @@ def render_matching_image(result):
     d.line([0, footer_top-12, W, footer_top-12], fill=RULE)
     f = font('sc', 15, 400)
     lines = ('“—”表示暂无数据；查询失败不代表等待时间为 0 或服务器宕机。',
-             f"{NAME} v{VERSION} · {REPO.removeprefix('https://')}", NOTICE)
+             f"{NAME} v{VERSION} · {REPO.removeprefix('https://')}",
+             '特别致谢：Atlas（EFTForge 项目的一部分，作者 Morph1ne / SouthHorizons76）')
     for i, text in enumerate(lines):
         d.text((W/2-d.textlength(text, font=f)/2, footer_top+8+i*26), text, font=f, fill=FAINT)
     return jpeg(img)
