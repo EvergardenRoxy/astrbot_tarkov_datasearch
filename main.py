@@ -114,7 +114,7 @@ class TarkovPlugin(Star):
         # (mode, account id) -> the request in flight, shared by every query that needs it (review R-08).
         self.pending = {}
         self.http = transport.HTTPClient()
-        self.atlas_budget = AtlasBudget(lambda: self.int_setting('atlas_budget_per_minute', 15, 1, 20),
+        self.atlas_budget = AtlasBudget(lambda: self.int_setting('atlas_budget_per_minute', 10, 1, 10),
                                         lambda: self.int_setting('atlas_budget_per_hour', 150, 1, 200))
         self.atlas = AtlasClient(client=self.http, proxy=self.proxy,
             cooldown=AtlasCooldown(self.atlas_interval()), budget=self.atlas_budget)
@@ -248,11 +248,11 @@ class TarkovPlugin(Star):
             return default
 
     def atlas_interval(self):
-        value = self.config.get('atlas_query_cooldown_seconds', 5)
+        value = self.config.get('atlas_query_cooldown_seconds', 10)
         if type(value) is not int or not 1 <= value <= 300:
-            logger.warning('Invalid Atlas cooldown setting; using 5 seconds')
-            return 5
-        return value
+            logger.warning('Invalid Atlas cooldown setting; using 10 seconds')
+            return 10
+        return max(10, value)
 
     def proxy(self):
         if not self.config.get('proxy_enabled', False):
@@ -300,9 +300,9 @@ class TarkovPlugin(Star):
         return value if value in PLAYER_SOURCES else 'atlas'
 
     def quota_limits(self):
-        return (self.int_setting('user_query_per_hour', 20, 1, 200), self.int_setting('user_refresh_per_hour', 3, 0, 60),
-                self.int_setting('user_query_cooldown_seconds', 10, 0, 3600),
-                self.int_setting('user_refresh_cooldown_seconds', 300, 0, 86400))
+        # Hourly counts are fixed policy; retired config keys cannot override them.
+        return (10, 3, self.int_setting('user_query_cooldown_seconds', 30, 30, 3600),
+                self.int_setting('user_refresh_cooldown_seconds', 300, 300, 86400))
 
     def atlas_cache_minutes(self):
         return max(1, self.int_setting('profile_cache_minutes', 10, 0, 1440))
@@ -342,7 +342,8 @@ class TarkovPlugin(Star):
         refresh = f'刷新 {refreshes} 次' if refreshes else '不能刷新'
         return (f'数据来自 Atlas（{ATLAS_URL}），按需实时查询，不用先在 tarkov.dev 搜索；查过的玩家缓存 '
                 f'{self.atlas_cache_minutes()} 分钟，每人每小时可联网查询 {queries} 次、{refresh}。'
-                'Atlas 暂时不可用或额度用完时改用 tarkov.dev 快照，回复里会注明。')
+                'Atlas 总额度用完时暂停联网查询，到期自动恢复；缓存仍可查看。'
+                'Atlas 请求故障时可改用 tarkov.dev 快照，回复里会注明。')
 
     def refresh_rule(self):
         _, refreshes, _, gap = self.quota_limits()

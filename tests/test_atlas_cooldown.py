@@ -34,8 +34,8 @@ class CooldownTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(AtlasCooldownError) as caught:
                 async with gate.claim():
                     self.fail('cooldown bypass')
-            self.assertEqual(caught.exception.retry_after_seconds, 5)
-        clock.advance(5)
+            self.assertEqual(caught.exception.retry_after_seconds, 10)
+        clock.advance(10)
         async with gate.claim():
             pass
 
@@ -58,7 +58,7 @@ class CooldownTests(unittest.IsolatedAsyncioTestCase):
             pass
 
     async def test_invalid_settings_and_pause(self):
-        for interval in (True, None, '5', 0, 301, float('nan'), float('inf')):
+        for interval in (True, None, '5', 0, 1, 5, 9, 301, float('nan'), float('inf')):
             with self.subTest(interval=interval), self.assertRaises(ValueError):
                 AtlasCooldown(interval)
         gate = AtlasCooldown()

@@ -60,10 +60,18 @@ class SettingsTests(unittest.TestCase):
                     self.assertLessEqual(len(item['hint']), 170)
         # Maintainer: the removed settings stay removed.
         keys = {key for spec in schema.values() for key in spec['items']}
-        self.assertFalse(keys & {'short_commands_enabled', 'qq_official_compat_enabled'})
+        self.assertFalse(keys & {'short_commands_enabled', 'qq_official_compat_enabled',
+                                'user_query_per_hour', 'user_refresh_per_hour'})
         self.assertEqual(schema['general']['items']['command_style']['options'], ['mention', 'slash'])
         for key, low, high, default in (('status_poll_minutes', 10, 90, 30), ('boss_poll_minutes', 10, 90, 30)):
             item = [spec['items'][key] for spec in schema.values() if key in spec['items']][0]
             self.assertEqual((item['slider']['min'], item['slider']['max'], item['default']), (low, high, default))
         self.assertIs(schema['player']['items']['name_index_enabled']['default'], True)
         self.assertEqual(schema['status']['items']['status_notify_targets']['default'], [])
+        atlas = schema['atlas']['items']
+        for key, low, high, default in (('atlas_query_cooldown_seconds', 10, 300, 10),
+                                       ('user_query_cooldown_seconds', 30, 3600, 30),
+                                       ('user_refresh_cooldown_seconds', 300, 86400, 300),
+                                       ('atlas_budget_per_minute', 1, 10, 10)):
+            item = atlas[key]
+            self.assertEqual((item['slider']['min'], item['slider']['max'], item['default']), (low, high, default))

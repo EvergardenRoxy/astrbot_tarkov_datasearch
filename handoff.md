@@ -755,3 +755,29 @@ Validation: all 425 tests passed on Python 3.12 (12.748 s), including Arena Atla
 cache/refresh/name/url paths, history persistence, fallback vs missing profiles, rarity ordering, empty/odd fields,
 text provenance and concurrent snapshot/Atlas rendering. Release ZIP contents/size and font coverage checks pass.
 The updated preview was visually inspected. Live AstrBot/QQ delivery and Python 3.13 were not run here.
+
+## Atlas settings floors and recoverable local budget pauses (2026-11-08)
+
+Maintainer-specified policy from the annotated configuration screenshots, implemented with OpenAI Codex:
+shared request interval minimum/default 10 seconds; per-user hourly query/refresh counts fixed at 10/3 with both
+settings removed; per-user query interval minimum/default 30 seconds; refresh interval minimum/default 300
+seconds; global player minute budget configurable from 1 to 10, default 10. The global hourly budget remains
+1-200, default 150. Settings hints, help text and current user documentation now agree.
+
+- `main.py` enforces these bounds when reading both grouped and legacy flat settings. Old per-user count keys
+  have no effect. `AtlasCooldown` itself rejects intervals below 10 seconds. No persistent configuration rewrite
+  or data deletion is required for existing installations.
+- Local `AtlasBudgetError` no longer qualifies for tarkov.dev fallback, for both minute and hour exhaustion.
+  The response gives seconds until the sliding window frees a slot; cached profiles remain readable and the
+  next user query can resume after expiry. No timers, polling, scheduled retries or background requests were added.
+  Actual Atlas/network failures retain the previous snapshot fallback rules.
+- `AtlasBudget.check()` admits no request and takes no slot. The client checks it before waiting, then reserves
+  and rechecks only after acquiring the shared gate, so global budget windows track actual HTTP start times.
+  Rejected/cancelled gate waits consume no global slots; upstream 429 refund handling remains intact.
+- Tests use virtual clocks for the new user intervals, never real sleeps or remote Atlas lookups. Added coverage
+  checks removed keys/schema ranges, old-value bounds, fixed hourly count recovery, exact 30/300-second boundaries,
+  ten-request default budget, minute/hour deadline recovery with no HTTP before the deadline, recheck after a
+  competing waiter, actual start timestamps and cache access while a local budget pause is active.
+
+Validation: all 432 tests passed on Python 3.12 in 12.567 seconds, including release ZIP and font checks;
+`git diff --check` passed. No live QQ/AstrBot configuration panel or Python 3.13 validation in this environment.

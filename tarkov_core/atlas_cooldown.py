@@ -21,8 +21,7 @@ class AtlasCooldownError(QueryError):
 class AtlasBudgetError(QueryError):
     """The plugin's own minute/hour budget for Atlas player requests is used up (no request was sent)."""
     def __init__(self, seconds):
-        minutes = max(1, math.ceil(seconds/60))
-        super().__init__(f'Atlas 玩家查询太频繁（本插件的总额度已用完），约 {minutes} 分钟后再试')
+        super().__init__(f'Atlas 玩家查询总额度已用完，约 {math.ceil(seconds)} 秒后自动恢复；缓存仍可查看')
         self.retry_after_seconds = math.ceil(seconds)
 
 
@@ -32,7 +31,7 @@ class AtlasBudget:
     Atlas allows 20 a minute and 200 an hour per source IP (author, 2026-11-08); the defaults keep a margin. A request
     refused with 429 is not counted by Atlas, so its slot is given back (`refund`)."""
 
-    def __init__(self, per_minute=lambda: 15, per_hour=lambda: 150, *, clock=time.monotonic):
+    def __init__(self, per_minute=lambda: 10, per_hour=lambda: 150, *, clock=time.monotonic):
         self.per_minute, self.per_hour = per_minute, per_hour
         self.clock = clock
         self.sent = collections.deque()
@@ -41,8 +40,8 @@ class AtlasBudget:
         while self.sent and now-self.sent[0] >= 3600:
             self.sent.popleft()
 
-    def reserve(self):
-        """Count one request now, or raise AtlasBudgetError. Returns a token for `refund`."""
+    def check(self):
+        """Read the current window deadlines without taking a slot; expired limits recover on the next call."""
         now = self.clock()
         self._trim(now)
         waits = []
@@ -53,6 +52,11 @@ class AtlasBudget:
                 waits.append(window-(now-sent[-limit]) if limit > 0 else window)
         if waits:
             raise AtlasBudgetError(max(1, max(waits)))
+
+    def reserve(self):
+        """Count one request now, or raise AtlasBudgetError. Returns a token for `refund`."""
+        self.check()
+        now = self.clock()
         self.sent.append(now)
         return now
 
@@ -68,8 +72,8 @@ class AtlasBudget:
 
 
 class AtlasCooldown:
-    def __init__(self, interval=5, *, clock=time.monotonic):
-        if isinstance(interval, bool) or not isinstance(interval, (int, float)) or not math.isfinite(interval) or not 1 <= interval <= 300:
+    def __init__(self, interval=10, *, clock=time.monotonic):
+        if isinstance(interval, bool) or not isinstance(interval, (int, float)) or not math.isfinite(interval) or not 10 <= interval <= 300:
             raise ValueError('invalid Atlas cooldown')
         self.interval = interval
         self.clock = clock

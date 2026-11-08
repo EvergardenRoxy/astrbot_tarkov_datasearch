@@ -39,9 +39,25 @@ class MatchingPluginTests(unittest.IsolatedAsyncioTestCase):
         for value in (True, '1', -1, 301, float('inf'), float('nan'), None):
             plugin = self.plugin({'atlas': {'matching_enabled': True, 'atlas_query_cooldown_seconds': value}})
             self.assertTrue(plugin.matching.enabled())
-            self.assertEqual(plugin.atlas.cooldown.interval, 5)
+            self.assertEqual(plugin.atlas.cooldown.interval, 10)
         plugin = self.plugin({'atlas': {'matching_enabled': True, 'atlas_query_cooldown_seconds': 20}})
         self.assertEqual(plugin.atlas.cooldown.interval, 20)
+
+    async def test_old_flat_and_grouped_values_cannot_bypass_policy(self):
+        old = {'atlas_query_cooldown_seconds': 1, 'user_query_per_hour': 200,
+               'user_refresh_per_hour': 0, 'user_query_cooldown_seconds': 0,
+               'user_refresh_cooldown_seconds': 1, 'atlas_budget_per_minute': 20}
+        for config in (old, {'atlas': old}):
+            plugin = self.plugin(config)
+            self.assertEqual(plugin.atlas.cooldown.interval, 10)
+            self.assertEqual(plugin.quota_limits(), (10, 3, 30, 300))
+            self.assertEqual(plugin.atlas_budget.per_minute(), 10)
+            self.assertEqual(plugin.atlas_budget.per_hour(), 150)
+            self.assertIn('查询 10 次、刷新 3 次', plugin.atlas_help())
+        plugin = self.plugin({'atlas': {'user_query_cooldown_seconds': 60, 'user_refresh_cooldown_seconds': 600,
+                                        'atlas_budget_per_minute': 3}})
+        self.assertEqual(plugin.quota_limits(), (10, 3, 60, 600))
+        self.assertEqual(plugin.atlas_budget.per_minute(), 3)
 
 
 class MatchingCommandTests(unittest.IsolatedAsyncioTestCase):
