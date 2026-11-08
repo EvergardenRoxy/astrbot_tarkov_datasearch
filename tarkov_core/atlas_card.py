@@ -21,23 +21,19 @@ TZ = datetime.timezone(datetime.timedelta(hours=8))
 MODE_LABELS = {'pvp': 'PVP', 'pve': 'PVE', 'season': 'PVP 赛季'}
 RARE_COUNT = 9
 LATEST_COUNT = 10
-# Equipment grid, as on the Atlas page: (slot key, label, columns wide).
+# Equipment grid: (slot key, label, columns wide). The weapon, holster, melee and secure container slots are not
+# shown (maintainer, 2026-11-08).
 SLOT_ROWS = (
     (('Earpiece', '耳机', 1), ('Headwear', '头部装备', 1), ('FaceCover', '面部装备', 1), ('TacticalVest', '战术胸挂', 1)),
     (('ArmBand', '臂带', 1), ('ArmorVest', '身体护甲', 1), ('Eyewear', '眼部装备', 1), ('Backpack', '背包', 1)),
-    (('FirstPrimaryWeapon', '主武器（吊索）', 2), ('Holster', '枪套', 1), ('SecuredContainer', '安全箱', 1)),
-    (('SecondPrimaryWeapon', '主武器（背部）', 2), ('Scabbard', '刀鞘', 1)),
 )
+SHOWN_SLOTS = frozenset(key for row in SLOT_ROWS for key, _, _ in row)
 # Atlas rarity -> (label, colour key used by the picture).
 RARITIES = {'common': ('普通', 'common'), 'rare': ('罕见', 'rare'), 'legendary': ('传奇', 'legendary'),
             'seasonal': ('赛季', 'seasonal')}
 # Rare achievements are ranked by rarity, then newest first (maintainer, 2026-11-08: Atlas' completion share is 0 for
 # every PVE achievement, so it cannot rank; seasonal first).
 RARITY_ORDER = {'seasonal': 0, 'legendary': 1, 'rare': 2, 'common': 3}
-# Gun slots: the gun itself shows only its name; its attachments are listed with pictures (maintainer, 2026-11-08:
-# Atlas gives no attachment positions, so the build cannot be drawn assembled).
-WEAPON_SLOTS = ('FirstPrimaryWeapon', 'SecondPrimaryWeapon', 'Holster')
-MAX_PARTS = 40
 ASSET_PREFIX = 'https://assets.tarkov.dev/'
 
 
@@ -132,32 +128,12 @@ def short_name(entry):
     return clean(short, 40) if isinstance(short, str) and short.strip() else '—'
 
 
-def parts(entry, depth=0, found=None):
-    """[(depth, name, slot name, picture link)] of a gun's attachments, depth first, without loaded cartridges."""
-    found = [] if found is None else found
-    children = entry.get('children') if isinstance(entry.get('children'), list) else []
-    for child in children:
-        if len(found) >= MAX_PARTS or depth > 8:
-            break
-        if not isinstance(child, dict) or not isinstance(child.get('slot'), str) or child['slot'].startswith('patron'):
-            continue
-        slot = child.get('slot_name') if isinstance(child.get('slot_name'), str) and child['slot_name'].strip() else child['slot']
-        found.append((depth, short_name(child), clean(slot, 24), asset(child.get('image')) or asset(child.get('icon'))))
-        parts(child, depth+1, found)
-    return found
-
-
 def slots(doc):
-    """{slot key: {'name', 'image', 'parts'}} of the equipped items: tarkov.dev's plain item picture (never Atlas'
-    render); a gun has no picture, only its name and its attachments."""
+    """{slot key: {'name', 'image'}} of the equipped items in the shown slots; tarkov.dev's plain item picture."""
     found = {}
     for entry in doc.get('slots') if isinstance(doc.get('slots'), list) else []:
-        if not isinstance(entry, dict) or not isinstance(entry.get('slot'), str):
-            continue
-        weapon = entry['slot'] in WEAPON_SLOTS
-        found[entry['slot']] = {'name': short_name(entry), 'weapon': weapon,
-                                'image': None if weapon else asset(entry.get('image')) or asset(entry.get('icon')),
-                                'parts': parts(entry) if weapon else []}
+        if isinstance(entry, dict) and entry.get('slot') in SHOWN_SLOTS:
+            found[entry['slot']] = {'name': short_name(entry), 'image': asset(entry.get('image')) or asset(entry.get('icon'))}
     return found
 
 
@@ -239,10 +215,7 @@ def build(doc, mode, *, skill_limit=10, now=None):
                          'rare': rare, 'latest': latest},
         'skills': elite+rest,
         'equipment': [[(key, label, wide, equipment.get(key)) for key, label, wide in row] for row in SLOT_ROWS],
-        'weapons': [{'label': label, 'name': equipment[key]['name'], 'parts': equipment[key]['parts']}
-                    for row in SLOT_ROWS for key, label, _ in row if key in WEAPON_SLOTS and key in equipment],
-        'assets': sorted({item['image'] for item in equipment.values() if item['image']}
-                         | {part[3] for item in equipment.values() for part in item['parts'] if part[3]}),
+        'assets': sorted({item['image'] for item in equipment.values() if item['image']}),
         'achievement_ids': sorted({a['id'] for a in rare+latest}),
         'now': now,
     }

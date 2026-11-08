@@ -68,18 +68,15 @@ class CardTests(unittest.TestCase):
         self.assertAlmostEqual(card['progress'], 0.5)
         self.assertEqual(card['to_next'], 1000000)
         equipment = {key: item for row in card['equipment'] for key, _, _, item in row}
-        # A gun: name only, no picture (neither tarkov.dev's nor Atlas' render); attachments listed without cartridges.
-        gun = equipment['FirstPrimaryWeapon']
-        self.assertEqual((gun['name'], gun['image'], gun['weapon']), ('RIFLE', None, True))
-        self.assertEqual(gun['parts'], [(0, 'UPPER', 'Receiver', 'https://assets.tarkov.dev/upper-base-image.webp'),
-                                        (1, 'SCOPE', 'Scope', 'https://assets.tarkov.dev/scope-icon.webp')])
-        self.assertEqual(card['weapons'], [{'label': '主武器（吊索）', 'name': 'RIFLE', 'parts': gun['parts']}])
+        # Weapon, holster, melee and secure container slots are not shown (maintainer); no attachment list.
+        self.assertEqual([key for row in card['equipment'] for key, _, _, _ in row],
+                         ['Earpiece', 'Headwear', 'FaceCover', 'TacticalVest', 'ArmBand', 'ArmorVest', 'Eyewear', 'Backpack'])
+        self.assertNotIn('weapons', card)
+        self.assertEqual(equipment['Backpack'], {'name': 'BAG', 'image': 'https://assets.tarkov.dev/bag-base-image.webp'})
         # Only assets.tarkov.dev pictures are used.
         self.assertIsNone(equipment['Headwear']['image'])
         self.assertIsNone(equipment['Earpiece'])
-        self.assertEqual(card['assets'], ['https://assets.tarkov.dev/bag-base-image.webp',
-                                          'https://assets.tarkov.dev/scope-icon.webp',
-                                          'https://assets.tarkov.dev/upper-base-image.webp'])
+        self.assertEqual(card['assets'], ['https://assets.tarkov.dev/bag-base-image.webp'])
         self.assertTrue(render_atlas_image(card).startswith(b'\xff\xd8'))
 
     def test_rare_and_latest_achievements(self):

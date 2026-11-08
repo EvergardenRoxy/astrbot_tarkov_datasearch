@@ -714,3 +714,9 @@ Follow-up 3 (maintainer, 2026-11-08): **option B adopted, guns by name only** �
 a new section "武器配件" lists each gun's attachments (depth first, loaded cartridges left out, at most 40) with the
 tarkov.dev picture, name and slot name (top-level slots in gold). Rarity order for rare achievements: seasonal first,
 then legendary, rare, common (maintainer). The "known problem" above is thereby handled by listing, not composing.
+
+Follow-up 4 (maintainer, 2026-11-08): the equipment grid drops the three weapon slots (primary on sling, primary on
+back, holster), the melee slot and the secure container: eight slots in two rows remain. The "武器配件" section is
+removed (no weapon pictures or attachment lists at all now). Rare achievements are a full-width bar under the
+equipment/headline panels: completion line and bar, then the nine achievements in one row (icon, name, share,
+rarity). The equipment and headline panels share one height.
