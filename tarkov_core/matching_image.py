@@ -1,5 +1,5 @@
-"""The matching-time picture: a dark board with the Atlas logo, per-region fastest datacenters, the fixed Hong Kong /
-Japan / Korea rows and the fastest other datacenters, each with a 24-hour line.
+"""The matching-time picture: a dark board with the Atlas logo, per-region fastest datacenters, the fastest
+datacenters and, below them, the fixed Hong Kong / Japan / Korea rows, each with a 24-hour line.
 
 Atlas requires every output of its data to carry its logo and to name "Atlas" with a link to its page (maintainer,
 2026-11-08). Drawn locally with Pillow; the logo is the image the Atlas author supplied (THIRD_PARTY.md).
@@ -8,10 +8,10 @@ import datetime
 from functools import lru_cache
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 from . import NAME, NOTICE, REPO, VERSION
-from .image import font, jpeg, safe
+from .image import FONTS, FONT_FILES, jpeg, safe
 
 ATLAS_NAME = 'Atlas'
 ATLAS_URL = 'https://eftforge.com/atlas'
@@ -36,6 +36,17 @@ X0 = LEFT_W+32                       # table left edge
 COLS = {'region': X0, 'name': X0+76, 'current': X0+420, 'spark': X0+444, 'min': W-236, 'avg': W-146, 'max': W-40}
 SPARK_W = COLS['min']-100-COLS['spark']
 ROW_H = 54
+HEADER_H = 128
+
+
+@lru_cache(maxsize=None)
+def font(name, size, weight=None):
+    """The bundled fonts with basic layout: at these small sizes the complex layout engine rounds glyph positions
+    unevenly (a visible gap in "h ttps"); this picture needs no complex shaping."""
+    f = ImageFont.truetype(str(FONTS/FONT_FILES[name]), size, layout_engine=ImageFont.Layout.BASIC)
+    if weight is not None:
+        f.set_variation_by_axes([weight])
+    return f
 
 
 def wait_text(seconds):
@@ -162,57 +173,59 @@ def row(d, y, label, center, result, span, grid, shade):
         right(d, COLS[key], y+16, wait_text(value), font('mono', 20), tone(value))
 
 
-def section_title(d, y, text, note=''):
+def section_title(d, y, text):
     d.text((X0, y+12), text, font=font('sc', 20, 700), fill=ACCENT)
-    if note:
-        d.text((X0+d.textlength(text, font=font('sc', 20, 700))+16, y+16), note, font=font('sc', 15, 400), fill=FAINT)
     return y+46
 
 
 def render_matching_image(result):
     fixed, ranked, regions = sections(result)
     grid, span = ticks(result)
-    header_h = 150
-    table_top = header_h+12
-    body_h = 58+46+len(fixed)*ROW_H+12+46+max(1, len(ranked))*ROW_H
-    left_h = 52+len(regions)*66
-    footer_top = table_top+max(body_h, left_h)+24
-    height = footer_top+128
+    table_top = HEADER_H+12
+    body_h = 58+46+max(1, len(ranked))*ROW_H+12+46+len(fixed)*ROW_H
+    footer_top = table_top+body_h+24
+    height = footer_top+100
     img = Image.new('RGB', (W, height), BG)
     d = ImageDraw.Draw(img)
 
-    # Header: title, times and the Atlas logo.
-    d.text((40, 26), '平均匹配时间', font=font('sc', 40, 800), fill=TEXT)
-    updated = f'更新于 {stamp(result.updated)}（UTC+8） · 获取于 {stamp(result.fetched_at, "%H:%M")}'
-    d.text((40, 84), updated, font=font('sc', 19, 400), fill=DIM)
-    d.text((40, 114), '游戏后端按数据中心统计的平均匹配等待时间（分:秒），约每 100 秒采样一次；所有会话 15 分钟内共用同一份结果。',
-           font=font('sc', 15, 400), fill=FAINT)
-    mark = logo(64)
-    img.paste(mark, (W-40-mark.width, 30), mark)
+    # Header: title and Atlas sample time on the left; the Atlas logo with its name and link on the right.
+    d.text((40, 24), '平均匹配时间', font=font('sc', 40, 800), fill=TEXT)
+    updated = f'更新于 {stamp(result.updated)}（UTC+8）'
+    d.text((40, 82), updated, font=font('sc', 19, 400), fill=DIM)
     if result.stale:
-        right(d, W-40, 112, '本次获取失败，显示的是上次成功取得的数据', font('sc', 16, 600), WARN)
-    d.line([0, header_h, W, header_h], fill=RULE, width=1)
+        x = 40+d.textlength(updated, font=font('sc', 19, 400))+20
+        d.text((x, 85), '本次获取失败，显示的是上次成功取得的数据', font=font('sc', 16, 600), fill=WARN)
+    mark = logo(56)
+    img.paste(mark, (W-40-mark.width, 22), mark)
+    label, link = f'数据来源：{ATLAS_NAME}  ', ATLAS_URL
+    f_label, f_link = font('sc', 17, 600), font('sc', 17, 400)
+    x = W-40-d.textlength(link, font=f_link)
+    d.text((x, 88), link, font=f_link, fill=ACCENT)
+    right(d, x, 88, label, f_label, TEXT)
+    d.line([0, HEADER_H, W, HEADER_H], fill=RULE, width=1)
 
-    # Left panel: each region's fastest datacenter, fastest region first.
-    d.rectangle([0, header_h+1, LEFT_W-1, footer_top-12], fill=PANEL)
-    d.line([LEFT_W, header_h, LEFT_W, footer_top-12], fill=RULE)
+    # Left panel: each region's fastest datacenter, fastest region first, spread over the table's height.
+    d.rectangle([0, HEADER_H+1, LEFT_W-1, footer_top-12], fill=PANEL)
+    d.line([LEFT_W, HEADER_H, LEFT_W, footer_top-12], fill=RULE)
     d.text((24, table_top+12), '各地区最快', font=font('sc', 18, 700), fill=DIM)
-    y = table_top+52
+    y = table_top+58
+    pitch = max(66, (footer_top-36-y)//max(1, len(regions)))
     for code, center in regions:
-        d.text((24, y), safe(REGIONS.get(code, code)), font=font('sc', 22, 600), fill=TEXT)
+        top = y+(pitch-60)//2
+        d.text((24, top), safe(REGIONS.get(code, code)), font=font('sc', 22, 600), fill=TEXT)
         if center.wait is None:
-            d.text((24, y+32), '暂无数据', font=font('sc', 16, 400), fill=FAINT)
+            d.text((24, top+32), '暂无数据', font=font('sc', 16, 400), fill=FAINT)
         else:
             label = '最快：'
             f = font('sc', 16, 600)
-            d.text((24, y+32), label, font=f, fill=tone(center.wait))
+            d.text((24, top+32), label, font=f, fill=tone(center.wait))
             x = 24+d.textlength(label, font=f)
             name = safe(display_name(center))
-            d.text((x, y+32), name, font=font('sc', 16, 400), fill=DIM)
+            d.text((x, top+32), name, font=font('sc', 16, 400), fill=DIM)
             x += d.textlength(name, font=font('sc', 16, 400))+10
-            d.text((x, y+31), wait_text(center.wait), font=font('mono', 18), fill=tone(center.wait))
-        d.line([16, y+60, LEFT_W-16, y+60], fill=RULE)
-        y += 66
+            d.text((x, top+31), wait_text(center.wait), font=font('mono', 18), fill=tone(center.wait))
+        y += pitch
+        d.line([16, y-1, LEFT_W-16, y-1], fill=RULE)
 
     # Table header.
     y = table_top
@@ -228,26 +241,25 @@ def render_matching_image(result):
     y += 58
     d.line([LEFT_W, y, W, y], fill=RULE)
 
-    y = section_title(d, y, '常用服务器')
-    for i, (label, center) in enumerate(fixed):
-        row(d, y, label, center, result, span, grid, i % 2 == 1)
-        y += ROW_H
-    y += 12
-    y = section_title(d, y, f'最快的 {RANKED} 个数据中心', '（不含上面的常用服务器）')
+    y = section_title(d, y, f'最快的 {RANKED} 个数据中心')
     if not ranked:
         d.text((COLS['name'], y+14), '暂无数据', font=font('sc', 18, 400), fill=FAINT)
     for i, center in enumerate(ranked):
         row(d, y, display_name(center), center, result, span, grid, i % 2 == 1)
         y += ROW_H
+    if not ranked:
+        y += ROW_H
+    y += 12
+    y = section_title(d, y, '常用服务器')
+    for i, (label, center) in enumerate(fixed):
+        row(d, y, label, center, result, span, grid, i % 2 == 1)
+        y += ROW_H
 
-    # Footer: the Atlas attribution with its link, then the plugin's own small print.
+    # Footer: the plugin's own small print.
     d.line([0, footer_top-12, W, footer_top-12], fill=RULE)
-    source = f'数据来源：{ATLAS_NAME}  {ATLAS_URL}'
-    f = font('sc', 18, 600)
-    d.text((W/2-d.textlength(source, font=f)/2, footer_top+6), source, font=f, fill=TEXT)
-    note = '“—”表示暂无数据；查询失败不代表等待时间为 0 或服务器宕机。'
     f = font('sc', 15, 400)
-    d.text((W/2-d.textlength(note, font=f)/2, footer_top+40), note, font=f, fill=FAINT)
-    for i, text in enumerate((f"{NAME} v{VERSION} · {REPO.removeprefix('https://')}", NOTICE)):
-        d.text((W/2-d.textlength(text, font=f)/2, footer_top+66+i*24), text, font=f, fill=FAINT)
+    lines = ('“—”表示暂无数据；查询失败不代表等待时间为 0 或服务器宕机。',
+             f"{NAME} v{VERSION} · {REPO.removeprefix('https://')}", NOTICE)
+    for i, text in enumerate(lines):
+        d.text((W/2-d.textlength(text, font=f)/2, footer_top+8+i*26), text, font=f, fill=FAINT)
     return jpeg(img)
