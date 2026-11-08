@@ -26,10 +26,10 @@ earlier). From now on new work is appended as new sections.
 | Item | Value |
 |---|---|
 | Task | AstrBot plugin to look up Escape from Tarkov player profiles in chat (maintainer request, 2026-10-13); since 2026-10-24 also public game data: server status, Boss spawn rates, items. |
-| License / AI statement | GPL-3.0-or-later. README and CHANGELOG state the plugin was written by Claude Opus 5.5 (via Claude Code) and reviewed by the maintainer. |
-| Release target | 0.4.8 (query stability and performance, pending PR review; last release 0.4.7 on 2026-11-04; 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
+| License / AI statement | GPL-3.0-or-later. README and the top of CHANGELOG carry the same AI statement: participating AI listed by name only (Claude Opus 5.5 via Claude Code; the Boss background by GPT-Image-2.5-sunburst), no per-task description. Per-version AI notes were removed from CHANGELOG (maintainer, 2026-11-08). |
+| Release target | 0.5.0 (Atlas matching time, pending PR review; last release 0.4.8 on 2026-11-04; 0.4.7 on 2026-11-04; 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
 | Work branch | `main` was overwritten with the `1024` history on 2026-10-24 (§16); the item query was archived (§11). |
-| Tests | 326 (`python -m unittest discover -s tests`, needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13. |
+| Tests | 358 (`python -m unittest discover -s tests`, needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read and its registration/wake/filter/parser bodies replayed by `tools/verify_qq_routes.py` (146 cases at 0.4.6; SDK and network boundaries doubled). Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. The maintainer ran a small closed test of 0.3.0. **No live AstrBot run of the 1024 features; QQ image delivery and proactive push are unverified.** |
 
 ## 2. Data sources and evidence
@@ -583,3 +583,36 @@ proxy; production still uses only plugin settings. No real player data or sample
 Maintainer follow-up: non-transient Atlas HTTP errors (403, 404, ...) get an independent 2-minute window
 (`HTTP_ERROR_SECONDS`). Callers receive the same error without contacting Atlas and are never served the stale
 result; the window neither shortens nor extends the 15-minute cache/failure windows. 351 tests pass.
+
+
+## Atlas matching command and picture — v0.5.0 (2026-11-08)
+
+Maintainer decisions in this round: image only (text/Markdown for matching will not be built; their maintenance is
+being dropped plugin-wide later, profile text/Markdown untouched for now); commands `tarkov 匹配` / `matching`, QQ word
+`tmatch`; matching on by default; layout from the maintainer's reference picture; player queries via Atlas deferred.
+
+- Routing: `MATCHING_WORDS` in `handle()`; `TarkovPlugin.matching_query()` checks access, `matching_enabled()` (schema
+  default true, code fallback true), no arguments, one active query per owner; then `self.matching.get()` and
+  `render_matching_image` in a thread under `matching_image_slots` (2). Reply: `[Image, Plain('数据来源：Atlas <url>')]`.
+  `QueryError` → `匹配时间查询失败：<message>`; other exceptions → fixed text, logged by type only; render failure → text.
+- `tarkov_core/matching_image.py`: dark 1600 px board. Header: title, `updated` (UTC+8), stale warning when
+  `result.stale`; logo `assets/atlas-logo.png` (maintainer-supplied, Atlas developer's requirement, THIRD_PARTY.md) with
+  `数据来源：Atlas https://eftforge.com/atlas` under it. Left: per-region fastest datacenter (`REGIONS` Chinese labels,
+  regions with no data last). Right: `RANKED`=8 shortest current waits excluding `FIXED` and `None`; then `FIXED`
+  rows China→香港, Japan→日本, Korea→韩国 (Chinese only; missing → "Atlas 暂未提供"). Columns: region code, name,
+  current, 24 h sparkline (per-row scale, minimum span 60 s, gaps break the line), min/avg/max of the history.
+  `display_name()` drops a two-letter prefix that repeats the region (Sa/Me/Af; maintainer confirmed). Wait tones:
+  ≤60 s, ≤180 s, longer. Footer: dash note, plugin name/version/repo, and
+  `特别致谢：Atlas（EFTForge 项目的一部分，作者 Morph1ne / SouthHorizons76）` instead of `NOTICE` (maintainer).
+- Text uses its own `font()` with `ImageFont.Layout.BASIC`: with RAQM, Pillow rounded glyph positions unevenly at
+  15–19 px (visible gap in "h ttps"). Other pictures keep `image.font()`.
+- Help text/card/image, QQ word list and `_conf_schema.json` hints mention the command. Fonts rebuilt (fonttools 4.68;
+  the TTF bytes differ from the previous build even for an unchanged character list).
+- Previews: `tools/build_matching_preview.py <saved.json>` renders `docs/matching_preview.jpg` (public game-service
+  data, no player data). Maintainer: iterate on the one saved response (2026-11-08 07:29:55 UTC sample) instead of
+  new requests. Older previews were not re-rendered and still show v0.4.8.
+- Tests: `test_matching_image.py` (sections, ordering, exclusions, missing fixed server, wait text, names, JPEG with
+  logo pixels), `MatchingCommandTests` (image whatever the output setting, link line, QQ word, errors, disabled,
+  access, one query per owner), help-card/QQ-word expectations updated. 358 tests pass. Not verified on a live
+  chat platform.
+

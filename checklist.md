@@ -10,10 +10,10 @@
 
 ## 当前状态
 
-- 本次交付目标 **0.4.8**（查询稳定性与性能优化，待 PR 审核合并）；上次版本 0.4.7（更早的版本见下方“各版本做了什么”）。尚未在聊天平台实测（维护者对 0.3.0 做过小范围封闭测试）。
+- 本次交付目标 **0.5.0**（服务器匹配时间，数据来自 Atlas；待 PR 审核合并）；上次版本 0.4.8（更早的版本见下方“各版本做了什么”）。尚未在聊天平台实测（维护者对 0.3.0 做过小范围封闭测试）。
 - 已用真实网络把插件的查询流程完整跑过多遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID、昵称和网址查过 PVP、PVE、赛季和竞技场。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
 - 服务器状态、Boss 刷率、公共数据缓存和 QQ 官方机器人路由（0.4.5 起）默认关闭，见下方“0.4.5”一节和 handoff.md §3、§9。状态和 Boss 目前只回复图片；按维护者 2026-10-24 的更正，图片是默认、文字和 Markdown 仍要保留用于兼容，这部分暂缓。物品查询已做完又封存。
-- 自动测试共 326 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
+- 自动测试共 358 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
 
 修改由 Claude Opus 5.5（通过 Claude Code）完成，经项目维护者审阅。做法与 spark 项目相同：先写测试，再改代码，最后跑完全部测试。另外用“故意改坏代码”的方式检查测试：把关键保护逐一从代码里去掉，确认每一项都会被测试发现（每一轮修改都做，数量见下文各节）。
 
@@ -22,7 +22,7 @@
 ```bash
 pip install -r requirements.txt
 python -m unittest discover -s tests   # 本次分支应显示 Ran 326 tests ... OK
-python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.4.8.zip
+python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.5.0.zip
 ```
 
 在聊天中核对：
@@ -399,3 +399,19 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
 
 - [x] 按维护者修正更新规划：所有会话共用一份匹配结果，独立冷却/缓存 15 分钟，失败最多回退到 60 分钟内的成功结果；冷却期间按缓存输出，无可用结果才报告失败。
 - [x] 非临时 HTTP 错误（403、404 等）独立 2 分钟冷却：期间不访问 Atlas、不以旧缓存掩盖错误；与 15 分钟窗口互不影响。
+
+
+## 0.5.0：服务器匹配时间（2026-11-08）
+
+- [x] 新命令 `tarkov 匹配` / `tarkov matching`，QQ 单词命令 `tmatch`；不带参数，固定 24 小时；默认开启。
+- [x] 只回复图片，不受“输出方式”影响；按维护者意见不做文字和 Markdown 版。出错时回一行文字。
+- [x] 图片按维护者给的参考图重做成深色：左栏 8 个地区各自最快的数据中心；右侧“最快的 8 个数据中心”（不含常用服务器、不含没有数据的），下面是“常用服务器”香港、日本、韩国（只写中文，Atlas 的 China 即香港）；每行有当前值、24 小时折线和最短/平均/最长。
+- [x] 按 Atlas 开发者要求：图片右上角带 Atlas 标志和“数据来源：Atlas https://eftforge.com/atlas”；图片后附一行可点击的链接；最下方写“特别致谢：Atlas（EFTForge 项目的一部分，作者 Morph1ne / SouthHorizons76）”。
+- [x] 时间写“分:秒”；没有数据写“—”，折线断开不画成 0；名称去掉与地区重复的两个字母前缀（`Sa Colombia` → `Colombia`），维护者确认。
+- [x] 小字号下 `h ttps` 字距不均：匹配图改用 Pillow 的基础排版引擎。
+- [x] 403、404 等错误独立 2 分钟冷却，期间不访问 Atlas、不用旧结果顶替（维护者决定）。
+- [x] 作图和测试只用 2026-11-08 15:29 那一次真实请求的数据，之后没有再请求 Atlas；`tools/build_matching_preview.py` 可以从保存的响应重画示例图。
+- [x] 文档：README、新增 `docs/matching.md`、CHANGELOG、THIRD_PARTY（Atlas 标志来源）；CHANGELOG 只在最上方保留一份 AI 声明，写法与 README 一致，各版本里的 AI 声明已删除；之前误写成“Claude”的地方都改为 Claude Opus 5.5。
+- [x] 字体已重建，图片和帮助里的新汉字都能显示。自动测试 358 项通过。
+- [ ] 在 QQ 等聊天平台实测图片发送（需要在机器人端验收）。
+
