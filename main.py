@@ -14,6 +14,7 @@ from .tarkov_core import COMMAND_STYLES, transport
 from .tarkov_core.atlas_client import AtlasClient
 from .tarkov_core.atlas_cooldown import AtlasCooldown
 from .tarkov_core.matching import MatchingService
+from .tarkov_core.matching_image import ATLAS_NAME, ATLAS_URL, render_matching_image
 from .tarkov_core.accounts import Accounts, load_secret, owner_key
 from .tarkov_core.modes import GAME_MODES, MODES, label_of, page_url, parse_mode, parse_player_url, path_of, search_url
 from .tarkov_core.names import NAME, SUGGESTIONS, NameIndex
@@ -58,6 +59,7 @@ BIND_WORDS = ('bind', '绑定')
 UNBIND_WORDS = ('unbind', '解绑')
 STATUS_WORDS = ('status', '状态')
 BOSS_WORDS = ('boss', '刷率')
+MATCHING_WORDS = ('matching', '匹配')
 
 
 class IndexTimeout(TimeoutError):
@@ -99,12 +101,13 @@ class TarkovPlugin(Star):
         self.http = transport.HTTPClient()
         self.atlas = AtlasClient(client=self.http, proxy=self.proxy,
             cooldown=AtlasCooldown(self.atlas_interval()))
-        self.matching = MatchingService(self.atlas, enabled=lambda: self.config.get('matching_enabled', False) is True)
+        self.matching = MatchingService(self.atlas, enabled=self.matching_enabled)
         self.fetches = asyncio.Semaphore(FETCHES_AT_ONCE)
         self.active = set()
         self.public_data = ResourceCache(self.root/'public-data', self.download_public)
         self.status_store = NotificationStore(self.root/'notifications.sqlite3')
         self.status_image_slots = asyncio.Semaphore(2)
+        self.matching_image_slots = asyncio.Semaphore(2)
         self._terminated = False
         self.status_notifications = StatusNotifications(self.status_store,
             self.fetch_status_for_monitor, self.prepare_status_image, self.send_status_notification,
@@ -242,8 +245,11 @@ class TarkovPlugin(Star):
         status = f"服务器状态图片：{self.cmd('status')}\n" if self.status_enabled() else ''
         boss = (f"Boss 全表图片：{self.cmd('boss [模式]')}；最近变化：{self.cmd('boss [模式] 变化')}\n"
                 f"Boss 默认模式：{self.cmd('boss 默认 <模式>')}；支持 pvp、pve、PVP S。\n") if self.boss_enabled() else ''
+        matching = (f"服务器平均匹配时间图片：{self.cmd('匹配')}（数据来自 {ATLAS_NAME}：{ATLAS_URL}）\n"
+                    if self.matching_enabled() else '')
         words = ('QQ 官方机器人单词命令（后面的参数可以带空格）：tpvp、tpve、tseason、tarena [昵称、账号ID 或网址]；'
-                 'tbind <网址或账号ID>、tunbind、thelp；tstatus、tboss [模式] [变化]\n') if self.qq_words_enabled() else ''
+                 'tbind <网址或账号ID>、tunbind、thelp；tstatus、tboss [模式] [变化]'
+                 + ('、tmatch' if self.matching_enabled() else '') + '\n') if self.qq_words_enabled() else ''
         return ('塔科夫玩家档案查询（数据来自 tarkov.dev）\n'
                 f"{self.style()['help']}\n"
                 f"绑定自己：{self.cmd('绑定 <tarkov.dev 玩家页网址或账号ID>')}　解绑：{self.cmd('解绑')}\n"
@@ -255,7 +261,7 @@ class TarkovPlugin(Star):
                 '第一次查某个玩家前，请先在 tarkov.dev 用对应模式搜索他（链接见最后一行），'
                 '再把跳转后的网址发给我；之后就能直接用名字查（按 ID 或网址查到过的名字会被记住' + index + '）。\n'
                 '如果需要查询最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面。\n'
-                + status + boss + words + self.search_line())
+                + status + boss + matching + words + self.search_line())
 
     def search_line(self):
         """The search page as a text line. Every help reply ends with it, the image included (maintainer: the link
@@ -272,6 +278,8 @@ class TarkovPlugin(Star):
             card['status_enabled'] = True
         if self.boss_enabled():
             card['boss_enabled'] = True
+        if self.matching_enabled():
+            card['matching_enabled'] = True
         if self.qq_words_enabled():
             card['qq_words'] = True
         return card
@@ -375,6 +383,11 @@ class TarkovPlugin(Star):
     async def qq_tboss(self, event: AstrMessageEvent):
         async for result in self.qq_word(event, 'boss'): yield result
 
+    @filter.command('tmatch', alias={'/tmatch'})
+    @filter.custom_filter(QQOfficialFilter)
+    async def qq_tmatch(self, event: AstrMessageEvent):
+        async for result in self.qq_word(event, 'matching'): yield result
+
     @staticmethod
     def status_arguments(event):
         words = event.message_str.strip().split(maxsplit=1)
@@ -387,6 +400,9 @@ class TarkovPlugin(Star):
             return
         if words and words[0].lower() in BOSS_WORDS:
             yield await self.boss_query(event, ' '.join(words[1:]))
+            return
+        if words and words[0].lower() in MATCHING_WORDS:
+            yield await self.matching_query(event, ' '.join(words[1:]))
             return
         action = 'query'
         if words and words[0].lower() in HELP_WORDS:
@@ -1094,6 +1110,43 @@ class TarkovPlugin(Star):
         if not self.boss_broadcast_active() or target not in self.boss_targets():
             raise PermanentDeliveryError('目标不再允许 Boss 播报')
         return await self.context.send_message(target, MessageChain(chain=[Image.fromBytes(image_data)]))
+
+    def matching_enabled(self):
+        return self.config.get('matching_enabled', True) is True
+
+    async def matching_query(self, event, arguments=''):
+        """Average matching times as one picture for everyone (Atlas data; image only, whatever the output setting:
+        maintainer). The picture carries the Atlas logo and link; the link is repeated as text because an image cannot
+        be clicked. Errors are one text line."""
+        if not self.allowed(event):
+            return event.plain_result('此会话或用户没有塔科夫查询权限。')
+        if not self.matching_enabled():
+            return event.plain_result('匹配时间查询尚未开启，请联系管理员在设置中启用。')
+        if arguments:
+            return event.plain_result('匹配时间查询不需要参数。用法：'+self.cmd('匹配'))
+        owner = self.owner(event)
+        if owner in self.active:
+            return event.plain_result('你的上一次查询还没完成，请稍候。')
+        self.active.add(owner)
+        try:
+            try:
+                result = await self.matching.get()
+            except asyncio.CancelledError:
+                raise
+            except QueryError as exc:
+                return event.plain_result(f'匹配时间查询失败：{exc}')
+            except Exception as exc:
+                logger.warning('Tarkov matching query failed: %s', type(exc).__name__)
+                return event.plain_result('匹配时间查询失败，请稍后再试。')
+            try:
+                async with self.matching_image_slots:
+                    data = await asyncio.to_thread(render_matching_image, result)
+            except Exception as exc:
+                logger.warning('Tarkov matching image failed: %s', type(exc).__name__)
+                return event.plain_result('匹配时间图片生成失败，请稍后再试。')
+            return event.chain_result([Image.fromBytes(data), Plain(f'数据来源：{ATLAS_NAME} {ATLAS_URL}')])
+        finally:
+            self.active.discard(owner)
 
     async def terminate(self):
         self._terminated = True

@@ -280,9 +280,9 @@
         "items": {
             "matching_enabled": {
                 "type": "bool",
-                "description": "启用匹配时间后端",
-                "default": false,
-                "hint": "启用后允许后续命令层调用；当前仅提供后端，不新增聊天命令。所有会话共用结果，15 分钟内读取缓存，失败最多回退到 60 分钟内的缓存。"
+                "description": "启用服务器匹配时间查询",
+                "default": true,
+                "hint": "命令：tarkov 匹配（QQ 单词命令 tmatch），只输出图片。数据来自 Atlas（eftforge.com/atlas），图片带 Atlas 标志和链接。所有会话共用一份结果，15 分钟内读取缓存；失败最多回退到 60 分钟内的结果；403、404 等错误后 2 分钟内不再请求。"
             },
             "atlas_query_cooldown_seconds": {
                 "type": "int",

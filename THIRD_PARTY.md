@@ -33,6 +33,11 @@ traceable provider watermark. The bundled file is a JPEG re-encoded from the gen
 watermark may not survive; nothing in the plugin reads or removes it. The terms themselves are not reproduced here; check
 the provider's current terms if the use changes.
 
+**Atlas logo.** `tarkov_core/assets/atlas-logo.png` is the Atlas wordmark and map logo, supplied by the project maintainer
+on 2026-11-08 as required by the Atlas developer: every output of Atlas data must carry this logo and name "Atlas" with a
+link to https://eftforge.com/atlas. It is drawn unmodified (only scaled) on the matching-time picture. Atlas belongs to its
+author; it is not covered by this plugin's licence. Atlas is a fan-made project, not affiliated with Battlestate Games.
+
 **Drawings and Boss portraits.** Player/status cards draw their game references themselves (a military dog tag,
 exit-status bars, a dossier page). The Boss matrix can display game character portraits identified by
 `data.mobs.*.imagePortraitLink` in `https://json.tarkov.dev/{mode}/maps`, served by `https://assets.tarkov.dev`.

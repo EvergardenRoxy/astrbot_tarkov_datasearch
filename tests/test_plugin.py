@@ -245,7 +245,8 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                                   'mode': 'season', 'label': 'PVP 赛季',
                                   'search': 'https://tarkov.dev/players?gameMode=pvp-season',
                                   'example': 'https://tarkov.dev/players/pvp-season/1234567',
-                                  'arena_by_default': True, 'index': '每天', 'qq_words': True}])
+                                  'arena_by_default': True, 'index': '每天', 'matching_enabled': True,
+                                  'qq_words': True}])
         self.assertIn('绑定自己：@机器人 tarkov 绑定', result[0])
         self.assertTrue(any('help image failed' in str(entry[0]) for entry in self.logs))
         self.assertIsNone(self.plugin(output='image').help_card()['index'])
@@ -1078,7 +1079,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                  ('qq_tseason', 'tseason 7', 'season 7'), ('qq_tarena', 'tarena a b', 'arena a b'),
                  ('qq_tbind', 'tbind https://tarkov.dev/players/pve/7', 'bind https://tarkov.dev/players/pve/7'),
                  ('qq_tunbind', 'tunbind', 'unbind'), ('qq_thelp', 'thelp', 'help'), ('qq_tstatus', 'tstatus', 'status'),
-                 ('qq_tboss', 'tboss pve 变化', 'boss pve 变化'))
+                 ('qq_tboss', 'tboss pve 变化', 'boss pve 变化'), ('qq_tmatch', 'tmatch', 'matching'))
         for handler, text, expected in cases:
             for platform in ('qq_official', 'qq_official_webhook'):
                 with self.subTest(handler=handler, platform=platform):

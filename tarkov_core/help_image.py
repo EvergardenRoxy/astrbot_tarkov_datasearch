@@ -29,8 +29,11 @@ def help_rows(card):
     if card.get('boss_enabled'):
         rows.append(('Boss 刷率', f'{command} boss [模式] [变化]', '全表分页；100% 红字加粗，播报单独开启'))
         rows.append(('Boss 默认', f'{command} boss 默认 <模式>', '个人默认模式；支持 pvp、pve、PVP S'))
+    if card.get('matching_enabled'):
+        rows.append(('匹配时间', f'{command} 匹配', '各服务器平均匹配时间图片；数据来自 Atlas'))
     if card.get('qq_words'):
-        rows.append(('QQ 单词命令', 'tpve [目标] · tbind <网址> · tstatus · tboss', '无空格，QQ 官方机器人用；参数可带空格'))
+        words = 'tpve [目标] · tbind <网址> · tstatus · tboss' + (' · tmatch' if card.get('matching_enabled') else '')
+        rows.append(('QQ 单词命令', words, '无空格，QQ 官方机器人用；参数可带空格'))
     return rows
 
 
