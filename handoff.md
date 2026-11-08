@@ -688,3 +688,23 @@ Follow-up (maintainer, 2026-11-08):
   name/id, and the weapon's `build` payload. Not started; to be designed with the maintainer.
 - Font question (deleting the bundled font) answered in chat: without it Chinese cannot be drawn on servers without
   a Chinese system font; options A-D listed there, no change made.
+
+Follow-up 2 (maintainer, 2026-11-08):
+- **Full font on first use** (option C of the font question; `font_download.py`): the Atlas picture asks
+  `FullFont.path_or_start()`; the first time it starts a background download of the full Noto Sans SC variable font
+  (17,772,300 bytes, sha256 `a3041811…`, the same file the bundled subset is cut from, google/fonts commit `86aced9`)
+  into `<data>/fonts/` and draws with the bundled subset meanwhile. Mirrors in order: optional setting
+  `font_download_url` (https only), cdn/fastly/gcore.jsdelivr.net, raw.githubusercontent.com; a download is used only if
+  size and sha256 match; when all fail the next try waits 30 minutes. With the full font `atlas_image.safe()` no longer
+  replaces characters. The bundled subset stays as the fallback (package unchanged). Dev check: jsDelivr is blocked in
+  this environment and was skipped; GitHub served the file in 1.9 s. jsDelivr's reachability from mainland China is
+  not verified here; the setting lets an administrator point at a local mirror.
+- Invariant change (§8): the font download may contact the four mirror hosts above and the administrator's https
+  address; nothing else, and only the pinned file is accepted.
+- **Weapon composition test** (experiment only, scratch directory, not in the plugin): Atlas gives attachments as a slot
+  tree with tarkov.dev pictures but **no positions**, so attachments cannot be placed on the weapon picture the way the
+  game draws it. Tested (a) matching the build to a tarkov.dev weapon preset (500 presets; the composed preset picture
+  exists): no sample build matches exactly (AK-12 closest preset differs by 6 missing / 4 extra parts, M1A by 4 / 3), so
+  this only helps unmodified presets; (b) a loadout board: weapon picture plus every attachment picture with name and
+  slot (all 17/10 pictures found): complete and correct, but a parts list rather than an assembled gun, and three rows
+  tall. Waiting for the maintainer's choice.

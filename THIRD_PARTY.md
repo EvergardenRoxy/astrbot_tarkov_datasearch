@@ -25,6 +25,9 @@ https://github.com/google/fonts, rebuilt by `tools/build_fonts.py`):
 - `Oswald-Variable.ttf`: Oswald (variable), Copyright 2016 The Oswald Project Authors, unmodified (file renamed).
 - `ShareTechMono-Regular.ttf`: Share Tech Mono, Copyright (c) 2012 Carrois Type Design, Ralph du Carrois, with
   Reserved Font Name 'Share', unmodified (a modified copy could not keep the reserved name).
+- Not bundled: the Atlas player picture downloads the full, unmodified Noto Sans SC variable font (same file and
+  sha256 as the source above, google/fonts commit `86aced9`) into the plugin's data directory on first use; it is
+  verified by size and sha256 and stays under the SIL Open Font License 1.1 (licence text: `OFL-NotoSansSC.txt`).
 
 **Boss table background.** `tarkov_core/assets/boss-background.jpg` is an AI-generated texture (no game art, text or logos)
 supplied by the project maintainer, who states it was generated with GPT-Image-2.5-sunburst. According to the maintainer, the

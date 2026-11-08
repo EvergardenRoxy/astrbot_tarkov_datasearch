@@ -361,6 +361,19 @@ class FakeAssets:
         pass
 
 
+class FakeFont:
+    """Stands in for FullFont: never downloads; counts the first-use calls."""
+    def __init__(self):
+        self.calls = 0
+
+    async def path_or_start(self):
+        self.calls += 1
+        return None
+
+    async def close(self):
+        pass
+
+
 class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
     """The plugin with the Atlas source (the default), a fake Atlas client and fake picture cache."""
     setUp = test_plugin.PluginTests.setUp
@@ -379,6 +392,7 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         self.atlas.errors = test_plugin.sys.modules['tarkov_test_plugin.tarkov_core.atlas_client']
         plugin.atlas_players.client = self.atlas
         plugin.atlas_assets = self.assets = FakeAssets()
+        plugin.full_font = self.font = FakeFont()
         self.cards = []
         if not draw:
             def record(card, icons=None):
@@ -414,6 +428,8 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('@机器人 tarkov pve 1234567 刷新', text)
         [card] = self.cards
         self.assertEqual((card['nickname'], card['mode_label'], card['aid']), ('Test_Player', 'PVE', '1234567'))
+        # The first picture asks for the full font (the download starts in the background).
+        self.assertEqual(self.font.calls, 1)
         # The icons asked for: item pictures, the known achievement icon and the level badge.
         self.assertIn('https://assets.tarkov.dev/player-level-group-1.png', self.assets.asked[0])
 

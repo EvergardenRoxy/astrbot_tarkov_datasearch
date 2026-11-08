@@ -8,13 +8,19 @@ and the pictures atlas_assets.py has on disk; a missing picture draws an empty p
 The old tarkov.dev cards (image.py, arena_image.py) are separate and unchanged.
 """
 import io
+import threading
+from functools import lru_cache
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 from . import NAME, NOTICE, REPO, VERSION
 from .atlas_card import when
-from .image import jpeg, safe, wrap
-from .matching_image import ATLAS_NAME, ATLAS_URL, font, logo, right
+from .image import FONTS, FONT_FILES, jpeg, safe as subset_safe, wrap
+from .matching_image import ATLAS_NAME, ATLAS_URL, logo, right
+
+# The full Noto Sans SC file once font_download.py has it on disk; None draws with the bundled subset.
+FULL_FONT = None
+FONT_LOCK = threading.Lock()
 
 W = 1600
 M = 32
@@ -24,6 +30,30 @@ ACCENT, BAR, BAR_BG, GOLD = (96, 178, 240), (66, 120, 168), (34, 38, 44), (200, 
 TONES = {'common': (214, 216, 220), 'rare': (186, 140, 246), 'legendary': (240, 198, 64), 'seasonal': (92, 172, 244)}
 LEFT_W, RIGHT_X = 960, M+960+24
 CELL_W, CELL_H, CELL_GAP, LABEL_H = 186, 150, 12, 26
+
+
+def use_full_font(path):
+    """Draw Chinese text with the full font at `path` (None: back to the bundled subset)."""
+    global FULL_FONT
+    with FONT_LOCK:
+        if path != FULL_FONT:
+            FULL_FONT = path
+            font.cache_clear()
+
+
+@lru_cache(maxsize=None)
+def font(name, size, weight=None):
+    """The bundled fonts with basic layout (as the matching picture); 'sc' is the full font when available."""
+    path = FULL_FONT if name == 'sc' and FULL_FONT else FONTS/FONT_FILES[name]
+    f = ImageFont.truetype(str(path), size, layout_engine=ImageFont.Layout.BASIC)
+    if weight is not None:
+        f.set_variation_by_axes([weight])
+    return f
+
+
+def safe(text, latin=False):
+    """Text as drawn: unchanged with the full font, else characters outside the subset become '?'."""
+    return str(text) if FULL_FONT and not latin else subset_safe(text, latin)
 
 
 def picture(data, box):

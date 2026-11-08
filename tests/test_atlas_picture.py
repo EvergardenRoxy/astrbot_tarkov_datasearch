@@ -5,6 +5,7 @@ import io
 import json
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from PIL import Image
@@ -254,3 +255,80 @@ class HistoryTests(unittest.TestCase):
         self.history.delete_all()
         self.assertFalse(self.history.path.exists())
         self.assertEqual(self.history.history(1, 'pve'), [])
+
+
+class FullFontTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        from tarkov_core import font_download
+        self.module = font_download
+        self.temp = tempfile.TemporaryDirectory()
+        self.body = b'font-bytes'*10
+        self.patches = [unittest.mock.patch.object(font_download, 'SIZE', len(self.body)),
+                        unittest.mock.patch.object(font_download, 'SHA256', __import__('hashlib').sha256(self.body).hexdigest())]
+        for patcher in self.patches:
+            patcher.start()
+        self.clock = Clock()
+        self.asked = []
+        self.answers = {}
+        async def download(host, path):
+            self.asked.append(host)
+            answer = self.answers.get(host, OSError('blocked'))
+            if isinstance(answer, BaseException):
+                raise answer
+            return answer
+        self.mirror = ''
+        self.font = font_download.FullFont(Path(self.temp.name)/'fonts', download=download, mirror=lambda: self.mirror,
+                                           clock=self.clock)
+
+    async def asyncTearDown(self):
+        await self.font.close()
+        for patcher in self.patches:
+            patcher.stop()
+        self.temp.cleanup()
+
+    def test_mirror_setting(self):
+        parse = self.module.custom_mirror
+        self.assertEqual(parse(' https://mirror.example:8443/fonts/NotoSansSC.ttf?x=1 '),
+                         ('https://mirror.example:8443', '/fonts/NotoSansSC.ttf?x=1'))
+        for value in ('', None, 'http://mirror.example/f.ttf', 'ftp://x/f', 'https://user:pw@mirror.example/f.ttf', 'not a url'):
+            self.assertIsNone(parse(value))
+
+    async def test_mirrors_in_order_and_only_the_pinned_file(self):
+        self.mirror = 'https://mirror.example/f.ttf'
+        self.answers = {'https://mirror.example': b'wrong file', 'https://fastly.jsdelivr.net': self.body}
+        self.assertIsNone(await self.font.path_or_start())
+        await self.font.task
+        self.assertEqual(self.asked, ['https://mirror.example', 'https://cdn.jsdelivr.net', 'https://fastly.jsdelivr.net'])
+        found = await self.font.path_or_start()
+        self.assertEqual(found.read_bytes(), self.body)
+        # A new process finds the verified file on disk without downloading.
+        again = self.module.FullFont(self.font.root, download=None)
+        self.assertEqual(await again.available(), found)
+
+    async def test_all_mirrors_failing_waits_before_the_next_try(self):
+        await self.font.path_or_start()
+        await self.font.task
+        self.assertEqual(len(self.asked), 4)
+        await self.font.path_or_start()
+        self.assertEqual(len(self.asked), 4)
+        self.clock.advance(self.module.RETRY_SECONDS)
+        self.answers['https://raw.githubusercontent.com'] = self.body
+        await self.font.path_or_start()
+        await self.font.task
+        self.assertIsNotNone(await self.font.available())
+
+    async def test_a_damaged_file_on_disk_is_not_used(self):
+        self.font.root.mkdir(parents=True)
+        self.font.path.write_bytes(b'x'*len(self.body))
+        self.assertIsNone(await self.font.available())
+
+    def test_the_picture_switches_fonts(self):
+        from tarkov_core import atlas_image
+        from tarkov_core.image import FONTS, FONT_FILES
+        try:
+            atlas_image.use_full_font(str(FONTS/FONT_FILES['sc']))
+            self.assertEqual(atlas_image.safe('龘'), '龘')
+            self.assertTrue(render_atlas_image(build(atlas_profile('pve'), 'pve')).startswith(b'\xff\xd8'))
+        finally:
+            atlas_image.use_full_font(None)
+        self.assertEqual(atlas_image.safe('龘'), '?')

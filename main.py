@@ -17,7 +17,8 @@ from .tarkov_core.atlas_players import AtlasNotFound, AtlasPlayers, UserQuota, c
 from .tarkov_core.atlas_assets import AtlasAssets, level_badge
 from .tarkov_core.atlas_card import build as build_atlas_card
 from .tarkov_core.atlas_history import AtlasHistory
-from .tarkov_core.atlas_image import render_atlas_image
+from .tarkov_core.atlas_image import render_atlas_image, use_full_font
+from .tarkov_core.font_download import FullFont
 from .tarkov_core.matching import MatchingService
 from .tarkov_core.matching_image import ATLAS_NAME, ATLAS_URL, render_matching_image
 from .tarkov_core.accounts import Accounts, load_secret, owner_key
@@ -125,6 +126,8 @@ class TarkovPlugin(Star):
             hours=lambda: self.int_setting('atlas_history_hours', 180, 1, 8760),
             max_bytes=lambda: self.int_setting('atlas_history_max_mb', 64, 16, 128)*1024*1024)
         self.atlas_image_slots = asyncio.Semaphore(2)
+        self.full_font = FullFont(self.root/'fonts', proxy=self.proxy, client=self.http,
+                                  mirror=lambda: self.config.get('font_download_url', ''))
         self.matching = MatchingService(self.atlas, enabled=self.matching_enabled)
         self.fetches = asyncio.Semaphore(FETCHES_AT_ONCE)
         self.active = set()
@@ -1073,6 +1076,9 @@ class TarkovPlugin(Star):
         try:
             card = await asyncio.to_thread(build_atlas_card, summary['doc'], mode, skill_limit=self.skill_count())
             icons = await self.atlas_icons(card, trace)
+            # The full Chinese font once downloaded (first use starts the download; until then the bundled subset).
+            font_path = await self.full_font.path_or_start()
+            use_full_font(str(font_path) if font_path else None)
             async with self.atlas_image_slots:
                 data = await asyncio.to_thread(render_atlas_image, card, icons)
         except asyncio.CancelledError:
@@ -1518,6 +1524,7 @@ class TarkovPlugin(Star):
         await self.matching.close()
         await self.atlas_players.close()
         await self.atlas_assets.close()
+        await self.full_font.close()
         await self.atlas.close()
         await self.names.close()
         await self.status_poller.close()

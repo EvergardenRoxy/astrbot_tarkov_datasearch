@@ -9,7 +9,7 @@ GROUPS = {
     'atlas': ('matching_enabled', 'atlas_query_cooldown_seconds', 'user_query_per_hour', 'user_refresh_per_hour',
               'user_query_cooldown_seconds', 'user_refresh_cooldown_seconds', 'atlas_budget_per_minute',
               'atlas_budget_per_hour', 'atlas_assets_update', 'atlas_assets_clear', 'atlas_history_enabled',
-              'atlas_history_hours', 'atlas_history_max_mb'),
+              'atlas_history_hours', 'atlas_history_max_mb', 'font_download_url'),
     'status': ('status_enabled', 'status_broadcast_enabled', 'status_poll_minutes', 'status_notify_targets',
                'status_qq_push_enabled'),
     'boss': ('boss_enabled', 'boss_broadcast_enabled', 'boss_poll_minutes', 'boss_modes', 'boss_notify_targets',
