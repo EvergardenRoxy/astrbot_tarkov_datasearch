@@ -26,10 +26,10 @@ earlier). From now on new work is appended as new sections.
 | Item | Value |
 |---|---|
 | Task | AstrBot plugin to look up Escape from Tarkov player profiles in chat (maintainer request, 2026-10-13); since 2026-10-24 also public game data: server status, Boss spawn rates, items. |
-| License / AI statement | GPL-3.0-or-later. README and CHANGELOG state the plugin was written by Claude Opus 5.5 (via Claude Code) and reviewed by the maintainer. |
-| Release target | 0.4.8 (query stability and performance, pending PR review; last release 0.4.7 on 2026-11-04; 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
+| License / AI statement | GPL-3.0-or-later. README and the top of CHANGELOG carry the same AI statement: participating AI listed by name only (Claude Opus 5.5 via Claude Code; the Boss background by GPT-Image-2.5-sunburst), no per-task description. Per-version AI notes were removed from CHANGELOG (maintainer, 2026-11-08). |
+| Release target | 0.5.0 (Atlas matching time, pending PR review; last release 0.4.8 on 2026-11-04; 0.4.7 on 2026-11-04; 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
 | Work branch | `main` was overwritten with the `1024` history on 2026-10-24 (§16); the item query was archived (§11). |
-| Tests | 326 (`python -m unittest discover -s tests`, needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13. |
+| Tests | 358 (`python -m unittest discover -s tests`, needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read and its registration/wake/filter/parser bodies replayed by `tools/verify_qq_routes.py` (146 cases at 0.4.6; SDK and network boundaries doubled). Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. The maintainer ran a small closed test of 0.3.0. **No live AstrBot run of the 1024 features; QQ image delivery and proactive push are unverified.** |
 
 ## 2. Data sources and evidence
@@ -191,7 +191,7 @@ records, two exact-100% records per mode). Previews were inspected visually.
 
 - Never call `player.tarkov.dev` or try to obtain or replay Turnstile tokens; do not bypass rate limits.
 - Keep `trust_env=False`, `allow_redirects=False`, the fixed hosts (`players.tarkov.dev`, `json.tarkov.dev`, and the
-  fixed `assets.tarkov.dev` paths for known Boss portrait links), and all size limits. Never fetch a
+  fixed `assets.tarkov.dev` paths for known Boss portrait links, plus `www.eftforge.com` for the Atlas matching endpoint), and all size limits. Never fetch a
   feed- or user-chosen host. Keep identifying the client honestly in `User-Agent`.
 - `summarize()` and the status/Boss normalisers must never raise on odd third-party field types; malformed 200
   responses must never overwrite a last-good cache row, baseline or index.
@@ -453,7 +453,7 @@ interval default 30, range 10–90 minutes.
 ## 20. Boss Halloween robustness, mode queries and personal defaults — v0.4.7 (2026-11-04)
 
 Maintainer-authorised scope: backend Boss handling, then only explicit-mode queries and personal default binding;
-no Boss/map search or cross-mode comparison commands. Implemented with OpenAI Codex. Delivery is a review branch
+no Boss/map search or cross-mode comparison commands. Implemented with Claude Opus 5.5 (via Claude Code). Delivery is a review branch
 `fix/boss-modes-v0.4.7` and PR targeting `main`; the maintainer will merge it. No deployment, tag or GitHub release.
 
 - **Observed feed**: public `regular/maps`, `pve/maps`, `pvp-season/maps` were read on 2026-11-04 KST. PvP and season
@@ -542,3 +542,77 @@ A synthetic 100,000-entry parser measurement with tracemalloc observed 9.5 KiB
 Python allocation peak for mapped iteration versus 19.6 MiB for read_bytes plus
 json.loads. This excludes mapped resident pages, SQLite native allocations and
 other process memory; it is not a production RSS measurement.
+
+
+## Atlas matching backend planning (2026-11-08)
+
+The maintainer requested a development plan for matching-time backend support and one global cooldown shared only by Atlas matching and future Atlas player HTTP requests. See `docs/atlas-matching-backend-plan.md`; linked from the overall Atlas plan. This is documentation only: no runtime changes, commands, or player integration. Maintainer correction: all users/chats share one matching result, with an independent 15-minute cooldown/cache window and fallback to successful cached results no older than 60 minutes. During cooldown, return cached data normally; report failure only when no usable result can be obtained. This independent matching window must not block player requests for 15 minutes. Remaining proposals (not implemented): 5-second shared request-start interval, one in-flight Atlas HTTP request, fixed 24-hour matching history, 15-minute backoff after failed matching attempts, and shared Retry-After pause. Cache hits and joined requests consume no admission. Existing tarkov.dev/status/Boss requests are outside this gate. Matching backend work does not depend on successful player-response probes. Per-user quotas and global player minute/hour budgets remain future prerequisites for player integration.
+
+
+## Atlas matching backend implementation (2026-11-08)
+
+Authorised by the maintainer after the plan: implement backend only. No version bump, README/CHANGELOG release edits,
+chat commands, rendering, Atlas player integration, or player-source changes.
+
+- `self.atlas` owns one `AtlasCooldown` and borrows the plugin's existing HTTP pool. Fixed matching endpoint,
+  `hours=24`, no redirects/cookies/environment proxies, explicit proxy validation, 30-second timeout, 2/8 MiB
+  compressed/decoded body limits and 64 KiB error-body limit. Errors expose controlled messages, never raw bodies.
+- `self.matching.get()` returns frozen result/datacenter models. `atlas.matching_enabled` defaults false;
+  `atlas.atlas_query_cooldown_seconds` defaults 5, valid integers 1–300. Booleans/nonfinite/out-of-range settings
+  fall back to 5 with a controlled warning. Startup does not connect to Atlas.
+- One matching cache and task for all callers. Fixed 900-second cache window; demand-driven refresh, 900-second
+  failure backoff, fallback only to successful results at most 3600 seconds old. Monotonic cache age is independent
+  of the retry deadline and wall-clock metadata. Cache hits never extend age or consume global admission.
+- The shared Atlas gate permits one in-flight HTTP request with a minimum start interval. It applies Retry-After
+  from 429 and explicitly delayed 5xx globally, does not truncate long pauses or auto-retry. Future Atlas player
+  HTTP methods must use this same gate; their minute/hour budgets remain unimplemented prerequisites. Other
+  hosts and existing functions never enter this gate. Matching's 15-minute window does not block player requests.
+- Admission refusal sends no HTTP and does not start a fresh matching failure backoff. Cached fallback is labelled
+  structurally (`from_cache`, `stale`, `error`) with original `updated` and `fetched_at`. Configuration errors,
+  disabled features, programming errors and non-transient HTTP failures are not hidden by a stale result.
+- Identical calls share shielded tasks; caller cancellation cannot cancel peers. Termination cancels and awaits
+  matching/Atlas work before releasing the shared pool. No background matching tasks, durable cache or cooldown.
+
+Validation: 23 new tests; all 349 tests pass. Local HTTP-server tests cover redirects, gzip, malformed/oversized
+bodies, cookies/ambient proxy exclusion, shared pauses, cache/admission interaction and close. Clock-driven tests
+cover 900/3600-second boundaries, failure backoff, 20 concurrent callers, cancellation and malformed data.
+Font rebuild produced no tracked changes. One live read-only matching request succeeded: 24 hours, 28 datacenters,
+288 history points; a second service call read the cache. The development smoke test explicitly selected the managed
+proxy; production still uses only plugin settings. No real player data or samples stored, no live chat-platform test.
+
+Maintainer follow-up: non-transient Atlas HTTP errors (403, 404, ...) get an independent 2-minute window
+(`HTTP_ERROR_SECONDS`). Callers receive the same error without contacting Atlas and are never served the stale
+result; the window neither shortens nor extends the 15-minute cache/failure windows. 351 tests pass.
+
+
+## Atlas matching command and picture — v0.5.0 (2026-11-08)
+
+Maintainer decisions in this round: image only (text/Markdown for matching will not be built; their maintenance is
+being dropped plugin-wide later, profile text/Markdown untouched for now); commands `tarkov 匹配` / `matching`, QQ word
+`tmatch`; matching on by default; layout from the maintainer's reference picture; player queries via Atlas deferred.
+
+- Routing: `MATCHING_WORDS` in `handle()`; `TarkovPlugin.matching_query()` checks access, `matching_enabled()` (schema
+  default true, code fallback true), no arguments, one active query per owner; then `self.matching.get()` and
+  `render_matching_image` in a thread under `matching_image_slots` (2). Reply: `[Image, Plain('数据来源：Atlas <url>')]`.
+  `QueryError` → `匹配时间查询失败：<message>`; other exceptions → fixed text, logged by type only; render failure → text.
+- `tarkov_core/matching_image.py`: dark 1600 px board. Header: title, `updated` (UTC+8), stale warning when
+  `result.stale`; logo `assets/atlas-logo.png` (maintainer-supplied, Atlas developer's requirement, THIRD_PARTY.md) with
+  `数据来源：Atlas https://eftforge.com/atlas` under it. Left: per-region fastest datacenter (`REGIONS` Chinese labels,
+  regions with no data last). Right: `RANKED`=8 shortest current waits excluding `FIXED` and `None`; then `FIXED`
+  rows China→香港, Japan→日本, Korea→韩国 (Chinese only; missing → "Atlas 暂未提供"). Columns: region code, name,
+  current, 24 h sparkline (per-row scale, minimum span 60 s, gaps break the line), min/avg/max of the history.
+  `display_name()` drops a two-letter prefix that repeats the region (Sa/Me/Af; maintainer confirmed). Wait tones:
+  ≤60 s, ≤180 s, longer. Footer: dash note, plugin name/version/repo, and
+  `特别致谢：Atlas（EFTForge 项目的一部分，作者 Morph1ne / SouthHorizons76）` instead of `NOTICE` (maintainer).
+- Text uses its own `font()` with `ImageFont.Layout.BASIC`: with RAQM, Pillow rounded glyph positions unevenly at
+  15–19 px (visible gap in "h ttps"). Other pictures keep `image.font()`.
+- Help text/card/image, QQ word list and `_conf_schema.json` hints mention the command. Fonts rebuilt (fonttools 4.68;
+  the TTF bytes differ from the previous build even for an unchanged character list).
+- Previews: `tools/build_matching_preview.py <saved.json>` renders `docs/matching_preview.jpg` (public game-service
+  data, no player data). Maintainer: iterate on the one saved response (2026-11-08 07:29:55 UTC sample) instead of
+  new requests. Older previews were not re-rendered and still show v0.4.8.
+- Tests: `test_matching_image.py` (sections, ordering, exclusions, missing fixed server, wait text, names, JPEG with
+  logo pixels), `MatchingCommandTests` (image whatever the output setting, link line, QQ word, errors, disabled,
+  access, one query per owner), help-card/QQ-word expectations updated. 358 tests pass. Not verified on a live
+  chat platform.
+

@@ -9,7 +9,7 @@
 
 # 塔科夫数据查询
 
-在 AstrBot 聊天中查询《逃离塔科夫》的数据：玩家档案，以及服务器状态和 Boss 刷率。数据全部来自 [tarkov.dev](https://tarkov.dev) 的公开内容。
+在 AstrBot 聊天中查询《逃离塔科夫》的数据：玩家档案、服务器状态、Boss 刷率，以及各服务器的平均匹配时间。玩家档案、服务器状态和 Boss 刷率来自 [tarkov.dev](https://tarkov.dev) 的公开内容，匹配时间来自 [Atlas](https://eftforge.com/atlas)。
 
 ## tarkov.dev 对机器人调用的限制与现状（玩家档案）
 
@@ -19,7 +19,8 @@
 
 - **[塔科夫玩家数据查询](docs/player-query.md)**：绑定自己的账号，用昵称、账号 ID 或玩家页网址查询自己或他人的档案——等级、阵营、PMC 与 Scav 的战局、存活率、K/D、技能；支持 PVP、PVE、PVP 赛季和塔科夫竞技场（段位、ARP、胜率）。
 - **[服务器状态与 Boss 刷率](docs/status-and-boss.md)**（0.4.5 新增，默认关闭）：服务器各组件状态；各地图日常 Boss 与三狗的刷率全表，另显示活动 Boss；两者都可开启变化推送。
-- **通用**：图片、文字、Markdown 三种回复方式（玩家查询）；所有人、仅管理员、管理员和指定用户三种权限，也可限定聊天；支持 QQ 官方机器人：`@机器人 /命令` 写法，以及不含空格的单词命令（tpve、tstatus、tboss 等）。
+- **[服务器匹配时间](docs/matching.md)**（0.5.0 新增，默认开启）：各数据中心的平均匹配等待时间和最近 24 小时走势，列出各地区最快、最快的 8 个数据中心，以及香港、日本、韩国三个常用服务器；数据来自 Atlas，所有会话共用一份结果，15 分钟更新一次。
+- **通用**：图片、文字、Markdown 三种回复方式（玩家查询）；所有人、仅管理员、管理员和指定用户三种权限，也可限定聊天；支持 QQ 官方机器人：`@机器人 /命令` 写法，以及不含空格的单词命令（tpve、tstatus、tboss、tmatch 等）。
 
 ## 安装与配置
 
@@ -27,7 +28,7 @@
 
 1. 将插件安装到 AstrBot 的插件目录，或在插件管理页导入发行压缩包。
 2. 在 AstrBot 的 Python 环境安装依赖：`pip install -r requirements.txt`（`aiohttp`、`yarl`、`pillow`，AstrBot 本身都已带）。
-3. 按需修改默认模式、谁可以使用等设置，保存后生效。默认所有人都可以使用玩家查询；服务器状态和 Boss 刷率默认关闭，需要管理员在配置页打开。注意：昵称名单默认开启，第一次按昵称查 PVP 会下载约 30 MB，需要等几十秒（可在“玩家数据查询”里关闭）。
+3. 按需修改默认模式、谁可以使用等设置，保存后生效。默认所有人都可以使用玩家查询和匹配时间；服务器状态和 Boss 刷率默认关闭，需要管理员在配置页打开。注意：昵称名单默认开启，第一次按昵称查 PVP 会下载约 30 MB，需要等几十秒（可在“玩家数据查询”里关闭）。
 
 ## 开始使用
 
@@ -58,6 +59,14 @@
 变化推送、活动 Boss 规则、头像和设置见 [服务器状态与 Boss 刷率](docs/status-and-boss.md)。
 
 Boss 显式指定模式优先于个人默认模式；未绑定默认模式时保留原来的多模式查询。绑定仅影响自己的 Boss 查询，不修改监控配置或玩家档案默认模式。
+
+**查服务器匹配时间**：默认开启，不带参数。
+
+```text
+@机器人 tarkov 匹配          各数据中心平均匹配时间（也可写 tarkov matching；QQ 单词命令 tmatch）
+```
+
+读图方法、缓存规则和设置见 [服务器匹配时间](docs/matching.md)。
 
 ## 回复方式
 
@@ -94,28 +103,32 @@ Scav：战局 50，撤离 30，存活率 60.0%
 
 数据来自 tarkov.dev，档案更新于 2026-10-03 12:00（北京时间）
 数据不会自动更新：在 tarkov.dev 用该模式搜索一次这名玩家，或打开 https://tarkov.dev/players/pve/1234567，即可刷新档案，几分钟后再查。
-astrbot_tarkov_datasearch v0.4.8 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch
+astrbot_tarkov_datasearch v0.5.0 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch
 本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系
 ```
 
-服务器状态与 Boss 刷率目前只回复图片，不受“输出方式”影响，示例图见 [status-and-boss.md](docs/status-and-boss.md)。
+服务器状态、Boss 刷率和匹配时间只回复图片，不受“输出方式”影响，示例图见 [status-and-boss.md](docs/status-and-boss.md) 和 [matching.md](docs/matching.md)。
 
 
 ## 通用设置
 
-配置页分成四组：通用、玩家数据查询、服务器状态、Boss 刷率。
+配置页分成五组：通用、玩家数据查询、服务器状态、Boss 刷率、Atlas 查询后端（匹配时间）。
 
 - **命令写法**：`@机器人 tarkov`（默认）或 `/tarkov`，只影响帮助和回复里怎么显示命令。两种写法都能用；在 QQ 官方平台，`@机器人 /tarkov …` 也一直能用，不需要开关。
-- **QQ 官方机器人单词命令**（默认开启）：QQ 官方机器人的命令里不能有空格，所以另有一组单词命令：`tpvp`、`tpve`、`tseason`、`tarena`（查玩家）、`tbind`、`tunbind`、`thelp`（绑定、解绑、帮助）、`tstatus`、`tboss`（状态、Boss）。后面的参数可以带空格，例如 `@机器人 tpve 昵称`。把它们加进 QQ 机器人后台的命令列表即可；只对 QQ 官方平台生效。
+- **QQ 官方机器人单词命令**（默认开启）：QQ 官方机器人的命令里不能有空格，所以另有一组单词命令：`tpvp`、`tpve`、`tseason`、`tarena`（查玩家）、`tbind`、`tunbind`、`thelp`（绑定、解绑、帮助）、`tstatus`、`tboss`、`tmatch`（状态、Boss、匹配时间）。后面的参数可以带空格，例如 `@机器人 tpve 昵称`。把它们加进 QQ 机器人后台的命令列表即可；只对 QQ 官方平台生效。
 - **谁可以使用**：所有人（默认）、仅管理员，或管理员和指定用户。“管理员”指 AstrBot 管理员，不是 QQ 群管理员。
 - **指定用户 / 限定聊天**：填写平台用户 ID（例如 QQ 号）和 AstrBot 会话标识（聊天中发送 `/sid` 查看），留空不限制聊天。手工编辑配置文件时应为列表；写成其他类型时拒绝所有人。
-- **访问 tarkov.dev 时使用代理 / 代理地址**：默认关闭。开启后所有请求都经过这个 HTTP/HTTPS 代理（不支持 SOCKS，需写明端口），不使用 AstrBot 或系统的代理设置；代理连不上时不会改为直连。部分服务器的 IP 会被 Cloudflare 拦截，查询提示“HTTP 403”时可以开启。
+- **访问数据接口时使用代理 / 代理地址**：默认关闭。开启后访问 tarkov.dev 和 Atlas 的请求都经过这个 HTTP/HTTPS 代理（不支持 SOCKS，需写明端口），不使用 AstrBot 或系统的代理设置；代理连不上时不会改为直连。部分服务器的 IP 会被 Cloudflare 拦截，查询提示“HTTP 403”时可以开启。
 
-各功能自己的设置见对应的文档：[玩家数据查询的设置](docs/player-query.md#玩家功能的设置)、[状态与 Boss 的设置](docs/status-and-boss.md)。
+各功能自己的设置见对应的文档：[玩家数据查询的设置](docs/player-query.md#玩家功能的设置)、[状态与 Boss 的设置](docs/status-and-boss.md)、[匹配时间的设置](docs/matching.md#设置)。
 
 ## 数据存储
 
-数据位于 `data/plugin_data/astrbot_tarkov_datasearch/`，具体文件见两份功能文档的“数据存储”一节：[玩家功能](docs/player-query.md#数据存储玩家功能)、[状态与 Boss](docs/status-and-boss.md#数据存储状态与-boss)。绑定只保存带密钥的哈希，不保存 QQ 号等原始 ID；用过本插件命令的群会话（只存会话标识，不存用户）会被记住，作为没填推送目标时的推送对象；插件不另存“谁查询了谁”，但 AstrBot 的日志会记下每条消息的发送者和内容，请像对待聊天记录一样保管日志和整个数据目录。
+数据位于 `data/plugin_data/astrbot_tarkov_datasearch/`，具体文件见两份功能文档的“数据存储”一节：[玩家功能](docs/player-query.md#数据存储玩家功能)、[状态与 Boss](docs/status-and-boss.md#数据存储状态与-boss)；匹配时间只保存在内存里，不写入磁盘。绑定只保存带密钥的哈希，不保存 QQ 号等原始 ID；用过本插件命令的群会话（只存会话标识，不存用户）会被记住，作为没填推送目标时的推送对象；插件不另存“谁查询了谁”，但 AstrBot 的日志会记下每条消息的发送者和内容，请像对待聊天记录一样保管日志和整个数据目录。
+
+## 特别致谢
+
+- **[Atlas](https://eftforge.com/atlas)**（[EFTForge](https://github.com/SouthHorizons76/EFTForge) 项目的一部分，作者 Morph1ne / SouthHorizons76）：Atlas 开发者已允许本项目调用其公开接口。0.5.0 起，“服务器匹配时间”使用 Atlas 的数据，图片按 Atlas 开发者的要求带有 Atlas 标志、名称和链接（标志来源见 [THIRD_PARTY.md](THIRD_PARTY.md)）。“可主动刷新的玩家数据查询”仍在规划中，当前版本的玩家数据仍来自 tarkov.dev 的公开快照（规划见 [docs/atlas-integration-plan.md](docs/atlas-integration-plan.md)）。Atlas 是独立的开源项目（AGPL-3.0-or-later），与本插件没有隶属关系，也不是 Battlestate Games 或 tarkov.dev 的项目。
 
 ## 开源许可
 
@@ -123,12 +136,13 @@ astrbot_tarkov_datasearch v0.4.8 · https://github.com/EvergardenRoxy/astrbot_ta
 
 Boss 图的背景纹理是 AI 生成的图片（见 [THIRD_PARTY.md](THIRD_PARTY.md)）。图片使用的三款字体（思源黑体 Noto Sans SC 的裁剪版、Oswald、Share Tech Mono）采用 SIL Open Font License 1.1，许可文本与字体一起放在 `tarkov_core/fonts/`。文档里的 Boss 示例图含有 Boss 头像，是 Battlestate Games 的游戏美术，不适用本项目的许可，也不包含在插件包里。
 
-本插件与 Battlestate Games 和 tarkov.dev 没有关联。
+本插件与 Battlestate Games、tarkov.dev 和 Atlas 没有关联。
 
 ## 文档
 
 - [塔科夫玩家数据查询](docs/player-query.md)：命令、模式、绑定、竞技场、数字含义、设置和数据存储。
 - [服务器状态与 Boss 刷率](docs/status-and-boss.md)：命令、设置、读图方法、活动 Boss 规则、变化推送和数据存储。
+- [服务器匹配时间](docs/matching.md)：命令、读图方法、缓存与请求频率、设置。
 - [CHANGELOG.md](CHANGELOG.md)：每个版本给使用者带来了哪些变化。
 - [checklist.md](checklist.md)：用通俗的话说明做了什么、为什么、怎么核对。
 - [handoff.md](handoff.md)：给 AI 和工程师看的英文技术记录，写明每次修改的代码位置、依据和测试。
