@@ -6,6 +6,7 @@ GROUPS = {
                 'proxy_enabled', 'proxy_url', 'public_data_cache_minutes'),
     'player': ('default_mode', 'arena_by_default', 'output_mode', 'skill_count', 'profile_cache_minutes',
                'name_index_enabled', 'name_index_refresh_hours', 'download_timeout_seconds'),
+    'atlas': ('matching_enabled', 'atlas_query_cooldown_seconds'),
     'status': ('status_enabled', 'status_broadcast_enabled', 'status_poll_minutes', 'status_notify_targets',
                'status_qq_push_enabled'),
     'boss': ('boss_enabled', 'boss_broadcast_enabled', 'boss_poll_minutes', 'boss_modes', 'boss_notify_targets',

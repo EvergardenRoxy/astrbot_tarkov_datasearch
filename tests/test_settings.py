@@ -52,7 +52,7 @@ class SettingsTests(unittest.TestCase):
     def test_every_key_is_in_one_group_and_the_schema_page_is_short_and_grouped(self):
         self.assertEqual(len(GROUP_OF), sum(len(keys) for keys in GROUPS.values()))
         schema = json.loads((ROOT/'_conf_schema.json').read_text(encoding='utf-8'))
-        self.assertEqual(list(schema), ['general', 'player', 'status', 'boss'])
+        self.assertEqual(list(schema), ['general', 'player', 'status', 'boss', 'atlas'])
         for group, spec in schema.items():
             for key, item in spec['items'].items():
                 with self.subTest(key=key):

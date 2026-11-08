@@ -191,7 +191,7 @@ records, two exact-100% records per mode). Previews were inspected visually.
 
 - Never call `player.tarkov.dev` or try to obtain or replay Turnstile tokens; do not bypass rate limits.
 - Keep `trust_env=False`, `allow_redirects=False`, the fixed hosts (`players.tarkov.dev`, `json.tarkov.dev`, and the
-  fixed `assets.tarkov.dev` paths for known Boss portrait links), and all size limits. Never fetch a
+  fixed `assets.tarkov.dev` paths for known Boss portrait links, plus `www.eftforge.com` for the Atlas matching endpoint), and all size limits. Never fetch a
   feed- or user-chosen host. Keep identifying the client honestly in `User-Agent`.
 - `summarize()` and the status/Boss normalisers must never raise on odd third-party field types; malformed 200
   responses must never overwrite a last-good cache row, baseline or index.
@@ -542,3 +542,40 @@ A synthetic 100,000-entry parser measurement with tracemalloc observed 9.5 KiB
 Python allocation peak for mapped iteration versus 19.6 MiB for read_bytes plus
 json.loads. This excludes mapped resident pages, SQLite native allocations and
 other process memory; it is not a production RSS measurement.
+
+
+## Atlas matching backend planning (2026-11-08)
+
+The maintainer requested a development plan for matching-time backend support and one global cooldown shared only by Atlas matching and future Atlas player HTTP requests. See `docs/atlas-matching-backend-plan.md`; linked from the overall Atlas plan. This is documentation only: no runtime changes, commands, or player integration. Maintainer correction: all users/chats share one matching result, with an independent 15-minute cooldown/cache window and fallback to successful cached results no older than 60 minutes. During cooldown, return cached data normally; report failure only when no usable result can be obtained. This independent matching window must not block player requests for 15 minutes. Remaining proposals (not implemented): 5-second shared request-start interval, one in-flight Atlas HTTP request, fixed 24-hour matching history, 15-minute backoff after failed matching attempts, and shared Retry-After pause. Cache hits and joined requests consume no admission. Existing tarkov.dev/status/Boss requests are outside this gate. Matching backend work does not depend on successful player-response probes. Per-user quotas and global player minute/hour budgets remain future prerequisites for player integration.
+
+
+## Atlas matching backend implementation (2026-11-08)
+
+Authorised by the maintainer after the plan: implement backend only. No version bump, README/CHANGELOG release edits,
+chat commands, rendering, Atlas player integration, or player-source changes.
+
+- `self.atlas` owns one `AtlasCooldown` and borrows the plugin's existing HTTP pool. Fixed matching endpoint,
+  `hours=24`, no redirects/cookies/environment proxies, explicit proxy validation, 30-second timeout, 2/8 MiB
+  compressed/decoded body limits and 64 KiB error-body limit. Errors expose controlled messages, never raw bodies.
+- `self.matching.get()` returns frozen result/datacenter models. `atlas.matching_enabled` defaults false;
+  `atlas.atlas_query_cooldown_seconds` defaults 5, valid integers 1–300. Booleans/nonfinite/out-of-range settings
+  fall back to 5 with a controlled warning. Startup does not connect to Atlas.
+- One matching cache and task for all callers. Fixed 900-second cache window; demand-driven refresh, 900-second
+  failure backoff, fallback only to successful results at most 3600 seconds old. Monotonic cache age is independent
+  of the retry deadline and wall-clock metadata. Cache hits never extend age or consume global admission.
+- The shared Atlas gate permits one in-flight HTTP request with a minimum start interval. It applies Retry-After
+  from 429 and explicitly delayed 5xx globally, does not truncate long pauses or auto-retry. Future Atlas player
+  HTTP methods must use this same gate; their minute/hour budgets remain unimplemented prerequisites. Other
+  hosts and existing functions never enter this gate. Matching's 15-minute window does not block player requests.
+- Admission refusal sends no HTTP and does not start a fresh matching failure backoff. Cached fallback is labelled
+  structurally (`from_cache`, `stale`, `error`) with original `updated` and `fetched_at`. Configuration errors,
+  disabled features, programming errors and non-transient HTTP failures are not hidden by a stale result.
+- Identical calls share shielded tasks; caller cancellation cannot cancel peers. Termination cancels and awaits
+  matching/Atlas work before releasing the shared pool. No background matching tasks, durable cache or cooldown.
+
+Validation: 23 new tests; all 349 tests pass. Local HTTP-server tests cover redirects, gzip, malformed/oversized
+bodies, cookies/ambient proxy exclusion, shared pauses, cache/admission interaction and close. Clock-driven tests
+cover 900/3600-second boundaries, failure backoff, 20 concurrent callers, cancellation and malformed data.
+Font rebuild produced no tracked changes. One live read-only matching request succeeded: 24 hours, 28 datacenters,
+288 history points; a second service call read the cache. The development smoke test explicitly selected the managed
+proxy; production still uses only plugin settings. No real player data or samples stored, no live chat-platform test.

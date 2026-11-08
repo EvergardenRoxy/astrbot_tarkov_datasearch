@@ -11,6 +11,9 @@ from astrbot.api.message_components import Image, Plain
 from astrbot.api.star import Context, Star, StarTools, register
 
 from .tarkov_core import COMMAND_STYLES, transport
+from .tarkov_core.atlas_client import AtlasClient
+from .tarkov_core.atlas_cooldown import AtlasCooldown
+from .tarkov_core.matching import MatchingService
 from .tarkov_core.accounts import Accounts, load_secret, owner_key
 from .tarkov_core.modes import GAME_MODES, MODES, label_of, page_url, parse_mode, parse_player_url, path_of, search_url
 from .tarkov_core.names import NAME, SUGGESTIONS, NameIndex
@@ -94,6 +97,9 @@ class TarkovPlugin(Star):
         # (mode, account id) -> the request in flight, shared by every query that needs it (review R-08).
         self.pending = {}
         self.http = transport.HTTPClient()
+        self.atlas = AtlasClient(client=self.http, proxy=self.proxy,
+            cooldown=AtlasCooldown(self.atlas_interval()))
+        self.matching = MatchingService(self.atlas, enabled=lambda: self.config.get('matching_enabled', False) is True)
         self.fetches = asyncio.Semaphore(FETCHES_AT_ONCE)
         self.active = set()
         self.public_data = ResourceCache(self.root/'public-data', self.download_public)
@@ -154,6 +160,13 @@ class TarkovPlugin(Star):
             return max(low, min(high, int(self.config.get(key, default))))
         except (TypeError, ValueError, OverflowError):
             return default
+
+    def atlas_interval(self):
+        value = self.config.get('atlas_query_cooldown_seconds', 5)
+        if type(value) is not int or not 1 <= value <= 300:
+            logger.warning('Invalid Atlas cooldown setting; using 5 seconds')
+            return 5
+        return value
 
     def proxy(self):
         if not self.config.get('proxy_enabled', False):
@@ -1084,6 +1097,8 @@ class TarkovPlugin(Star):
 
     async def terminate(self):
         self._terminated = True
+        await self.matching.close()
+        await self.atlas.close()
         await self.names.close()
         await self.status_poller.close()
         await self.boss_poller.close()

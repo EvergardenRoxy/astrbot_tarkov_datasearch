@@ -53,9 +53,9 @@
             },
             "proxy_enabled": {
                 "type": "bool",
-                "description": "访问 tarkov.dev 时使用代理",
+                "description": "访问数据接口时使用代理",
                 "default": false,
-                "hint": "开启后所有请求都走下面的代理，代理连不上不会改为直连。查询提示“HTTP 403”（服务器 IP 被拦）时可以开启。"
+                "hint": "开启后 tarkov.dev 和 Atlas 请求都使用下面的代理，代理连不上不会改为直连。"
             },
             "proxy_url": {
                 "type": "string",
@@ -271,6 +271,29 @@
                 "description": "拉取 Boss 头像（执行一次后自动关闭）",
                 "default": false,
                 "hint": "打开并保存后，从 assets.tarkov.dev 下载 12 个头像并缓存 365 天，之后自动关闭。平时不会自动下载；没有头像时用占位圆。"
+            }
+        }
+    },
+    "atlas": {
+        "type": "object",
+        "description": "Atlas 查询后端",
+        "items": {
+            "matching_enabled": {
+                "type": "bool",
+                "description": "启用匹配时间后端",
+                "default": false,
+                "hint": "启用后允许后续命令层调用；当前仅提供后端，不新增聊天命令。所有会话共用结果，15 分钟内读取缓存，失败最多回退到 60 分钟内的缓存。"
+            },
+            "atlas_query_cooldown_seconds": {
+                "type": "int",
+                "description": "Atlas 共用请求间隔（秒）",
+                "default": 5,
+                "hint": "Atlas 匹配时间和未来玩家请求共用的最短请求间隔，缓存读取不占用。匹配时间另有独立的 15 分钟缓存窗口。",
+                "slider": {
+                    "min": 1,
+                    "max": 300,
+                    "step": 1
+                }
             }
         }
     }
