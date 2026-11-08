@@ -323,6 +323,19 @@ class AssetCacheTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.assets.clear(), 4)
         self.assertEqual(list(self.root.iterdir()), [])
 
+    async def test_an_unknown_achievement_rebuilds_the_catalog_at_most_every_few_hours(self):
+        await self.assets.catalog()
+        self.assertEqual(len(self.feeds), 3)
+        self.assertIn('a1', (await self.assets.catalog_for(['a1']))['achievements'])
+        self.assertEqual(len(self.feeds), 3)  # Known achievements need no rebuild.
+        await self.assets.catalog_for(['new'])
+        self.assertEqual(len(self.feeds), 6)  # A new achievement in the game: rebuilt once.
+        await self.assets.catalog_for(['new'])
+        self.assertEqual(len(self.feeds), 6)
+        self.clock.advance(atlas_assets.REBUILD_SECONDS)
+        await self.assets.catalog_for(['new'])
+        self.assertEqual(len(self.feeds), 9)
+
     async def test_concurrent_requests_share_one_download(self):
         url = 'https://assets.tarkov.dev/shared.png'
         results = await asyncio.gather(*(self.assets.images([url]) for _ in range(5)))

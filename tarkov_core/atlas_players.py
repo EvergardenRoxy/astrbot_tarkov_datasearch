@@ -25,6 +25,16 @@ MAX_PENDING = 32
 QUOTA_USERS = 10000
 
 
+# Refusals before any request reaches Atlas (the plugin's budget, the shared gate): the user's quota is given back.
+NOT_SENT = (AtlasBudgetError, AtlasCooldownError)
+
+
+def refund(charge):
+    undo = getattr(charge, 'refund', None)
+    if undo is not None:
+        undo()
+
+
 class AtlasNotFound(NotFound):
     """Atlas answered: no such account, or no profile in this mode. Never used for a failed request."""
 
@@ -114,16 +124,23 @@ class AtlasPlayers:
                 return hit
         key = (mode, aid)
         task = self.pending.get(key)
+        charged = False
         if task is None:
             if len(self.pending) >= MAX_PENDING:
                 raise QueryError('玩家查询请求较多，请稍后再试')
             charge()
+            charged = True
             task = asyncio.ensure_future(self._fetch(mode, aid))
             self.pending[key] = task
             task.add_done_callback(lambda done: (self.pending.pop(key, None),
                                                  done.cancelled() or done.exception()))
-        # Shielded: one user giving up must not cancel the request others wait for.
-        return dict(await asyncio.shield(task))
+        try:
+            # Shielded: one user giving up must not cancel the request others wait for.
+            return dict(await asyncio.shield(task))
+        except NOT_SENT:
+            if charged:
+                refund(charge)
+            raise
 
     async def _fetch(self, mode, aid):
         try:
@@ -150,6 +167,9 @@ class AtlasPlayers:
         charge()
         try:
             doc = await self._busy_retry(lambda: self.client.search(nickname, mode))
+        except NOT_SENT:
+            refund(charge)
+            raise
         except AtlasHTTPError as exc:
             if exc.code in ('not_found', 'no_profile'):
                 return []
@@ -215,17 +235,32 @@ class UserQuota:
     def record(self, owner, refresh):
         now = self.clock()
         entries = [entry for entry in self.history.pop(owner, ()) if now-entry[0] < 3600]
-        entries.append((now, bool(refresh)))
+        entry = [now, bool(refresh)]
+        entries.append(entry)
         self.history[owner] = entries
         while len(self.history) > QUOTA_USERS:
             self.history.popitem(last=False)
+        return entry
+
+    def forget(self, owner, entry):
+        """Take back one recorded query (the request was refused before it was sent)."""
+        entries = self.history.get(owner, [])
+        for i, candidate in enumerate(entries):
+            if candidate is entry:
+                del entries[i]
+                break
 
     def ticket(self, owner, refresh):
-        """A callable for AtlasPlayers' `charge`: checks and records once, the first time a request is needed."""
-        state = {'done': False}
+        """A callable for AtlasPlayers' `charge`: checks and records once, the first time a request is needed.
+        `charge.refund()` gives the query back when no request was sent (the plugin's budget or the shared gate)."""
+        state = {'entry': None}
         def charge():
-            if not state['done']:
+            if state['entry'] is None:
                 self.check(owner, refresh)
-                self.record(owner, refresh)
-                state['done'] = True
+                state['entry'] = self.record(owner, refresh)
+        def give_back():
+            if state['entry'] is not None:
+                self.forget(owner, state['entry'])
+                state['entry'] = None
+        charge.refund = give_back
         return charge

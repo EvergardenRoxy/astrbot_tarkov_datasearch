@@ -1105,7 +1105,7 @@ class TarkovPlugin(Star):
     async def atlas_icons(self, card, trace):
         """The pictures the card needs from the local cache, downloading missing ones (failures draw placeholders)."""
         try:
-            catalog = await self.atlas_assets.catalog()
+            catalog = await self.atlas_assets.catalog_for(card['achievement_ids'])
         except asyncio.CancelledError:
             raise
         except Exception as exc:

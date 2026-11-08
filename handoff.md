@@ -910,3 +910,27 @@ register and no "数据来源：Atlas" text; the Atlas logo (28 px) and `ATLAS_U
 frame line (maintainer), because the logo's white lettering is invisible on the paper.
 The preview-only reference label sits under the plate. Small changes are pushed without a separate review at the
 maintainer's request.
+
+## 0.5.0–0.5.1 code review (2026-11-08)
+
+Scope: `v0.4.8..HEAD` (42 commits; main.py, every `atlas_*` module, font_download/fonts, matching, Arena and
+snapshot changes, tests, docs). Read for correctness, request limits, file/network safety and doc accuracy.
+
+Fixed in this branch:
+- `AtlasAssets.catalog_for(ids)`: a saved icon catalog never refreshed, so achievements added to the game kept
+  placeholder icons until the one-shot prefetch. An unknown achievement id now rebuilds it (at most every
+  `REBUILD_SECONDS` = 6 h; a failed rebuild keeps the old catalog). `main.atlas_icons` uses it.
+- `UserQuota`/`AtlasPlayers`: a query refused by the plugin's budget or the shared gate (`AtlasBudgetError`,
+  `AtlasCooldownError`; nothing sent) no longer consumes the user's hourly count and 30-second interval
+  (`charge.refund()`); answered requests, errors included, still count. Joiners of a shared request were never charged.
+- README link to the deleted `claude/vibrant-newton-lxci9c` branch made relative; the 0.5.0 changelog line about a
+  5-second / 1-300 s interval now notes the later 10-300 s range.
+
+Reviewed, left as is (noted for the maintainer):
+- `retry_after()` maps an absurdly large numeric Retry-After to an infinite pause (fail closed by design, tested);
+  only a restart clears it.
+- One transient matching failure without a cache blocks matching for 15 minutes (by design: no retry storm).
+- History recording is on by default and stores other players' Atlas documents locally (documented privacy switch).
+- Pre-0.5 unused imports in `boss_table_image.py` are out of scope.
+
+Validation: 441 tests pass (Python 3.13); pyflakes clean for the reviewed modules apart from intentional re-exports.

@@ -15,7 +15,7 @@ Atlas 竞技场采用选手名册图片：排位／非排位汇总表、各模�
 
 ## tarkov.dev 对机器人调用的限制与现状（玩家档案）
 
-**只有在 tarkov.dev 上被搜索过的玩家才有档案，档案不会自动更新，第一次查某个玩家之前要先到网站搜索他一次。** 默认 Atlas 查询不需要这一步，可在命令末尾加“刷新”重新查询。详细说明见 [玩家数据查询](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/claude/vibrant-newton-lxci9c/docs/player-query.md#tarkovdev-对机器人调用的限制与现状)。特别感谢作者 Morph1ne，其维护的项目 [**Atlas**](https://eftforge.com/atlas) 解决了长期以来的这部分难题。
+**只有在 tarkov.dev 上被搜索过的玩家才有档案，档案不会自动更新，第一次查某个玩家之前要先到网站搜索他一次。** 默认 Atlas 查询不需要这一步，可在命令末尾加“刷新”重新查询。详细说明见 [玩家数据查询](docs/player-query.md#tarkovdev-对机器人调用的限制与现状)。特别感谢作者 Morph1ne，其维护的项目 [**Atlas**](https://eftforge.com/atlas) 解决了长期以来的这部分难题。
 
 ## 功能
 

@@ -294,6 +294,25 @@ class PlayerServiceTests(unittest.IsolatedAsyncioTestCase):
         self.atlas = FakeAtlas()
         self.players = AtlasPlayers(self.atlas, cache_seconds=lambda: 0, clock=self.clock)
 
+    async def test_refusals_before_sending_give_the_users_query_back(self):
+        quota = UserQuota(lambda: (10, 3, 30, 300), clock=self.clock)
+        for refusal in (AtlasBudgetError(60), AtlasCooldownError(5)):
+            with self.subTest(refusal=type(refusal).__name__):
+                self.atlas.docs[(1, 'pve')] = refusal
+                with self.assertRaises(type(refusal)):
+                    await self.players.profile('pve', 1, charge=quota.ticket('a', False))
+                self.assertEqual(quota.history['a'], [])
+                quota.check('a', False)  # No 30-second wait either.
+                self.atlas.searches['Name'] = refusal
+                with self.assertRaises(type(refusal)):
+                    await self.players.search('Name', 'pve', charge=quota.ticket('a', False))
+                self.assertEqual(quota.history['a'], [])
+        # A request Atlas answered (even with an error) still counts.
+        self.atlas.docs[(1, 'pve')] = AtlasHTTPError(502)
+        with self.assertRaises(AtlasHTTPError):
+            await self.players.profile('pve', 1, charge=quota.ticket('a', False))
+        self.assertEqual(len(quota.history['a']), 1)
+
     async def test_cache_at_least_a_minute_and_refresh_skips_it(self):
         self.atlas.put(1, 'pve')
         charges = []
@@ -404,6 +423,9 @@ class FakeAssets:
         self.asked = []
 
     async def catalog(self):
+        return self.catalog_data
+
+    async def catalog_for(self, achievement_ids):
         return self.catalog_data
 
     async def images(self, urls):
