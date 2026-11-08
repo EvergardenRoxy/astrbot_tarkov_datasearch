@@ -119,7 +119,7 @@ astrbot_tarkov_datasearch v0.4.8 · https://github.com/EvergardenRoxy/astrbot_ta
 
 ## 特别致谢
 
-- **[Atlas](https://www.eftforge.com/atlas)**（[EFTForge](https://github.com/SouthHorizons76/EFTForge) 项目的一部分，作者 Morph1ne / SouthHorizons76）：Atlas 开发者已向本项目授予 API 调用权限和刷新密钥，计划用于“可主动刷新的玩家数据查询”和“服务器匹配时间查询”两项功能。这两项功能还在规划中，尚未发布，当前版本的玩家数据仍来自 tarkov.dev 的公开快照（规划见 [docs/atlas-integration-plan.md](docs/atlas-integration-plan.md)）。Atlas 是独立的开源项目（AGPL-3.0-or-later），与本插件没有隶属关系，也不是 Battlestate Games 或 tarkov.dev 的项目。
+- **[Atlas](https://www.eftforge.com/atlas)**（[EFTForge](https://github.com/SouthHorizons76/EFTForge) 项目的一部分，作者 Morph1ne / SouthHorizons76）：Atlas 开发者已允许本项目调用其公开接口，计划用于“可主动刷新的玩家数据查询”和“服务器匹配时间查询”两项功能。这两项功能还在规划中，尚未发布，当前版本的玩家数据仍来自 tarkov.dev 的公开快照（规划见 [docs/atlas-integration-plan.md](docs/atlas-integration-plan.md)）。Atlas 是独立的开源项目（AGPL-3.0-or-later），与本插件没有隶属关系，也不是 Battlestate Games 或 tarkov.dev 的项目。
 
 ## 开源许可
 
