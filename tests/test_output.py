@@ -12,9 +12,9 @@ class OutputTests(unittest.TestCase):
     def test_full_profile(self):
         text = render(summarize(profile()), 'PVE', now=NOW)
         for part in ('【塔科夫 PVE 档案】Test_Player（账号 ID 1234567）', '阵营 USEC｜等级 53', '账号总游戏时长 1000 小时｜成就 2 个',
-                     'PMC：战局 1000，撤离 800，存活率 84.0%', '击杀 5000，死亡 100，K/D 50.00，击杀 PMC 900',
-                     '匆匆逃离 30，转移 40，KIA 120，行动中失踪 10，最长连续存活 40 局',
-                     'Scav：战局 50，撤离 30，存活率 60.0%', '精英技能（2 项）：耐力、力量', '其他技能（前 2 项）：魅力 40、活力 25',
+                     'PMC：战局 1000，撤离 800，幸存率 84.0%', '击杀 5000，死亡 100，K/D 50.00，击杀 PMC 900',
+                     '匆匆逃离 30，转移 40，KIA 120，行动中失踪 10，最长连续幸存 40 局',
+                     'Scav：战局 50，撤离 30，幸存率 60.0%', '精英技能（2 项）：耐力、力量', '其他技能（前 2 项）：魅力 40、活力 25',
                      '档案更新于 2026-10-03 12:00（北京时间）'):
             with self.subTest(part=part):
                 self.assertIn(part, text)
@@ -54,7 +54,7 @@ class OutputTests(unittest.TestCase):
         text, markdown = render(summarize(profile()), 'PVE', now=NOW), render_markdown(card)
         self.assertIn('撤离 800', text)
         self.assertIn('**撤离状态（PMC）**：撤离 800 · 匆匆逃离 30 · 转移 40 · KIA 120 · 行动中失踪 10', markdown)
-        self.assertIn('| | 战局 | 撤离 | 存活率 |', markdown)
+        self.assertIn('| | 战局 | 撤离 | 幸存率 |', markdown)
         for old in ('阵亡', 'Run Through', '转图'):
             self.assertNotIn(old, text+markdown)
         self.assertNotRegex(text+markdown, '(?<!行动中)失踪')
@@ -76,12 +76,12 @@ class OutputTests(unittest.TestCase):
         s = summarize(profile())
         self.assertEqual(render(s, 'PVE', notes=['n'], now=NOW), '\n'.join([
             '【塔科夫 PVE 档案】Test_Player（账号 ID 1234567）', '阵营 USEC｜等级 53', '账号总游戏时长 1000 小时｜成就 2 个',
-            '最近活跃 2026-09-28 20:53', '', 'PMC：战局 1000，撤离 800，存活率 84.0%',
-            '　击杀 5000，死亡 100，K/D 50.00，击杀 PMC 900，PMC K/D 9.00', '　匆匆逃离 30，转移 40，KIA 120，行动中失踪 10，最长连续存活 40 局',
-            'Scav：战局 50，撤离 30，存活率 60.0%', '　击杀 100，死亡 10，K/D 10.00，击杀 PMC 20，PMC K/D 2.00', '　匆匆逃离 5，KIA 15，最长连续存活 5 局',
+            '最近活跃 2026-09-28 20:53', '', 'PMC：战局 1000，撤离 800，幸存率 84.0%',
+            '　击杀 5000，死亡 100，K/D 50.00，击杀 PMC 900，PMC K/D 9.00', '　匆匆逃离 30，转移 40，KIA 120，行动中失踪 10，最长连续幸存 40 局',
+            'Scav：战局 50，撤离 30，幸存率 60.0%', '　击杀 100，死亡 10，K/D 10.00，击杀 PMC 20，PMC K/D 2.00', '　匆匆逃离 5，KIA 15，最长连续幸存 5 局',
             '精英技能（2 项）：耐力、力量', '其他技能（前 2 项）：魅力 40、活力 25', '', '数据来自 tarkov.dev，档案更新于 2026-10-03 12:00（北京时间）', 'n',
             # Maintainer: every text reply ends with the repository and the open-source statement.
-            'astrbot_tarkov_datasearch v0.5.0 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch', '本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系']))
+            'astrbot_tarkov_datasearch v0.5.1 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch', '本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系']))
 
     def test_pmc_kd_is_pmc_kills_per_death(self):
         # Maintainer: PMC K/D = PMC kills / deaths, after the PMC kills, in every non-Arena output.
@@ -96,10 +96,10 @@ class OutputTests(unittest.TestCase):
 
     def test_markdown_ends_with_the_source(self):
         text = render_markdown(build_card(summarize(profile()), 'PVE', now=NOW))
-        self.assertTrue(text.endswith('>\n> astrbot\\_tarkov\\_datasearch v0.5.0 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch\n'
+        self.assertTrue(text.endswith('>\n> astrbot\\_tarkov\\_datasearch v0.5.1 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch\n'
                                       '> 本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系'))
 
     def test_prestige_and_notes(self):
         text = render(summarize(profile(info_prestigeLevel=2)), 'PVP', notes=['注意：测试'], now=NOW)
         self.assertIn('声望 2', text)
-        self.assertTrue(text.endswith('注意：测试\n' + 'astrbot_tarkov_datasearch v0.5.0 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch' + '\n' + '本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系'))
+        self.assertTrue(text.endswith('注意：测试\n' + 'astrbot_tarkov_datasearch v0.5.1 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch' + '\n' + '本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系'))

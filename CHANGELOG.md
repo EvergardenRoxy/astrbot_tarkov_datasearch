@@ -1,19 +1,27 @@
-[![AI Co-created](https://img.shields.io/badge/AI-Claude%20Opus%205.5%20%2B%20Claude%20Code-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](README.md#ai-制作声明)
+[![AI Co-created](https://img.shields.io/badge/AI-Claude%20Opus%205.5%20%2B%20Claude%20Code-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](README.md#ai-制作声明) [![AI Co-created](https://img.shields.io/badge/AI-OpenAI%20Codex-412991?style=for-the-badge&logo=openai&logoColor=white)](README.md#ai-制作声明)
 
 > [!IMPORTANT]
 > **AI 共创声明：本更新日志所记录的修改与日志本身，由项目维护者与生成式 AI 共同完成。** AI 生成或修改的内容由项目维护者审阅、验证并承担最终维护责任。
 >
-> 参与的 AI：**Claude Opus 5.5**（通过 **Claude Code**）；Boss 图的背景纹理由维护者用 **GPT-Image-2.5-sunburst** 生成。完整声明见 [README](README.md#ai-制作声明)。
+> 参与的 AI：**Claude Opus 5.5**（通过 **Claude Code**）、**OpenAI Codex**；Boss 图的背景纹理由维护者用 **GPT-Image-2.5-sunburst** 生成。完整声明见 [README](README.md#ai-制作声明)。
 
 # 更新日志
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## 0.5.1 - 2026-11-08
+
+> **尚未在 QQ 等聊天平台实测。** 依据与验证见 [handoff.md](handoff.md) 的“Mobile-readable”和“0.5.1 review”两节。
+
+- **PVP／PVE／赛季手机读图调整**：统计区改为大字号横向 PMC／SCAV 表格和撤离状态条；技能保留双列，放大文字、等级和进度格，其他区域保留原布局。幸存率统一按“（撤离＋转移）÷总战局数”计算，头部、概览、表格和快照文字／Markdown 一致。竞技场保持原样。
+- **口径与用词统一**：统计表的全部击杀比值写回“K/D（全部击杀）”；头部和概览的玩家击杀数改称“击杀 PMC”，与表格同名列一致（头部与概览的“K/D”仍按击杀 PMC 计算）。PVP／PVE／赛季图片、快照图片、文字和 Markdown 的“存活率”“最长连续存活”统一为“幸存率”“最长连续幸存”；“擅离率”的百分号前不再留空格。
+- **对齐修正**：统计表、撤离状态条、技能和标题栏按字形中线垂直对齐，Oswald、等宽数字与中文在同一行不再高低不齐；撤离状态刻度的“100%”不再超出右边距。
+- **AI 声明**：README 与本日志的 AI 声明补充 OpenAI Codex（部分 0.5.x 开发由其完成，见 handoff）。
+- 版本号升至 0.5.1。
+
 ## 0.5.0 - 2026-11-08
 
 > **尚未在 QQ 等聊天平台实测。** 依据与验证见 [handoff.md](handoff.md) 的 Atlas 小节。
-
-- **PVP／PVE／赛季手机读图调整**：统计区改为大字号横向 PMC／SCAV 表格和撤离状态条；技能保留双列，放大文字、等级和进度格，其他区域保留原布局。存活率统一按“（撤离＋转移）÷总战局数”计算，头部、概览、表格和快照文字／Markdown 一致。竞技场保持原样。
 
 - **清理旧字库制作流程**：所有图片统一使用完整 Noto Sans SC 字体；移除裁剪字体、字符清单、成就字符收集和字库制作脚本，以及缺字替换与源码字符覆盖校验。首次出图等待已校验的字体下载，之后复用本地文件；下载失败明确提示，快照及帮助可继续回复文字。开发测试改为预先缓存完整字体，无需制作字库。
 

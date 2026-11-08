@@ -5,8 +5,10 @@ maintainer's changes: no favourite weapons/items, no endings, no edition fields,
 achievements (by rarity, then newest; with names and global completion share), the ten latest achievements, item pictures from tarkov.dev.
 
 Counter rules read off the reference picture: K/D = player kills / (killed + left the raid); K/D (all kills) =
-all kills / (killed + left); survival = (survived + transit) / sessions. The headline adds PMC and Scav (also the
-longest survival streaks, as Atlas shows); the horizontal table and exit bars show each side separately.
+all kills / (killed + left); survival rate (幸存率) = (survived + transit) / sessions. The headline counts player
+kills as "击杀 PMC" and the table labels its all-kills ratio "K/D（全部击杀）", so equal labels mean equal numbers.
+The headline adds PMC and Scav (also the longest survival streaks, as Atlas shows); the horizontal table and exit
+bars show each side separately.
 A counter Atlas leaves out means 0. Nothing here raises on odd field
 types except a document without a nickname (atlas_profile.AtlasProfileError).
 """
@@ -54,7 +56,7 @@ def online(seconds):
 
 
 def percent(part, whole):
-    return f'{round(part/whole*100)} %' if whole else '—'
+    return f'{round(part/whole*100)}%' if whole else '—'
 
 
 def ratio(part, whole):
@@ -98,7 +100,7 @@ def headline(total, play):
     lost = total['killed']+total['left']
     return [
         ('战局数', f"{total['raids']:,}"), ('幸存数', f"{total['survived']:,}"), ('阵亡次数', f"{total['killed']:,}"),
-        ('行动中失踪', f"{total['mia']:,}"), ('擅离职守', f"{total['left']:,}"), ('击杀数', f"{total['player_kills']:,}"),
+        ('行动中失踪', f"{total['mia']:,}"), ('擅离职守', f"{total['left']:,}"), ('击杀 PMC', f"{total['player_kills']:,}"),
         ('匆匆逃离', f"{total['runner']:,}"), ('幸存率', survival_rate(total)),
         ('连续幸存数', f"{total['streak']:,}"), ('擅离率', percent(total['left'], total['raids'])),
         ('K/D', ratio(total['player_kills'], lost)), ('在线', online(play)),

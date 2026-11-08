@@ -10,7 +10,7 @@
 
 ## 当前状态
 
-- 本次交付目标 **0.5.0**（服务器匹配时间，数据来自 Atlas；待 PR 审核合并）；上次版本 0.4.8（更早的版本见下方“各版本做了什么”）。尚未在聊天平台实测（维护者对 0.3.0 做过小范围封闭测试）。
+- 本次交付目标 **0.5.1**（PVP／PVE／赛季手机读图、幸存率与 K/D 口径统一；待 PR 审核合并）；上次版本 0.5.0（服务器匹配时间与 Atlas 玩家查询；更早的版本见下方“各版本做了什么”）。尚未在聊天平台实测（维护者对 0.3.0 做过小范围封闭测试）。
 - 已用真实网络把插件的查询流程完整跑过多遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID、昵称和网址查过 PVP、PVE、赛季和竞技场。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
 - 服务器状态、Boss 刷率、公共数据缓存和 QQ 官方机器人路由（0.4.5 起）默认关闭，见下方“0.4.5”一节和 handoff.md §3、§9。状态和 Boss 目前只回复图片；按维护者 2026-10-24 的更正，图片是默认、文字和 Markdown 仍要保留用于兼容，这部分暂缓。物品查询已做完又封存。
 - 自动测试共 358 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
@@ -22,7 +22,7 @@
 ```bash
 pip install -r requirements.txt
 python -m unittest discover -s tests   # 本次分支应显示 Ran 326 tests ... OK
-python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.5.0.zip
+python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.5.1.zip
 ```
 
 在聊天中核对：
@@ -470,3 +470,13 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
 - [x] 存活率统一按（撤离＋转移）÷总战局数计算，头部、概览、表格及快照文字／Markdown 一致。
 - [x] 竞技场代码、图片和预览保持原样。
 - [x] 438 项测试通过；三个模式的正式代码整图已生成，PVE 图已检查。
+
+## 0.5.1 检查与修正（2026-11-08）
+
+- [x] 版本号统一升至 0.5.1，CHANGELOG 新增 0.5.1 小节。
+- [x] 统计表写回“K/D（全部击杀）”；头部和概览的玩家击杀数改称“击杀 PMC”。
+- [x] “存活率”“最长连续存活”统一为“幸存率”“最长连续幸存”（Atlas 图、快照图、文字、Markdown、文档）。
+- [x] 统计表、撤离状态、技能、标题栏和头部数字按字形中线对齐；“100%”刻度不超出右边距。
+- [x] AI 声明补充 OpenAI Codex。
+- [x] 438 项测试通过；PVE 示例图和快照示例图已重新生成并检查。
+- [ ] 头部、稀有成就、最新成就等小字区域的手机可读性（待维护者决定改版范围）。

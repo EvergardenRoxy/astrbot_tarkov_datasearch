@@ -43,6 +43,10 @@ class CardTests(unittest.TestCase):
         self.assertEqual(headline['连续幸存数'], '45')
         self.assertEqual(headline['在线'], '1000h00m')
         self.assertEqual(headline['幸存率'], '82.9%')
+        # Equal labels mean equal numbers: the headline's player kills are "击杀 PMC", as in the table.
+        self.assertEqual(headline['击杀 PMC'], '920')
+        self.assertNotIn('击杀数', headline)
+        self.assertEqual(headline['擅离率'], '2%')
         self.assertEqual(len(card['headline']), 12)
 
     def test_transits_count_towards_survival_in_all_three_modes(self):
@@ -153,8 +157,10 @@ class RenderTests(unittest.TestCase):
         image = Image.new('RGB', (ui.W, 1200), ui.BG)
         drawn, boxes = [], []
         original_text, original_rectangle = ImageDraw.ImageDraw.text, ImageDraw.ImageDraw.rectangle
+        inked = []
         def record_text(self, xy, text, *args, **kwargs):
             drawn.append((xy, text, kwargs.get('font')))
+            inked.append((text, self.textbbox(xy, text, font=kwargs.get('font'), anchor=kwargs.get('anchor'))))
             return original_text(self, xy, text, *args, **kwargs)
         def record_rectangle(self, xy, *args, **kwargs):
             boxes.append(xy)
@@ -167,7 +173,11 @@ class RenderTests(unittest.TestCase):
         texts = [text for _, text, _ in drawn]
         self.assertIn('84.0%', texts)
         self.assertIn('PMC K/D', texts)
-        self.assertIn('存活率 =（撤离＋转移）÷总战局数', texts)
+        self.assertIn('K/D（全部击杀）', texts)
+        # Every label, including the "100%" tick at the bar's right end, stays inside the margins.
+        self.assertTrue(all(ui.M <= box[0] and box[2] <= ui.W-ui.M for _, box in inked), inked)
+        self.assertNotIn('存活率', ''.join(map(str, texts)))
+        self.assertIn('幸存率 =（撤离＋转移）÷总战局数', texts)
         self.assertIn('擅离职守 0/0', texts)
         self.assertTrue(any(text == '1,000' and font.size == 44 for _, text, font in drawn))
         skills = [(xy, font) for xy, text, font in drawn if text in ('耐力', '力量')]

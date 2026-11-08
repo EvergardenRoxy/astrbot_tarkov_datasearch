@@ -846,3 +846,27 @@ combined header accuracy, zero games/deaths, exit counters/bar bounds, larger du
 rendering and existing Arena tests. Production full previews were rendered for all three modes (1600x3184,
 ~482 KB JPEG) and the PVE image visually inspected. Package/whitespace checks pass. Live QQ/mobile delivery and
 Python 3.13 were not run here; phone readability still depends on the chat client's image scaling.
+
+## 0.5.1 review: labels, survival wording and alignment (2026-11-08)
+
+Review of the mobile statistics commit (Claude Code), with the maintainer's decisions:
+
+- Version 0.5.1 everywhere (`__init__`, `metadata.yaml`, `main.py`, CHANGELOG heading, footer test strings). Only
+  the mobile-statistics entry moved from the untagged 0.5.0 section into 0.5.1; the other post-0.5.0 bullets
+  (font pipeline, Atlas limits, Arena) were left where the maintainer wrote them.
+- Equal labels now mean equal numbers: the table's all-kills ratio is "K/D（全部击杀）" again; the header/headline
+  player-kill count is "击杀 PMC" (was "击杀数", which clashed with the table's all-kills "击杀"). Header/headline
+  "K/D" still = player kills ÷ (killed + left). "擅离率" drops the space before "%".
+- "幸存率" is the single wording (maintainer): Atlas picture, snapshot picture, text and Markdown, plus
+  "最长连续幸存". Survival still counts transits (maintainer confirmed). Headline "幸存数" remains survived only,
+  so 幸存数 ÷ 战局数 differs from 幸存率 whenever there are transits.
+- `atlas_image.mid()` centres each text on its ink ('H0' for Latin/digits, one ideograph for Chinese) with a
+  baseline anchor; used by the statistics table, exit bars, skills, both band styles and the header numbers, so
+  Oswald, Share Tech Mono and Noto Sans SC sit on one visual line. The "100%" tick hangs inward inside the margin.
+  Column widths rebalanced for the longer K/D header (still summing to 1536).
+- README/CHANGELOG AI statement and badges add OpenAI Codex, matching the handoff notes.
+
+Validation: 438 tests pass (Python 3.13), with new assertions for the labels, wording and in-margin text.
+`docs/atlas_pve_preview.jpg` and `docs/preview.jpg` regenerated and inspected; PVP and season rendered for
+inspection only. Arena and help previews untouched. Open item: the small-text sections (header, rare and latest
+achievements, equipment) remain hard to read on phones — a full-board rescale is pending the maintainer's choice.
