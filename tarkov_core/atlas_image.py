@@ -1,9 +1,9 @@
 """The Atlas player picture (PVP, PVE, season): a dark board after the Atlas website's player page.
 
-Sections, top to bottom: the mode title and query time, the player header (level badge, level, name, experience;
-the Atlas logo and link on its right, required by the Atlas author on every output of its data), equipment with tarkov.dev's item pictures (no weapon, holster,
+Sections, top to bottom (no title row): the player header (level badge, level, name, experience; the Atlas logo
+and link on its right, required by the Atlas author on every output of its data), equipment with tarkov.dev's item pictures (no weapon, holster,
 melee or secure container slots) beside the mode's headline numbers, the rare achievements as one full-width row (name and rarity; no player share),
-the horizontal combat table and exit bars, enlarged two-column skills,
+the horizontal combat table and exit bars, enlarged two-column skills (16 places),
 the ten latest achievements (no player share column), and the footer with the thanks to Atlas. Drawn locally with Pillow from atlas_card.build()
 and the pictures atlas_assets.py has on disk; a missing picture draws an empty placeholder box, never a substitute.
 The tarkov.dev renderers remain separate; their survival calculation is aligned in the shared snapshot card.
@@ -86,14 +86,13 @@ def clip(d, text, f, width):
     return text+'…'
 
 
-def header(img, d, card, icons):
-    """Logo row and the player header; the y below."""
-    mid(d, M, 48, f"{card['mode_label']} 玩家档案", font('sc', 34, 800), TEXT)
-    stamp = f"查询于 {card['looked_up'] or '—'}（UTC+8）" + ('，Atlas 缓存' if card['cached'] else '')
-    mid(d, W-M, 48, stamp, font('sc', 20, 400), DIM, 'r')
-    d.line([0, 96, W, 96], fill=RULE)
+HEADER_TOP = 24
 
-    top = 112
+
+def header(img, d, card, icons):
+    """The player header (no title row: the mode is on the headline panel, the query time in the info row); the y
+    below."""
+    top = HEADER_TOP
     d.rectangle([M, top, W-M, top+132], fill=PANEL, outline=RULE)
     badge_drawn = paste_center(img, icons.get('level_badge'), M+20, top+22, 88, 88)
     if not badge_drawn:
@@ -167,7 +166,7 @@ def equipment(img, d, card, icons, top, height):
             x += w+CELL_GAP
         y += GRID_ROW
     info = (('账号 ID', card['aid'] or '—'), ('最高段位', card['league']), ('最近活跃', card['last_active'] or '—'),
-            ('查询时间', card['looked_up'] or '—'))
+            ('查询时间（Atlas 缓存）' if card['cached'] else '查询时间', card['looked_up'] or '—'))
     y = top+height-62
     for i, (label, value) in enumerate(info):
         x = grid_x+i*196
@@ -190,7 +189,7 @@ def headline(d, card, top, height):
         centered(d, cx, block+pitch*0.76, name, 'sc', 22, cell-10, DIM, 500)
 
 
-RARE_H = 250
+RARE_H = 274
 
 
 def rare(img, d, card, icons, top):
@@ -214,11 +213,11 @@ def rare(img, d, card, icons, top):
     cell_w = (W-2*M-32)/max(len(data['rare']), 9)
     for i, entry in enumerate(data['rare']):
         cx = M+16+cell_w*i+cell_w/2
-        if not paste_center(img, icons.get('achievements', {}).get(entry['id']), cx-40, top+78, 80, 80):
-            placeholder(d, cx-40, top+78, 80, 80)
+        if not paste_center(img, icons.get('achievements', {}).get(entry['id']), cx-58, top+72, 116, 116):
+            placeholder(d, cx-58, top+72, 116, 116)
         # No completion share (maintainer, 2026-11-08: Atlas reports 0 % for every PVE achievement).
-        centered(d, cx, top+186, entry['name'], 'sc', 24, cell_w-10, TONES[entry['tone']], 700, minimum=18)
-        centered(d, cx, top+222, entry['rarity'], 'sc', 20, cell_w-10, TONES[entry['tone']], 500, minimum=16)
+        centered(d, cx, top+212, entry['name'], 'sc', 24, cell_w-10, TONES[entry['tone']], 700, minimum=18)
+        centered(d, cx, top+246, entry['rarity'], 'sc', 20, cell_w-10, TONES[entry['tone']], 500, minimum=16)
     return top+RARE_H
 
 

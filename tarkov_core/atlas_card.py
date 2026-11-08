@@ -23,6 +23,8 @@ from .text import clean
 TZ = datetime.timezone(datetime.timedelta(hours=8))
 MODE_LABELS = {'pvp': 'PVP', 'pve': 'PVE', 'season': 'PVP 赛季'}
 RARE_COUNT = 9
+# Skills on the picture: two full columns of eight, elite first (maintainer, 2026-11-08).
+SKILL_TOTAL = 16
 LATEST_COUNT = 10
 # Equipment grid: (slot key, label, columns wide). The weapon, holster, melee and secure container slots are not
 # shown (maintainer, 2026-11-08).
@@ -201,9 +203,10 @@ def build(doc, mode, *, skill_limit=10, now=None):
     done = achievement_list(doc)
     rare, latest = achievement['rare'], achievement['latest']
     skills = profile.skills({'Common': common_skills(doc)})
+    # skill_limit only switches skills off (0) here; the picture always fills SKILL_TOTAL places when it can.
     shown = skills if skill_limit > 0 else []
     elite = [s for s in shown if s[2]]
-    rest = [s for s in shown if not s[2]][:skill_limit]
+    rest = [s for s in shown if not s[2]]
     equipment = slots(doc)
     prestige = number(doc.get('prestigeLevel'))
     aid = doc.get('accountId')
@@ -225,7 +228,7 @@ def build(doc, mode, *, skill_limit=10, now=None):
         'headline': headline(total, play),
         'combat_rows': [combat_row('PMC', pmc), combat_row('SCAV', scav)],
         'achievements': achievement,
-        'skills': elite+rest,
+        'skills': (elite+rest)[:SKILL_TOTAL],
         'equipment': [[(key, label, wide, equipment.get(key)) for key, label, wide in row] for row in SLOT_ROWS],
         'assets': sorted({item['image'] for item in equipment.values() if item['image']}),
         'achievement_ids': sorted({a['id'] for a in rare+latest}),

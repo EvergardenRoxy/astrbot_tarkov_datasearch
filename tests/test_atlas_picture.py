@@ -117,6 +117,16 @@ class CardTests(unittest.TestCase):
         card = build(atlas_profile('pve'), 'pve', skill_limit=0)
         self.assertEqual(card['skills'], [])
         self.assertEqual(build(atlas_profile('pve'), 'pve')['skills'], [('耐力', 51, True), ('力量', 25, False)])
+        # Two full columns: 16 places, elite first, whatever the snapshot's "other skills" setting says.
+        keys = ['Endurance', 'Strength', 'Vitality', 'Health', 'StressResistance', 'Metabolism', 'Immunity',
+                'Perception', 'Intellect', 'Attention', 'Charisma', 'Search', 'Surgery', 'CovertMovement', 'Throwing',
+                'AimDrills', 'HideoutManagement', 'Crafting']
+        many = {'common': [{'id': key, 'progress': (5100 if i < 3 else 3000-i*100), 'lastAccess': 1700000000}
+                           for i, key in enumerate(keys)]}
+        shown = build(atlas_profile('pve', skills=many), 'pve', skill_limit=10)['skills']
+        self.assertEqual(len(shown), 16)
+        self.assertEqual([elite for _, _, elite in shown[:4]], [True, True, True, False])
+        self.assertEqual([level for _, level, _ in shown[3:]], sorted([level for _, level, _ in shown[3:]], reverse=True))
 
     def test_achievement_chinese_is_from_atlas_with_per_field_english_fallback(self):
         done = [
@@ -229,7 +239,8 @@ class RenderTests(unittest.TestCase):
             self.assertEqual(image.width, 1600)
             self.assertGreater(image.height, 2000)
             # The level badge (red test picture) is drawn in the header.
-            self.assertGreater(image.convert('RGB').getpixel((32+20+44, 112+22+44))[0], 150)
+            from tarkov_core.atlas_image import HEADER_TOP
+            self.assertGreater(image.convert('RGB').getpixel((32+20+44, HEADER_TOP+22+44))[0], 150)
 
 
 class CatalogTests(unittest.TestCase):

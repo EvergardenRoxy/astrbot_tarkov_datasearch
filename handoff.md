@@ -890,3 +890,13 @@ the session scratchpad only, never committed) and asked for:
 
 Validation: 439 tests pass. The PVE example and the Arena Atlas example were regenerated from invented data.
 Not yet decided: whether the rare-achievement title row, equipment labels and footer are enlarged too.
+
+### Second annotation round (2026-11-08)
+
+- The title row (mode + query time) is gone; the header starts at `HEADER_TOP` = 24. The mode remains on the headline
+  panel, the query time in the info row, whose label becomes "查询时间（Atlas 缓存）" for Atlas-cached documents.
+- Rare achievement icons 80 → 116 px (`RARE_H` 274).
+- Skills: `atlas_card.SKILL_TOTAL` = 16 places, elite first then highest. `skill_limit` (the "显示的技能数"
+  setting) now only switches the Atlas skills off at 0; the snapshot keeps "all elite + N others". Hint updated.
+- Arena with real data: Atlas' arena nickname search for the reference player returned no result and the direct
+  arena lookup by account ID returned HTTP 502 (see the session report); no further requests were made.
