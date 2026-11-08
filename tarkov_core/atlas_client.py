@@ -4,6 +4,7 @@ import datetime
 import email.utils
 import json
 import math
+import re
 import time
 import zlib
 
@@ -14,7 +15,22 @@ from .transport import ConnectionFailure, HTTPClient, HTTPError, QueryError, USE
 
 HOST = 'https://www.eftforge.com'
 LIMITS = (2*1024*1024, 8*1024*1024)
+# A player document was 9-24 KB decoded (2026-11-08); a search answer 132 bytes.
+PLAYER_LIMITS = (1024*1024, 4*1024*1024)
 ERROR_LIMIT = 64*1024
+MATCHING_PATH = '/atlas/api/matching'
+LOOKUP_PATH = '/atlas/api/lookup'
+SEARCH_PATH = '/atlas/api/lookup/search'
+# Atlas modes (author, 2026-11-08); the plugin's mode keys are the same words.
+ATLAS_MODES = ('pvp', 'pve', 'season', 'arena')
+ACCOUNT = re.compile(r'[1-9][0-9]{0,11}')
+# Atlas' nickname rule (public EFTForge code): longer generated names cannot be searched there.
+NICKNAME = re.compile(r'[A-Za-z0-9_.-]{3,15}')
+# Longest wait for the shared gate in a player query (a lookup right after a search, a busy retry).
+PLAYER_WAIT_SECONDS = 20
+# Error codes of the public EFTForge relay; anything else is reported as 'http'.
+ERROR_CODES = ('busy', 'rate', 'session', 'backend', 'not_found', 'no_profile', 'mode', 'bad_account', 'bad_nickname',
+               'lookup', 'unavailable')
 
 
 class AtlasDataError(QueryError):
@@ -76,12 +92,27 @@ async def read_body(response, limits):
     return bytes(body)
 
 
+def allowed(path, params):
+    """The only requests this client sends: fixed paths, validated parameters, nothing a user or a response chose."""
+    if path == MATCHING_PATH:
+        return params == {'hours': '24'}
+    if not isinstance(params, dict) or params.get('mode') not in ATLAS_MODES:
+        return False
+    if path == LOOKUP_PATH:
+        return set(params) == {'accountId', 'mode'} and isinstance(params['accountId'], str) and bool(ACCOUNT.fullmatch(params['accountId']))
+    if path == SEARCH_PATH:
+        return set(params) == {'nickname', 'mode'} and isinstance(params['nickname'], str) and bool(NICKNAME.fullmatch(params['nickname']))
+    return False
+
+
 class AtlasClient:
-    def __init__(self, *, client=None, cooldown=None, proxy=lambda: None):
+    def __init__(self, *, client=None, cooldown=None, proxy=lambda: None, budget=None):
         self.http = client if client is not None else HTTPClient()
         self.owns_http = client is None
         self.cooldown = cooldown if cooldown is not None else AtlasCooldown()
         self.proxy = proxy
+        # The minute/hour budget of player requests (matching is not counted: Atlas limits player lookups).
+        self.budget = budget
         self.closed = False
         self.tasks = set()
 
@@ -90,50 +121,75 @@ class AtlasClient:
         return validate_proxy(value) if value else None
 
     async def matching(self):
-        # Only this fixed path is exposed. Future lookup methods must use _get too.
-        return await self._get('/atlas/api/matching', {'hours': '24'})
+        return await self._get(MATCHING_PATH, {'hours': '24'})
 
-    async def _get(self, path, params):
+    async def lookup(self, account_id, mode, *, max_wait=PLAYER_WAIT_SECONDS):
+        """One player document (`mode` is pvp, pve, season or arena). Waits at most `max_wait` for the shared gate."""
+        return await self._get(LOOKUP_PATH, {'accountId': str(account_id), 'mode': mode}, max_wait=max_wait,
+                               limits=PLAYER_LIMITS, counted=True)
+
+    async def search(self, nickname, mode, *, max_wait=PLAYER_WAIT_SECONDS):
+        """Atlas' nickname search: {nickname, players: [{accountId, nickname, side, level}], cached, mode}."""
+        return await self._get(SEARCH_PATH, {'nickname': nickname, 'mode': mode}, max_wait=max_wait,
+                               limits=PLAYER_LIMITS, counted=True)
+
+    async def _get(self, path, params, *, max_wait=None, limits=LIMITS, counted=False):
         if self.closed:
             raise RuntimeError('Atlas client closed')
-        if path != '/atlas/api/matching' or params != {'hours': '24'}:
+        if not allowed(path, params):
             raise ValueError('unsupported Atlas request')
         proxy = self.validated_proxy()  # Invalid configuration fails before admission.
         task = asyncio.current_task()
-        async with self.cooldown.claim():
-            self.tasks.add(task)
-            try:
-                session = self.http.get_session()
-                timeout = aiohttp.ClientTimeout(total=30, connect=15)
-                async with session.get(HOST+path, params=params, allow_redirects=False, proxy=proxy,
-                                       timeout=timeout, headers={'User-Agent': USER_AGENT,
-                                       'Accept': 'application/json', 'Accept-Encoding': 'gzip'}) as response:
-                    status = response.status
-                    pause = None
-                    if status == 429 or (500 <= status <= 599 and 'Retry-After' in response.headers):
-                        pause = retry_after(response.headers.get('Retry-After'))
-                        self.cooldown.pause(pause)
-                    if status != 200:
-                        code = 'http'
-                        try:
-                            error = decode_json(await read_body(response, (ERROR_LIMIT, ERROR_LIMIT)))
-                            if isinstance(error, dict):
-                                detail = error.get('detail', error)
-                                candidate = detail.get('error') if isinstance(detail, dict) else None
-                                if candidate in ('busy', 'rate', 'session', 'backend', 'not_found', 'no_profile',
-                                                 'mode', 'bad_account', 'bad_nickname', 'lookup', 'unavailable'):
-                                    code = candidate
-                        except AtlasDataError:
-                            pass
-                        raise AtlasHTTPError(status, code, pause)
-                    if response.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
-                        raise AtlasDataError()
-                    return await asyncio.to_thread(decode_json, await read_body(response, LIMITS))
-            except (aiohttp.ClientError, TimeoutError) as exc:
-                # Never include URLs, proxy credentials, or raw upstream text.
-                raise ConnectionFailure(f'连接 Atlas 失败（{type(exc).__name__}），请稍后再试') from None
-            finally:
-                self.tasks.discard(task)
+        gate = self.cooldown.claim() if max_wait is None else self.cooldown.claim_within(max_wait)
+        # Counted before waiting for the gate, so a used-up budget fails at once and sends nothing; given back when
+        # the gate refuses or the caller gives up before the request starts.
+        token = self.budget.reserve() if counted and self.budget is not None else None
+        started = False
+        try:
+            async with gate:
+                started = True
+                return await self._send(path, params, proxy, limits, token, task)
+        except BaseException:
+            if token is not None and not started:
+                self.budget.refund(token)
+            raise
+
+    async def _send(self, path, params, proxy, limits, token, task):
+        self.tasks.add(task)
+        try:
+            session = self.http.get_session()
+            timeout = aiohttp.ClientTimeout(total=30, connect=15)
+            async with session.get(HOST+path, params=params, allow_redirects=False, proxy=proxy,
+                                   timeout=timeout, headers={'User-Agent': USER_AGENT,
+                                   'Accept': 'application/json', 'Accept-Encoding': 'gzip'}) as response:
+                status = response.status
+                pause = None
+                if status == 429 or (500 <= status <= 599 and 'Retry-After' in response.headers):
+                    pause = retry_after(response.headers.get('Retry-After'))
+                    self.cooldown.pause(pause)
+                if status == 429 and token is not None:
+                    # Atlas does not count refused requests ("busy" or "rate") against the IP limit.
+                    self.budget.refund(token)
+                if status != 200:
+                    code = 'http'
+                    try:
+                        error = decode_json(await read_body(response, (ERROR_LIMIT, ERROR_LIMIT)))
+                        if isinstance(error, dict):
+                            detail = error.get('detail', error)
+                            candidate = detail.get('error') if isinstance(detail, dict) else None
+                            if candidate in ERROR_CODES:
+                                code = candidate
+                    except AtlasDataError:
+                        pass
+                    raise AtlasHTTPError(status, code, pause)
+                if response.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
+                    raise AtlasDataError()
+                return await asyncio.to_thread(decode_json, await read_body(response, limits))
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            # Never include URLs, proxy credentials, or raw upstream text.
+            raise ConnectionFailure(f'连接 Atlas 失败（{type(exc).__name__}），请稍后再试') from None
+        finally:
+            self.tasks.discard(task)
 
     async def close(self):
         self.closed = True

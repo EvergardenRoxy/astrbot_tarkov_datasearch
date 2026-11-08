@@ -80,11 +80,25 @@
         "type": "object",
         "description": "玩家数据查询",
         "items": {
+            "player_source": {
+                "type": "string",
+                "description": "玩家数据来源",
+                "default": "atlas",
+                "hint": "Atlas：按需实时查询，不用先在 tarkov.dev 搜索，每次只查一个模式；Atlas 出错或额度用完时自动改用 tarkov.dev 快照，回复里会注明。tarkov.dev：只读 tarkov.dev 的公开快照（旧方式）。",
+                "options": [
+                    "atlas",
+                    "tarkov-dev"
+                ],
+                "labels": [
+                    "Atlas（推荐）",
+                    "tarkov.dev 快照"
+                ]
+            },
             "default_mode": {
                 "type": "string",
                 "description": "默认模式",
-                "default": "pvp",
-                "hint": "命令里没写模式时先看这个模式；没有档案会自动换成有档案的模式。",
+                "default": "pve",
+                "hint": "命令里没写模式时查这个模式。数据来源是 Atlas 时只查这一个模式；是 tarkov.dev 时没有档案会自动换成有档案的模式。",
                 "options": [
                     "pvp",
                     "pve",
@@ -100,7 +114,7 @@
                 "type": "bool",
                 "description": "不写模式时也查竞技场",
                 "default": false,
-                "hint": "开启后每次查询多一个请求。"
+                "hint": "只对 tarkov.dev 快照生效，开启后每次查询多一个请求。数据来源是 Atlas 时竞技场要写明模式。"
             },
             "output_mode": {
                 "type": "string",
@@ -133,7 +147,7 @@
                 "type": "int",
                 "description": "档案缓存（分钟）",
                 "default": 10,
-                "hint": "只存内存；用玩家页网址查询和绑定时不用缓存；0 不缓存。",
+                "hint": "只存内存，命中时不再联网；Atlas 数据最少缓存 1 分钟（与 Atlas 自己的缓存一致），命令最后加“刷新”可跳过缓存。tarkov.dev：用玩家页网址查询和绑定时不用缓存；0 不缓存。",
                 "slider": {
                     "min": 0,
                     "max": 1440,
@@ -276,7 +290,7 @@
     },
     "atlas": {
         "type": "object",
-        "description": "Atlas 查询后端",
+        "description": "Atlas 查询与限额",
         "items": {
             "matching_enabled": {
                 "type": "bool",
@@ -288,12 +302,124 @@
                 "type": "int",
                 "description": "Atlas 共用请求间隔（秒）",
                 "default": 5,
-                "hint": "Atlas 匹配时间和未来玩家请求共用的最短请求间隔，缓存读取不占用。匹配时间另有独立的 15 分钟缓存窗口。",
+                "hint": "Atlas 匹配时间和玩家查询共用的最短请求间隔，缓存读取不占用。玩家查询会在这个间隔内排队等待（最多 20 秒）；匹配时间另有独立的 15 分钟缓存窗口。",
                 "slider": {
                     "min": 1,
                     "max": 300,
                     "step": 1
                 }
+            },
+            "user_query_per_hour": {
+                "type": "int",
+                "description": "每人每小时 Atlas 查询次数",
+                "default": 20,
+                "hint": "只计需要联网的查询（含刷新）；命中缓存的查询不计。",
+                "slider": {
+                    "min": 1,
+                    "max": 200,
+                    "step": 1
+                }
+            },
+            "user_refresh_per_hour": {
+                "type": "int",
+                "description": "每人每小时刷新次数",
+                "default": 3,
+                "hint": "命令最后加“刷新”会跳过缓存重新向 Atlas 查询，计入上面的查询次数；0 表示不允许刷新。",
+                "slider": {
+                    "min": 0,
+                    "max": 60,
+                    "step": 1
+                }
+            },
+            "user_query_cooldown_seconds": {
+                "type": "int",
+                "description": "每人两次 Atlas 查询的最短间隔（秒）",
+                "default": 10,
+                "hint": "命中缓存的查询不受限制。",
+                "slider": {
+                    "min": 0,
+                    "max": 3600,
+                    "step": 1
+                }
+            },
+            "user_refresh_cooldown_seconds": {
+                "type": "int",
+                "description": "每人两次刷新的最短间隔（秒）",
+                "default": 300,
+                "hint": "默认 5 分钟。",
+                "slider": {
+                    "min": 0,
+                    "max": 86400,
+                    "step": 1
+                }
+            },
+            "atlas_budget_per_minute": {
+                "type": "int",
+                "description": "全部用户每分钟 Atlas 玩家请求上限",
+                "default": 15,
+                "hint": "Atlas 按服务器出口 IP 限制每分钟 20 次，所有用户共用（同一 IP 上的其他机器人也共用）。用完时改用 tarkov.dev 快照。最大 20。",
+                "slider": {
+                    "min": 1,
+                    "max": 20,
+                    "step": 1
+                }
+            },
+            "atlas_budget_per_hour": {
+                "type": "int",
+                "description": "全部用户每小时 Atlas 玩家请求上限",
+                "default": 150,
+                "hint": "Atlas 按服务器出口 IP 限制每小时 200 次，所有用户共用。按昵称第一次查询可能要 2 次请求（搜索 + 查询）。最大 200。",
+                "slider": {
+                    "min": 1,
+                    "max": 200,
+                    "step": 1
+                }
+            },
+            "atlas_assets_update": {
+                "type": "bool",
+                "description": "拉取常用图标（执行一次后自动关闭）",
+                "default": false,
+                "hint": "打开并保存后，从 tarkov.dev 下载全部成就图标、等级徽章和转生图标（约 150 张）。物品图片和这里没有的图标在第一次用到时才下载。图片不会过期，只能用下面的开关清除。"
+            },
+            "atlas_assets_clear": {
+                "type": "bool",
+                "description": "清除图标缓存（执行一次后自动关闭）",
+                "default": false,
+                "hint": "打开并保存后，删除本地保存的全部图标和物品图片；之后用到时重新下载。"
+            },
+            "atlas_history_enabled": {
+                "type": "bool",
+                "description": "保存 Atlas 查询记录",
+                "default": true,
+                "hint": "在本机保存每次成功查询的 Atlas 原始数据，为以后的定时拉取、周报和按时间比较预留。只存在插件数据目录，不上传；不保存 tarkov.dev 的快照。关闭后不再保存，并删除已有记录。"
+            },
+            "atlas_history_hours": {
+                "type": "int",
+                "description": "查询记录保留时间（小时）",
+                "default": 180,
+                "hint": "超过这个时间的记录自动删除。",
+                "slider": {
+                    "min": 1,
+                    "max": 8760,
+                    "step": 1
+                }
+            },
+            "atlas_history_max_mb": {
+                "type": "int",
+                "description": "查询记录总大小上限（MB）",
+                "default": 64,
+                "hint": "16～128 MB，超过时先删最早的记录。",
+                "slider": {
+                    "min": 16,
+                    "max": 128,
+                    "step": 1
+                }
+            },
+            "font_download_url": {
+                "type": "string",
+                "description": "完整中文字体下载地址（可选）",
+                "default": "",
+                "hint": "Atlas 图片第一次生成时在后台下载完整 Noto Sans SC 字体（约 17 MB，开源免费），之后中文都能显示。默认依次试 jsDelivr、GitHub；访问不了可填 https 镜像地址（最先尝试）。文件必须与固定版本的校验值一致才会使用。"
             }
         }
     }

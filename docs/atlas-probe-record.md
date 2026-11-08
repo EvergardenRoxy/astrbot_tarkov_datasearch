@@ -786,3 +786,146 @@ eo-cache-status: MISS
 - `eftforge.com` 会 301 到 `www.eftforge.com`；插件不跟随跳转，必须直接请求 `www`。
 - 玩家搜索和查询在实测的时段里全部（约 10 次）返回 429 `busy`（`Retry-After: 5`）。作者回复：**网站服务器端的 8 个同步查询位置都满了**。`busy` 不是我们超限，也不计入每 IP 每分钟 20 次、每小时 200 次的额度。
 - 更新时间字段、刷新的含义、四个模式是否都有效：取决于能否拿到成功的 `lookup` 响应，见第 5 节和规划稿 2.5。
+## 7. 第二轮实测：玩家查询成功（2026-11-08 07:56–08:01 UTC）
+
+维护者要求用两个指定账号实测：**玩家 A** 查 PVE；**玩家 B**（参考玩家）查 PVP、赛季和竞技场。两个账号的昵称、账号 ID、战绩、装备、成就、技能等**全部打码**，下文只保留接口结构、字段名和游戏本身的常量（成就总数、版本号等）；原始响应只存在开发环境的临时目录，不进仓库。请求头与第 0 节相同（只读 GET，没有 Cookie、没有密钥）。
+
+### 7.1 请求汇总
+
+| # | 时间(UTC) | 请求 | 结果 |
+|---|---|---|---|
+| 17 | 07:56:41 | `GET https://players.tarkov.dev/pve/index.json` | 200；玩家 A 在名单里，得到账号 ID |
+| 18 | 07:56:41 | `GET /atlas/api/lookup?accountId=<玩家A>&mode=pve` | **200**，3.8 秒，gzip 6.8 KB（解压 23.7 KB），`cached:false` |
+| 19 | 08:00 | `GET https://players.tarkov.dev/pvp-season/index.json`、`/arena/index.json` | 200；玩家 B 在两份名单里，账号 ID 相同 |
+| 20 | 08:00:09 | `GET /atlas/api/lookup/search?nickname=<玩家B>&mode=season` | 连接被对端重置（`Recv failure: Connection reset by peer`），没有收到响应 |
+| 21 | 08:00:16 | `GET /atlas/api/lookup?accountId=<玩家B>&mode=pvp` | **200**，8.9 秒，12.9 KB，`cached:false` |
+| 22 | 08:00:29 | `GET /atlas/api/lookup?accountId=<玩家B>&mode=season` | **200**，3.2 秒，11.3 KB，`cached:false` |
+| 23 | 08:00:36 | `GET /atlas/api/lookup?accountId=<玩家B>&mode=arena` | **200**，14.6 秒，8.9 KB，`cached:false` |
+| 24 | 08:00:54 | 同 23（18 秒后重查） | **200**，2.6 秒，`cached:true`，`looked_up` 与 23 相同 |
+| 25 | 08:01:08 | 同 20（约 1 分钟后重试一次） | **200**，2.7 秒，132 字节 |
+
+这一轮发往 Atlas 7 次（6 次成功，1 次断连），**没有遇到 `busy`**。主机都是 `https://www.eftforge.com`；下文的路径省略主机。
+
+### 7.2 返回头（玩家查询和搜索都一样）
+
+```
+HTTP/2 200
+server: nginx/1.18.0 (Ubuntu)
+content-type: application/json
+vary: Accept-Encoding
+content-encoding: gzip
+cache-control: no-store
+eo-cache-status: MISS
+```
+
+没有 `Retry-After`，没有 Cookie，没有限额剩余次数之类的头。
+
+### 7.3 搜索（`lookup/search`）
+
+```json
+{"nickname": "<昵称>",
+ "players": [{"accountId": "<账号ID>", "nickname": "<昵称>", "side": "<Bear|Usec>", "level": "<数>"}],
+ "cached": false,
+ "mode": "season"}
+```
+
+- `accountId` 是**字符串**。`players` 里除了账号 ID 和昵称，还有阵营和等级（规划稿 2.2 里只写了前两个）。
+- 只搜到一个人时 `players` 只有一项；有多项时的排序方式和大小写规则还没有观察到。
+
+### 7.4 查询（`lookup`）：PVE、PVP、赛季
+
+三个模式的结构相同（下面是骨架，数组只列第一项，`…` 表示还有更多项；`<数>`、`<文本>` 是打码的值）：
+
+```json
+{
+ "nickname": "<昵称>", "side": "<Bear|Usec>", "accountId": "<账号ID>",
+ "experience": "<数>", "level": "<数>", "levelExp": {"current": "<数>", "next": "<数>"},
+ "prestigeLevel": "<数>", "memberCategory": "<数>", "selectedMemberCategory": "<数>",
+ "league": null, "ending": null, "endingsReached": [], "prestigeGameMode": "pve",
+ "slots": [{"slot": "FaceCover", "tpl": "<物品ID>", "en": {"name": "<文本>", "short": "<文本>"},
+            "ch": {"name": "<文本>", "short": "<文本>"}, "children": [], "icon": "<图片网址>",
+            "image": "<图片网址>", "bg": "<图片网址>", "render": null, "armor_class": null}, "…"],
+ "favorites": [],
+ "stats": {
+  "pmc":  {"time": "<数>", "counters": [[["Sessions", "Pmc"], "<数>"], [["ExitStatus", "Survived", "Pmc"], "<数>"],
+                                       [["Kills"], "<数>"], [["Deaths"], "<数>"], [["KilledPmc"], "<数>"], "…"]},
+  "scav": {"time": "<数>", "counters": [[["Sessions", "Scav"], "<数>"], "…"]}
+ },
+ "achievements": {"count": "<数>", "total": 106,
+                  "done": [{"id": "<成就ID>", "at": "<秒>", "rarity": "<文本>", "percent": "<数>",
+                            "en": {"name": "<文本>", "description": "<文本>"}, "ch": {"name": "<文本>", "description": "<文本>"}}, "…"]},
+ "skills": {"common": [{"id": "Endurance", "name": {"en": "Endurance", "ch": "耐力"}, "progress": "<数>", "lastAccess": "<秒>"}, "…"],
+            "mastering": [{"id": "<武器>", "progress": "<数>", "kills": "<数>", "templates": ["<物品ID>", "…"],
+                           "weapon": {"tpl": "<物品ID>", "icon": "<图片网址>", "en": {"…": "…"}, "ch": {"…": "…"}}}, "…"]},
+ "perks": {"common": [], "personal": []},
+ "battlePass": {"completed": "<数>", "total": 53},
+ "seasonalRewards": {"completed": "<数>", "total": 5},
+ "looked_up": "<ISO 8601 时间，UTC>", "cached": false,
+ "client_version": "1.3.0.1.48558", "mode": "pve"
+}
+```
+
+各模式的差别：
+
+| 字段 | PVE | PVP | 赛季 |
+|---|---|---|---|
+| `prestigeGameMode` | `pve` | `regular` | `regular` |
+| `league` | `null` | `null` | `{"rank", "name":{en,ch}, "max", "maxName":{en,ch}}`（联赛段位） |
+| `stats.scav.counters` | **空数组** | 有 | 有 |
+| `stats.pmc.time` 与 `stats.scav.time` | 相同 | 相同 | 相同，且与 PVP 相同 |
+| `slots` | 当前装备 | 当前装备，武器多一个 `build` | 只有刀鞘和安全箱（赛季开始时没带装备） |
+| `client_version` | `1.3.0.1.48558` | 同左 | 同左 |
+
+- 计数器是 `[[键…], 值]` 的数组，键名与 tarkov.dev 快照里 `overAllCounters.Items` 的 `Key` 完全一致（`Sessions`、`ExitStatus/Survived|Killed|Runner|Transit|MissingInAction`、`Kills`、`Deaths`、`KilledPmc`、`LongestWinStreak`）；没发生过的项不出现（例如没有 `Runner` 就没有这一项）。
+- `time` 是**账号总游戏时长（秒）**，PMC 和 Scav 相同，PVP 与赛季也相同，与 tarkov.dev 快照的 `totalInGameTime` 含义一致，不能当成单个模式的时长。
+- PVE 下 `scav.counters` 是空的：这一份样本里没有任何 PVE Scav 计数，不能确定是“没玩过 PVE Scav”还是 PVE 模式本来就不返回 Scav 统计。
+- `level` 由 Atlas 直接给出（与按经验表算出的一致），`levelExp` 是本级起点和下一级所需的总经验。
+- 技能 `progress` 与 tarkov.dev 一样是“等级 × 100”，满级 5100；技能自带中英文名。
+- 成就只给出已完成的（`done`）和总数（`total`），完成时间是 `at`（秒）。
+
+### 7.5 查询（`lookup`）：竞技场
+
+与上面共有的字段：`nickname`、`side`、`experience`、`level`、`levelExp`、`memberCategory`、`selectedMemberCategory`、`slots`、`favorites`、`achievements`（`total` 为 86）、`accountId`、`looked_up`、`client_version`（`0.6.2.0.48598`，竞技场自己的版本）、`cached`、`mode`。`prestigeLevel` 为 `null`。
+
+没有 `league`、`ending`、`stats`、`skills`、`perks`、`battlePass`、`seasonalRewards`；多出：
+
+```json
+{
+ "registered": "<秒>",
+ "arenaStats": {
+  "time": "<数>",
+  "modes": {
+   "UnrankedOverall":     {"GamesCount": "<数>", "Kills": "<数>", "Deaths": "<数>", "BestArp": "<数>", "MaxKillsWithoutDeaths": "<数>",
+                           "KillsWithoutDeaths": "<数>", "LongestWinStreak": "<数>", "LoseStreak": "<数>", "LongestLoseStreak": "<数>"},
+   "UnrankedTeamFight":   {"GamesCount": "<数>", "ArenaWins": "<数>", "ArenaLoses": "<数>", "Kills": "<数>", "Deaths": "<数>",
+                           "Assists": "<数>", "Headshots": "<数>", "MatchMvpCount": "<数>", "RoundMvpCount": "<数>", "BestArp": "<数>", "…": "共约 40 项"},
+   "UnrankedCheckPoint":  {"…": "同上"}, "UnrankedLastHero": {"…": "同上"},
+   "UnrankedBlastGang":   {"…": "同上"}, "UnrankedShootOutDuo": {"…": "同上"}
+  }
+ },
+ "battlePasses": [{"id": "<通行证ID>", "level": "<数>"}, "…",
+                  {"id": "<通行证ID>", "level": "<数>", "max": 100, "color": "#006C87", "title": "Season 3", "current": true}]
+}
+```
+
+- `arenaStats.modes` 的模式名和计数器名与 tarkov.dev 竞技场快照的 `stat.arenaOverAllCounters` **相同**，只是少了一层 `{"Counters": …}`。这份样本里只有 `Unranked…` 模式，排位模式的键名沿用 tarkov.dev 的写法（`Overall`、`TeamFight` 等），**未在 Atlas 上见到**。
+- 计数器名里有游戏原有的拼写错误（`GreanadeKills`、`ActivatedObjectCound` 等），原样保留。
+
+### 7.6 结论（回答规划稿 2.5 的问题）
+
+1. **数据时间**：`looked_up`（ISO 8601，UTC）是 Atlas 向游戏后端取数的时间；`cached` 表示这次是否命中 Atlas 的服务端缓存。没有“档案时间”之类的其他字段。
+2. **刷新**：不需要额外参数。`cached:false` 时就是当场从游戏后端取的新数据（耗时 2.6～14.6 秒）；18 秒后重查同一模式返回 `cached:true`、`looked_up` 不变，与公开代码里 60 秒的结果缓存一致。所以“刷新”就是绕过插件本地缓存、再发一次 `lookup`；60 秒内重复刷新只会拿到 Atlas 的缓存。
+3. **四个模式都有效**：同一账号 ID 用 `mode` 切换即可，每个模式的 `looked_up` 各自独立；不需要先在 tarkov.dev 搜索过这名玩家。
+4. 搜索也返回 `cached`，同样是 `no-store`。
+5. 断连（请求 20）没有返回任何状态码，与第 4 节的连接重置一样，按连接失败处理，不能当成“没有这名玩家”。
+
+### 7.7 开发期间的其他请求（如实记录）
+
+| # | 时间(UTC) | 请求 | 结果 |
+|---|---|---|---|
+| 26–28 | 08:1x | 开发中运行旧的插件测试时，测试替身没有拦住新加的 Atlas 路径，测试里的虚构昵称被真的发到了 `lookup/search` 和 `lookup`（约 3～6 次，确切次数没有记录） | 有一次搜到了同名的真实玩家并返回了档案；结果只出现在测试输出里，没有保存。之后在 `tests/test_plugin.py` 的 `setUp` 加了拦截：测试里任何 Atlas 玩家请求都会直接失败 |
+| 29 | 08:19 | 冒烟测试：插件自己的 `AtlasClient` 查玩家 A 的 PVE | **502** `{"detail":{"error":"backend"}}`（Atlas 的上游当时不可用） |
+| 30 | 08:20 | 用 curl 重复一次，确认 502 来自 Atlas | 同上，502 `backend`，耗时 3.7 秒 |
+
+- `backend` 错误码是 502、`application/json`，没有 `Retry-After`。插件把它归为“Atlas 暂时无法查询”，回退到 tarkov.dev 快照，不说成“没有这名玩家”。
+- 之后停止请求；作图检查改用 7.1 已保存的响应，不再访问 Atlas。

@@ -9,11 +9,13 @@
 
 # 塔科夫数据查询
 
-在 AstrBot 聊天中查询《逃离塔科夫》的数据：玩家档案、服务器状态、Boss 刷率，以及各服务器的平均匹配时间。玩家档案、服务器状态和 Boss 刷率来自 [tarkov.dev](https://tarkov.dev) 的公开内容，匹配时间来自 [Atlas](https://eftforge.com/atlas)。
+在 AstrBot 聊天中查询《逃离塔科夫》的数据：玩家档案、服务器状态、Boss 刷率，以及各服务器的平均匹配时间。玩家档案默认来自 [Atlas](https://eftforge.com/atlas)，支持 PVP、PVE、赛季和竞技场，每次只查指定的一个模式；可切换到 tarkov.dev 快照。服务器状态和 Boss 刷率来自 [tarkov.dev](https://tarkov.dev)，匹配时间来自 Atlas。
+
+Atlas 竞技场采用选手名册图片：排位／非排位汇总表、各模式战绩、成就完成数／总数，以及按稀有度和获得时间排序的前 9 项成就。顶部带 Atlas 标志、来源和链接，底部注明数据时间和特别致谢。成就名称与描述直接使用 Atlas 返回的中文，缺少中文时回退英文；插件不翻译。见 [玩家查询说明](docs/player-query.md#atlas-玩家查询默认)。
 
 ## tarkov.dev 对机器人调用的限制与现状（玩家档案）
 
-玩家档案来自 tarkov.dev 公开的快照，它没有向第三方机器人开放独立的调用方式，插件也不会尝试绕过限制：**只有在 tarkov.dev 上被搜索过的玩家才有档案，档案不会自动更新，第一次查某个玩家（包括你自己）之前要先到网站搜索他一次。** 详细说明和申请独立调用权限的途径见 [玩家数据查询](docs/player-query.md#tarkovdev-对机器人调用的限制与现状)。服务器状态和 Boss 刷率读取的是另一份公开的游戏数据，没有这些限制。
+**只有在 tarkov.dev 上被搜索过的玩家才有档案，档案不会自动更新，第一次查某个玩家之前要先到网站搜索他一次。** 默认 Atlas 查询不需要这一步，可在命令末尾加“刷新”重新查询。详细说明见 [玩家数据查询](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/claude/vibrant-newton-lxci9c/docs/player-query.md#tarkovdev-对机器人调用的限制与现状)。特别感谢作者 Morph1ne，其维护的项目 [**Atlas**](https://eftforge.com/atlas) 解决了长期以来的这部分难题。
 
 ## 功能
 
@@ -32,45 +34,15 @@
 
 ## 开始使用
 
-在群里先 @机器人，再发送命令，命令前面不加 `/`，例如 `@机器人 tarkov 帮助`（腾讯限制未经验证的 QQ 机器人只能这样被调用）。支持 `/` 唤醒的平台可以直接发 `/tarkov 帮助`，两种写法插件都能识别。
+请到对应文档查看命令与用法：
 
-**查玩家档案**：第一次先在 tarkov.dev 搜索这名玩家，把跳转后的网址发给插件；之后可以绑定自己、用昵称或账号 ID 查询。QQ 官方机器人的命令不能有空格，可以改用 `@机器人 tpve 昵称` 这样的单词命令（见“通用设置”）。
-
-```text
-@机器人 tarkov 绑定 https://tarkov.dev/players/regular/1234567   绑定自己的账号
-@机器人 tarkov                                                   查自己
-@机器人 tarkov pve Player_One                                    查别人（模式、昵称或账号 ID）
-@机器人 tarkov 竞技场 7654321                                    查竞技场档案
-@机器人 tarkov 帮助                                              显示用法
-```
-
-模式、绑定、昵称规则、竞技场段位等见 [塔科夫玩家数据查询](docs/player-query.md)。
-
-**查服务器状态和 Boss 刷率**：管理员先在配置页打开“服务器状态图片查询”或“Boss 刷率功能总开关”。
-
-```text
-@机器人 tarkov status        服务器状态
-@机器人 tarkov boss          各地图日常 Boss 与活动 Boss 的刷率全表
-@机器人 tarkov boss pve      指定 PVE；也支持 pvp、PVP S、赛季
-@机器人 tarkov boss 默认 pve 绑定个人 Boss 默认模式，之后直接查 boss
-@机器人 tarkov boss 变化     最近一次刷率变化
-```
-
-变化推送、活动 Boss 规则、头像和设置见 [服务器状态与 Boss 刷率](docs/status-and-boss.md)。
-
-Boss 显式指定模式优先于个人默认模式；未绑定默认模式时保留原来的多模式查询。绑定仅影响自己的 Boss 查询，不修改监控配置或玩家档案默认模式。
-
-**查服务器匹配时间**：默认开启，不带参数。
-
-```text
-@机器人 tarkov 匹配          各数据中心平均匹配时间（也可写 tarkov matching；QQ 单词命令 tmatch）
-```
-
-读图方法、缓存规则和设置见 [服务器匹配时间](docs/matching.md)。
+- [玩家档案查询（绑定账号、PVP／PVE／赛季／竞技场）](docs/player-query.md#atlas-玩家查询默认)
+- [服务器状态与 Boss 刷率](docs/status-and-boss.md)
+- [服务器匹配时间](docs/matching.md)
 
 ## 回复方式
 
-这一节说的是**玩家数据查询**的回复。在配置“输出方式”中选择，默认是图片：
+默认 Atlas 玩家查询统一回复图片，竞技场使用选手名册风格，其他模式使用深色面板；图片后附来源链接和刷新用法。以下三种“输出方式”适用于选择 tarkov.dev 来源或 Atlas 故障时的快照回复：
 
 - **图片**：情报档案风格，用自带的开源字体在本地绘制，不经过在线渲染服务；图片最下方写明插件名称、版本、仓库和开源许可，后面附一行玩家页链接。画图失败时自动改发文字。图上的元素都是插件自己画的，没有使用游戏素材；昵称里字体画不出的字符显示为 `?`。
 - **文字**：纯文字，任何平台都能正常显示。
@@ -78,13 +50,9 @@ Boss 显式指定模式优先于个人默认模式；未绑定默认模式时保
 
 `@机器人 tarkov 帮助` 跟随这个设置：选“图片”时回复一张用法图片，否则回复文字版用法。找不到玩家、同名列表和出错提示，无论选哪种方式都以文字回复。
 
-![图片回复示例](docs/preview.jpg)
+图片示例（虚构数据，点击查看）：[玩家档案](docs/preview.jpg)、[竞技场快照](docs/arena_preview.jpg)、[Atlas 竞技场](docs/arena_legacy_atlas_reference_v2.jpg)、[帮助](docs/help_preview.jpg)。Atlas 竞技场示例含排位演示，实际只显示接口有记录的分区。
 
-![竞技场图片示例](docs/arena_preview.jpg)
-
-![帮助图片示例](docs/help_preview.jpg)
-
-以上示例都是玩家数据查询的回复，数据均为虚构，由 `tools/build_preview.py` 生成。文字示例：
+tarkov.dev 快照的文字回复示例（虚构数据）：
 
 ```text
 【塔科夫 PVE 档案】Test_Player（账号 ID 1234567）
@@ -128,7 +96,7 @@ astrbot_tarkov_datasearch v0.5.0 · https://github.com/EvergardenRoxy/astrbot_ta
 
 ## 特别致谢
 
-- **[Atlas](https://eftforge.com/atlas)**（[EFTForge](https://github.com/SouthHorizons76/EFTForge) 项目的一部分，作者 Morph1ne / SouthHorizons76）：Atlas 开发者已允许本项目调用其公开接口。0.5.0 起，“服务器匹配时间”使用 Atlas 的数据，图片按 Atlas 开发者的要求带有 Atlas 标志、名称和链接（标志来源见 [THIRD_PARTY.md](THIRD_PARTY.md)）。“可主动刷新的玩家数据查询”仍在规划中，当前版本的玩家数据仍来自 tarkov.dev 的公开快照（规划见 [docs/atlas-integration-plan.md](docs/atlas-integration-plan.md)）。Atlas 是独立的开源项目（AGPL-3.0-or-later），与本插件没有隶属关系，也不是 Battlestate Games 或 tarkov.dev 的项目。
+- **[Atlas](https://eftforge.com/atlas)**（[EFTForge](https://github.com/SouthHorizons76/EFTForge) 项目的一部分，作者 Morph1ne / SouthHorizons76）
 
 ## 开源许可
 

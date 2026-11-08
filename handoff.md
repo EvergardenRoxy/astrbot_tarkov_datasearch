@@ -616,3 +616,142 @@ being dropped plugin-wide later, profile text/Markdown untouched for now); comma
   access, one query per owner), help-card/QQ-word expectations updated. 358 tests pass. Not verified on a live
   chat platform.
 
+
+
+## Atlas player picture, icon cache and query history (2026-11-08, in progress)
+
+Maintainer decisions this round (redo after reviewing the first draft; draft commit `f9e1104` kept as reference):
+a new picture after the Atlas website's player page (maintainer's reference screenshot), **old tarkov.dev cards
+untouched** (image.py, arena_image.py, card.py, output.py, arena.py, help_image.py restored to `175f8bc`); Atlas data is
+always a picture (text/Markdown are no longer maintained and will be removed later); tarkov.dev snapshot stays the
+fallback. Search, budgets, per-user quotas and the refresh word stay as in `docs/atlas-integration-plan.md` §3.
+
+- **Picture** (`atlas_card.build()` -> `atlas_image.render_atlas_image(card, icons)`, 1600 px dark board): Atlas logo and
+  link at the very top (Atlas author's requirement), header (level badge, level, name, side as text, EXP bar, six
+  small numbers), equipment grid (13 slots; tarkov.dev item picture from Atlas' `image` link = `base-image`, i.e. the
+  weapon without attachments; never Atlas' `render`; English short name as on the Atlas page), faction (text) and
+  prestige (icon), info row (account id, highest league, last active, lookup time), the mode's 12 numbers, rare
+  achievements (9, by rarity seasonal > legendary > rare > common, then newest first; icon + name + share), statistics (overview/PMC/Scav, 15 rows), skills
+  drawn like the old card (`skill_count`), the 10 latest achievements (icon, name, description <= 2 lines, rarity,
+  share, time), footer with the Atlas thanks. Not shown (maintainer): favourite weapons/items, endings, edition and
+  profile icon, armour class badges, stat icons, average survival time, account age.
+- **Counter rules** (read off the reference picture, maintainer: the old K/D was wrong): K/D = player kills /
+  (killed + left); K/D (all kills) = all kills / (killed + left); AI kills = all kills - player kills; overview =
+  PMC + Scav, including the longest streaks (as Atlas shows); a counter Atlas omits (e.g. `Left`) is 0. The old cards
+  keep their own (old) formula.
+- **Pictures** (`atlas_assets.py`): only `https://assets.tarkov.dev/<name>.(png|webp|jpg)`; stored as PNG scaled into
+  512 px under `<data>/atlas-assets/`, **no expiry**. One-shot setting `atlas_assets_update` downloads every common icon
+  (all achievement icons of the regular and PVE `tasks` feeds, level badges from `items.playerLevels`, prestige icons;
+  153 files, 12.7 s in the dev environment); anything else (item pictures) on first use (<= 4 at once, <= 48 per
+  picture). Failures draw an empty placeholder box and are not retried for 10 minutes. `atlas_assets_clear` removes
+  everything. The icon catalog (`catalog.json`) is built from the public cache (`public_resource`). Arena
+  achievements are not in tarkov.dev's data (0/67 in the sample).
+- **History** (`atlas_history.py`, `<data>/atlas-history.sqlite3`): raw Atlas document (gzip JSON) per successful
+  lookup, one row per (account, mode, `looked_up`); never tarkov.dev snapshots. Settings: `atlas_history_enabled`
+  (privacy switch; off = no writes and the file is deleted on load), `atlas_history_hours` (default 180, 1-8760),
+  `atlas_history_max_mb` (default 64, 16-128; oldest rows go first). Read interface for later work: `latest`,
+  `history(since, until)`, `compare` (oldest/newest in a range), `accounts(since)`. No scheduler.
+- **Wiring**: `TarkovPlugin.atlas_picture()` / `atlas_icons()`; notes (rename, cache age) and the refresh hint go in the
+  text line after the picture; a drawing failure answers with text and the links. **Arena under the Atlas source uses
+  the tarkov.dev path for now** (its Atlas picture is the next step). `AtlasPlayers` keeps the raw document in
+  `summary['doc']`.
+- **Font**: `tools/build_atlas_chars.py` writes the characters of tarkov.dev's Chinese achievement names/descriptions to
+  `data/atlas-text-chars.txt`, which `build_fonts.py` adds (subset 694 -> 1,071 glyphs, 296 -> 470 KB; package 848 KB of
+  the 1 MiB cap). Including Chinese item names as well would have made the font 813 KB and the package too big.
+- **Dev environment**: personal environment `astrbot_tarkov_datasearch` now also allows `json.tarkov.dev` and
+  `assets.tarkov.dev`.
+
+Invariant change (§8): besides the fixed Boss portrait paths, `assets.tarkov.dev` picture links from Atlas documents
+and tarkov.dev's public data are fetched, validated by the URL pattern above; no other picture host.
+
+Decisions taken without the maintainer (revisit): history switch on by default; size cap default 64 MB; stored
+pictures scaled into 512 px; 10-minute retry wait and 48 downloads per picture;  arena temporarily on tarkov.dev; equipment names in English.
+
+Observations for the maintainer: every PVE achievement in Atlas' PVE sample has `percent` 0, so "rare" cannot rank
+there (tarkov.dev's PVE feed has its own completion shares); tarkov.dev's `base-image` of a weapon is the bare weapon
+(small in the slot); the arm band picture is mostly black.
+
+Tests: `test_atlas_picture.py` (card rules, odd fields, rendering, URL validation, sanitising, first-use download,
+failure wait, prefetch/catalog/clear, shared downloads, history rows/pruning/size cap/delete) and the rewritten
+`AtlasPluginTests` (picture whatever the output setting, links line, arena on tarkov.dev, history only for Atlas and only
+when on, one-shot settings consumed once, drawing failure). 413 tests pass. Previews were rendered from the saved
+probe responses in the scratch directory only (real player data, not in the tree). Not verified on a chat platform.
+
+Follow-up (maintainer, 2026-11-08):
+- **Rare achievements**: every mode now ranks by rarity, then completion time (newest first); Atlas' `percent` is only
+  displayed. Reason: every PVE achievement has `percent` 0 in Atlas' data.
+- **Known problem, recorded, not solved — the main weapon picture**: the slot shows tarkov.dev's picture of the weapon
+  item alone (`base-image`), so a modded weapon appears bare: no scope, stock, magazine or other attachments, and it
+  is drawn small in the slot. Showing the real build needs the attachments composed onto the weapon ("拼图"); Atlas'
+  own composed render (`render`, `/atlas/api/lookup-art/...`) is excluded by the maintainer. Atlas' document has what a
+  composition would need: each attachment in `slots[].children` (recursive) with its tarkov.dev picture link, slot
+  name/id, and the weapon's `build` payload. Not started; to be designed with the maintainer.
+- Font question (deleting the bundled font) answered in chat: without it Chinese cannot be drawn on servers without
+  a Chinese system font; options A-D listed there, no change made.
+
+Follow-up 2 (maintainer, 2026-11-08):
+- **Full font on first use** (option C of the font question; `font_download.py`): the Atlas picture asks
+  `FullFont.path_or_start()`; the first time it starts a background download of the full Noto Sans SC variable font
+  (17,772,300 bytes, sha256 `a3041811…`, the same file the bundled subset is cut from, google/fonts commit `86aced9`)
+  into `<data>/fonts/` and draws with the bundled subset meanwhile. Mirrors in order: optional setting
+  `font_download_url` (https only), cdn/fastly/gcore.jsdelivr.net, raw.githubusercontent.com; a download is used only if
+  size and sha256 match; when all fail the next try waits 30 minutes. With the full font `atlas_image.safe()` no longer
+  replaces characters. The bundled subset stays as the fallback (package unchanged). Dev check: jsDelivr is blocked in
+  this environment and was skipped; GitHub served the file in 1.9 s. jsDelivr's reachability from mainland China is
+  not verified here; the setting lets an administrator point at a local mirror.
+- Invariant change (§8): the font download may contact the four mirror hosts above and the administrator's https
+  address; nothing else, and only the pinned file is accepted.
+- **Weapon composition test** (experiment only, scratch directory, not in the plugin): Atlas gives attachments as a slot
+  tree with tarkov.dev pictures but **no positions**, so attachments cannot be placed on the weapon picture the way the
+  game draws it. Tested (a) matching the build to a tarkov.dev weapon preset (500 presets; the composed preset picture
+  exists): no sample build matches exactly (AK-12 closest preset differs by 6 missing / 4 extra parts, M1A by 4 / 3), so
+  this only helps unmodified presets; (b) a loadout board: weapon picture plus every attachment picture with name and
+  slot (all 17/10 pictures found): complete and correct, but a parts list rather than an assembled gun, and three rows
+  tall. Waiting for the maintainer's choice.
+
+Follow-up 3 (maintainer, 2026-11-08): **option B adopted, guns by name only** — the equipment cells of the guns
+(primary on sling, primary on back, holster) show the gun's English short name and its attachment count, no picture;
+a new section "武器配件" lists each gun's attachments (depth first, loaded cartridges left out, at most 40) with the
+tarkov.dev picture, name and slot name (top-level slots in gold). Rarity order for rare achievements: seasonal first,
+then legendary, rare, common (maintainer). The "known problem" above is thereby handled by listing, not composing.
+
+Follow-up 4 (maintainer, 2026-11-08): the equipment grid drops the three weapon slots (primary on sling, primary on
+back, holster), the melee slot and the secure container: eight slots in two rows remain. The "武器配件" section is
+removed (no weapon pictures or attachment lists at all now). Rare achievements are a full-width bar under the
+equipment/headline panels: completion line and bar, then the nine achievements in one row (icon, name, share,
+rarity). The equipment and headline panels share one height.
+
+## Atlas Arena register and achievement text provenance (2026-11-08)
+
+Implemented with OpenAI Codex on `feat/arena-query-display`, based on the maintainer's requested
+`claude/vibrant-newton-lxci9c` head `13ae46c`. The maintainer reviewed a dark prototype, chose the original
+Arena Masters register, then approved six-column totals tables, completed/total achievement counts and the
+nine rarest achievements. This section supersedes the earlier temporary Arena-on-tarkov.dev routing decision.
+
+- `main.py`: Atlas now handles explicit Arena queries/bindings through the same single-mode lookup, nickname
+  resolution, quota, cache, refresh and history flow as the other modes. Only failed Atlas lookups fall back
+  to labelled tarkov.dev snapshots; an explicit no-profile response does not. Snapshot-source behaviour remains.
+- `atlas_card.build(..., 'arena')` uses `atlas_arena_image.build_arena()`, then `atlas_image.render_atlas_image()`
+  dispatches to the Arena register. The shared old renderer accepts local typography/footer providers and can
+  return its Pillow image, avoiding process-wide preview monkeypatches and repeated JPEG encoding. Default
+  snapshot rendering is unchanged. Full-font loading still uses the existing first-use download mechanism.
+- Register: original paper/leather/ARP medallion/W-L bars; per-section six-column totals tables, mode rows,
+  completed/total achievements and up to nine achievement text cards in three columns, with rarity, share and date.
+  No Arena icon fetch/catalog read: the known catalog has no Arena achievement artwork. Missing sections and
+  totals are not invented. The former "last bout" label is now "latest achievement", since Arena does not return
+  a last-match timestamp. The source header carries the unmodified Atlas logo and link; footer gives looked_up,
+  server cache status, Atlas thanks and plugin attribution. Reply text retains clickable links and refresh hints.
+- `atlas_card.achievement_data()` shares rarity order (seasonal, legendary, rare, common, unknown last), then
+  newest achievement time, with PVP/PVE/season. Text provenance checked: `achievement_list()` reads each entry's
+  `ch.name` / `ch.description` using `text_of()`, with independent `en` fallback for each field. The plugin does
+  not translate these strings; the tarkov.dev catalog supplies icons only. No claim is made about Atlas' own
+  upstream translation source. This behaviour now has regression coverage across all four modes.
+- Preview: `tools/build_arena_legacy_preview.py [pinned-full-font.ttf]` invokes the production renderer with
+  invented fixture data and marks the result as a preview. `docs/arena_legacy_atlas_reference_v2.jpg` includes
+  invented ranked records for layout review; the live Atlas probe had only unranked records. No live player
+  lookups were made for this work. Earlier visual experiments remain as comparison artifacts.
+
+Validation: all 425 tests passed on Python 3.12 (12.748 s), including Arena Atlas routing, real JPEG rendering,
+cache/refresh/name/url paths, history persistence, fallback vs missing profiles, rarity ordering, empty/odd fields,
+text provenance and concurrent snapshot/Atlas rendering. Release ZIP contents/size and font coverage checks pass.
+The updated preview was visually inspected. Live AstrBot/QQ delivery and Python 3.13 were not run here.

@@ -101,11 +101,65 @@ def notes_of(card):
 def page_height(card):
     """Enough room for everything; the picture is cropped to what was drawn."""
     rows = sum(150+38*len(section['modes']) for section in card['sections'])
-    return 520+rows+sum(26*(2+len(note)//30) for note in notes_of(card))
+    extra = 60*len(card['sections']) if card.get('overall_table') else 0
+    if card.get('achievement_details') is not None:
+        extra += 80+110*((len(card['achievement_details'])+2)//3)
+    return 520+rows+extra+sum(26*(2+len(note)//30) for note in notes_of(card))
 
 
-def render_arena_image(card):
+def overall_table(d, stats, y, pw, font=font, fit=fit):
+    """Six columns, with a label row and a value row, in the register's ink and rules."""
+    cells = (('出场', stats.get('games')), ('击杀', stats.get('kills')), ('阵亡', stats.get('deaths')),
+             ('K/D', kd(stats)), ('最长连杀', stats.get('max_killstreak')), ('最长连胜', stats.get('win_streak')))
+    width = (pw-80)/len(cells)
+    d.rectangle([40, y, pw-40, y+70], outline=RULE)
+    d.line([40, y+27, pw-40, y+27], fill=RULE)
+    for i, (label, value) in enumerate(cells):
+        x = 40+i*width
+        if i:
+            d.line([x, y, x, y+70], fill=RULE)
+        centered(d, x+width/2, y+5, label, font('sc', 13, 600), BROWN)
+        value = str(value) if value is not None else '—'
+        centered(d, x+width/2, y+33, value, fit(d, value, 'osw', 25, width-12, 500), INK)
+    return y+86
+
+
+def rare_achievements(d, entries, y, pw, font=font, safe=safe):
+    """Compact paper cards; Arena's unavailable achievement art is not substituted."""
+    d.rectangle([40, y, pw-40, y+36], fill=INK)
+    d.text((54, y+6), f'稀有成就 · 前 {len(entries)} 项', font=font('sc', 17, 700), fill=PAGE)
+    y += 48
+    if not entries:
+        d.text((40, y), '暂无成就记录', font=font('sc', 16, 500), fill=BROWN)
+        return y+42
+    width = (pw-80-20)/3
+    tones = {'seasonal': (48, 85, 120), 'legendary': (122, 86, 20), 'rare': (105, 64, 120), 'common': BROWN}
+    for i, entry in enumerate(entries):
+        x, top = 40+(i % 3)*(width+10), y+(i//3)*110
+        tone = tones[entry['tone']]
+        d.rectangle([x, top, x+width, top+98], outline=RULE)
+        d.rectangle([x, top, x+3, top+98], fill=tone)
+        d.text((x+10, top+8), entry['rarity'], font=font('sc', 12, 700), fill=tone)
+        name = safe(entry['name'])
+        f = font('sc', 15, 700)
+        lines = wrap(d, name, f, width-20)
+        for k, line in enumerate(lines[:2]):
+            if k == 1 and len(lines) > 2:
+                line = line[:-1]+'…'
+            d.text((x+10, top+29+k*20), line, font=f, fill=INK)
+        share = f"{entry['percent']:g}% 玩家" if entry['percent'] is not None else '完成比例 —'
+        right(d, x+width-10, top+10, share, font('sc', 11, 400), BROWN)
+        from .atlas_card import when
+        date = when(entry['at'], '%Y-%m-%d') if entry['at'] else None
+        d.text((x+10, top+77), date or '—', font=font('mono', 12), fill=BROWN)
+    return y+110*((len(entries)+2)//3)+12
+
+
+def render_arena_image(card, *, font_provider=font, fit_provider=fit, safe_provider=safe,
+                       footer_provider=footer, as_image=False):
     """JPEG bytes of the Arena card."""
+    # Providers are local to this render, so Atlas' optional full font cannot change other in-flight cards.
+    font, fit, safe = font_provider, fit_provider, safe_provider
     pw = W-80
     page = texture(PAGE, 23, 6, pw, page_height(card))
     d = ImageDraw.Draw(page)
@@ -113,8 +167,10 @@ def render_arena_image(card):
     d.text((40, 82), '竞技场主办方 · 选手名册   REGISTRY OF FIGHTERS', font=font('sc', 17, 600), fill=BROWN)
     d.line([40, 116, pw-40, 116], fill=INK, width=2)
     d.line([40, 121, pw-40, 121], fill=INK, width=1)
+    achievement_count = (f"{card['achievements']} / {card['achievement_total']}"
+                         if card.get('achievement_total') is not None else f"{card['achievements']} 个")
     rows = [('选手 FIGHTER', card['nickname']), ('登记号 ENTRY', str(card['aid']) if card['aid'] is not None else '—'),
-            ('成就 HONOURS', f"{card['achievements']} 个"), ('最近出场 LAST BOUT', card['last_active'] or '—')]
+            ('成就 HONOURS', achievement_count), (card.get('last_active_label', '最近出场 LAST BOUT'), card['last_active'] or '—')]
     y = 140
     for key, value in rows:
         d.text((40, y), key, font=font('sc', 14, 600), fill=BROWN)
@@ -137,7 +193,9 @@ def render_arena_image(card):
             right(d, pw-54, y+6, f'{result[0]} W  ·  {result[1]} L', font('osw', 22, 600), GOLD)
         y += 52
         o = section['overall']
-        if o:
+        if o and card.get('overall_table'):
+            y = overall_table(d, o, y, pw, font, fit)
+        elif o:
             total = (f"出场 {o.get('games', 0)}   击杀 {o.get('kills', 0)}   阵亡 {o.get('deaths', 0)}   K/D {kd(o) or '—'}   "
                      f"最长连杀 {o.get('max_killstreak', '—')}   最长连胜 {o.get('win_streak', '—')}")
             d.text((40, y), total, font=fit(d, total, 'sc', 16, pw-80), fill=INK)
@@ -164,6 +222,8 @@ def render_arena_image(card):
             y += 38
         d.line([40, y, pw-40, y], fill=RULE, width=1)
         y += 30
+    if card.get('achievement_details') is not None:
+        y = rare_achievements(d, card['achievement_details'], y, pw, font, safe)
     for note in notes_of(card):
         for line in wrap(d, safe(note), font('sc', 15, 400), pw-80):
             d.text((40, y), line, font=font('sc', 15, 400), fill=INK)
@@ -183,5 +243,5 @@ def render_arena_image(card):
     d.rectangle([14, 14, W-14, height-14], outline=GOLD, width=2)
     img.paste(page.crop((0, 0, pw, page_h)), (40, 40))
     wax_seal(d, W-130, page_h, 46)
-    footer(d, 40+page_h+14, card['updated'], (214, 196, 160), (180, 160, 124))
-    return jpeg(img)
+    footer_provider(d, 40+page_h+14, card['updated'], (214, 196, 160), (180, 160, 124))
+    return img if as_image else jpeg(img)
