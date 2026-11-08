@@ -62,6 +62,8 @@ def previous_table(state):
 
 
 async def main():
+    from download_font import prepare
+    prepare()
     proxy = sys.argv[1] if len(sys.argv) > 1 else os.environ.get('HTTPS_PROXY')
     now = time.time()
     path = mode_path(MODE)

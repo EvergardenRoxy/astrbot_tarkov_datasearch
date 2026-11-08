@@ -17,17 +17,17 @@ The data describes game content of Escape from Tarkov (Battlestate Games); it is
 `{mode}/{accountId}.json`, regular mode stored as `profile`) follows `TarkovDev.cs` and `GameWatcher.cs` in
 https://github.com/the-hideout/TarkovMonitor (revision `3cf361efc49fecf6bffce3cae567f55a303757cd`).
 
-**Fonts** (in `tarkov_core/fonts/`, each with its licence text next to it; all SIL Open Font License 1.1, from
-https://github.com/google/fonts, rebuilt by `tools/build_fonts.py`):
-- `NotoSansSC-Subset.ttf`: a subset of Noto Sans SC (variable), Copyright 2014-2021 Adobe, with Reserved Font Name
-  'Source'. Cut down to the characters listed in `NotoSansSC-Subset.chars.txt`; hinting removed. Source file sha256
-  `a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da`.
+**Fonts** (all SIL Open Font License 1.1, from https://github.com/google/fonts; licence texts are bundled in
+`tarkov_core/fonts/`). No font is subsetted or rebuilt by this plugin:
 - `Oswald-Variable.ttf`: Oswald (variable), Copyright 2016 The Oswald Project Authors, unmodified (file renamed).
 - `ShareTechMono-Regular.ttf`: Share Tech Mono, Copyright (c) 2012 Carrois Type Design, Ralph du Carrois, with
   Reserved Font Name 'Share', unmodified (a modified copy could not keep the reserved name).
-- Not bundled: the Atlas player picture downloads the full, unmodified Noto Sans SC variable font (same file and
-  sha256 as the source above, google/fonts commit `86aced9`) into the plugin's data directory on first use; it is
-  verified by size and sha256 and stays under the SIL Open Font License 1.1 (licence text: `OFL-NotoSansSC.txt`).
+- Not bundled: all pictures use the full, unmodified Noto Sans SC variable font, Copyright 2014-2021 Adobe,
+  with Reserved Font Name 'Source'. Downloaded into the plugin's data directory before the first image, then
+  reused across restarts. Pinned google/fonts commit `86aced91de05cd4f96a06838124cca45be337b2b`, size 17,772,300 bytes,
+  sha256 `a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da`.
+  Licence text: `OFL-NotoSansSC.txt`. Development tests/previews cache the same unmodified file using
+  `tools/download_font.py`; they do not generate character lists or modify fonts.
 
 **Boss table background.** `tarkov_core/assets/boss-background.jpg` is an AI-generated texture (no game art, text or logos)
 supplied by the project maintainer, who states it was generated with GPT-Image-2.5-sunburst. According to the maintainer, the

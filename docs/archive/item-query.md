@@ -5,7 +5,7 @@
 ## 在哪里找到完整实现
 
 - 远端分支 `archive/item-query`，固定在提交 `9f29e6f`（`1024` 分支剥离前的最后一个提交）。该提交里仍有全部代码、32 项测试和配置项。
-- 想恢复时：`git checkout archive/item-query`，或从该分支里挑出 `tarkov_core/items.py`、`item_catalog.py`、`item_image.py`、`item_icons.py`、`tarkov_core/data/item-label-chars.txt`、`tests/test_items.py`、`test_item_plugin.py`、`test_item_icons.py` 以及 `main.py` 里的物品段落。恢复后须重新运行 `tools/build_fonts.py`，并把 `tools/verify_qq_routes.py` 中的物品用例补回去。
+- 想恢复时：`git checkout archive/item-query`，或从该分支里挑出 `tarkov_core/items.py`、`item_catalog.py`、`item_image.py`、`item_icons.py`、`tests/test_items.py`、`test_item_plugin.py`、`test_item_icons.py` 以及 `main.py` 里的物品段落。恢复到当前版本时应使用完整中文字体，无需恢复旧字符表或字库制作脚本；并把 `tools/verify_qq_routes.py` 中的物品用例补回去。
 - 标签 `archive-item-query-v1` 推送失败（网络被中断），没有创建，以分支为准。
 
 ## 当时的实现要点（摘要）

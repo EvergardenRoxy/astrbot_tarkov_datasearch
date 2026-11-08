@@ -1,3 +1,5 @@
+from font_support import TEST_FONT  # Complete font fixture; no network access.
+
 import asyncio
 import copy
 import io
@@ -305,8 +307,7 @@ class EventBossTests(unittest.TestCase):
         self.assertEqual(compact_rows(rows)[0]['rates'], ['1'])
 
     def test_infected_name_is_drawable(self):
-        from tarkov_core.image import safe
-        self.assertEqual(safe('活动 感染者'), '活动 感染者')
+        self.assertNotEqual(bytes(font('sc', 20).getmask('染')), bytes(font('sc', 20).getmask('\ue000')))
 
     def test_resident_bosses_stay_rows_and_unknown_bosses_become_events(self):
         mobs = {**self.SOLDIERS, 'bossTagilla': 'tagilla', 'bossScourgeEventLab': 'scourge'}

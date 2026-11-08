@@ -34,13 +34,13 @@ def render_atlas_arena_image(card):
         lines = (stamp, '特别致谢：Atlas（EFTForge 项目的一部分，作者 Morph1ne / SouthHorizons76）',
                  f'{NAME} v{VERSION} · {REPO.removeprefix("https://")}', NOTICE)
         for i, line in enumerate(lines):
-            line = ui.safe(line)
+            line = str(line)
             f = ui.fitted(d, line, 'sc', 12, arena_image.W-64, 400)
             d.text(((arena_image.W-d.textlength(line, font=f))/2, top+i*19), line, font=f,
                    fill=color if i < 2 else dim)
 
     register = arena_image.render_arena_image(card, font_provider=ui.font, fit_provider=ui.fitted,
-                                              safe_provider=ui.safe, footer_provider=footer, as_image=True)
+                                              footer_provider=footer, as_image=True)
     header_h = 100
     img = arena_image.texture(arena_image.LEATHER, 21, 14, arena_image.W, register.height+header_h)
     img.paste(register, (0, header_h))
@@ -52,7 +52,7 @@ def render_atlas_arena_image(card):
     d.text((x, 25), '数据来源：Atlas', font=ui.font('sc', 19, 600), fill=(226, 214, 186))
     d.text((x, 55), ATLAS_URL, font=ui.font('mono', 18), fill=(214, 196, 160))
     if card.get('reference_label'):
-        label = ui.safe(card['reference_label'])
+        label = str(card['reference_label'])
         f = ui.fitted(d, label, 'sc', 13, 180, 400)
         d.text((arena_image.W-38-d.textlength(label, font=f), 32), label, font=f, fill=(214, 196, 160))
     return ui.jpeg(img)

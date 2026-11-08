@@ -1,5 +1,4 @@
 import io
-import json
 import re
 import time
 import unittest
@@ -151,30 +150,21 @@ class ImageTests(unittest.TestCase):
         self.assertNotIn('VERIFIED', source)
         self.assertIn('SNAPSHOT', source)
 
-    def test_characters_the_fonts_lack_become_question_marks(self):
-        self.assertEqual(image.safe('Ab_1 耐力'), 'Ab_1 耐力')
-        self.assertEqual(image.safe('名字ü'), '名字?')
-        self.assertEqual(image.safe('耐力', latin=True), '??')
-
-    def test_font_covers_every_character_of_the_code(self):
-        # Fails when Chinese text is added to the code without re-running tools/build_fonts.py.
-        chars = image.charset()
-        wanted = set()
-        for path in [ROOT/'main.py', *(ROOT/'tarkov_core').glob('*.py')]:
-            wanted |= {char for char in path.read_text(encoding='utf-8') if ord(char) > 126 and char.isprintable()}
-        static = json.loads((ROOT/'tarkov_core'/'data'/'static.json').read_text(encoding='utf-8'))
-        for skill in static['skills'].values():
-            wanted |= set(skill['zh'])
-        self.assertFalse(sorted(wanted-chars))
-
-    def test_listed_characters_have_glyphs(self):
-        # A character without a glyph draws the same box as an unassigned private-use code point.
+    def test_complete_font_draws_characters_outside_the_old_glyph_list(self):
         f = image.font('sc', 20, 400)
-        missing = bytes(f.getmask(''))
-        listed = (image.FONTS/image.CHARSET_FILE).read_text(encoding='utf-8')
-        self.assertGreater(len(listed), 300)
-        blank = [char for char in listed if not char.isspace() and bytes(f.getmask(char)) == missing]
-        self.assertEqual(blank, [])
+        missing = bytes(f.getmask('\ue000'))
+        for char in '龘ü冷却':
+            self.assertNotEqual(bytes(f.getmask(char)), missing)
+        drawn = []
+        real = ImageDraw.ImageDraw.text
+        def record(self, xy, text, *args, **kwargs):
+            drawn.append(text)
+            return real(self, xy, text, *args, **kwargs)
+        raw = profile()
+        raw['info']['nickname'] = '龘ü_Player'
+        with patch.object(ImageDraw.ImageDraw, 'text', record):
+            draw(summarize(raw))
+        self.assertIn('龘ü_Player', drawn)
 
     def test_fonts_ship_with_their_licences(self):
         for name in ('OFL-NotoSansSC.txt', 'OFL-Oswald.txt', 'OFL-ShareTechMono.txt'):

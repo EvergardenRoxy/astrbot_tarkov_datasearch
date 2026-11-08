@@ -6,7 +6,7 @@ follows the text help in main.py (help_text); both take the same settings.
 """
 from PIL import Image, ImageDraw
 
-from .image import FADED, INK, LINE, RED, W, fit, font, footer, jpeg, paper, safe, wrap
+from .image import FADED, INK, LINE, RED, W, fit, font, footer, jpeg, paper, wrap
 
 TAPE, TAPE_TEXT = (44, 40, 34), (226, 214, 186)
 LABEL_X, TAPE_X = 40, 196
@@ -62,7 +62,7 @@ def heading(d, y, text):
 
 def paragraph(d, y, text, x=40, size=20, fill=INK, width=None):
     f = font('sc', size, 400)
-    for line in wrap(d, safe(text), f, width or W-40-x):
+    for line in wrap(d, str(text), f, width or W-40-x):
         d.text((x, y), line, font=f, fill=fill)
         y += size+12
     return y
@@ -90,7 +90,7 @@ def render_help_image(card):
     d.rectangle([40, 30, 330, 70], fill=(186, 172, 136))
     d.text((56, 38), 'FILE NO. HELP-01', font=font('mono', 22), fill=INK)
     d.text((40, 90), '塔科夫市 · 档案查询指南', font=font('sc', 36, 800), fill=INK)
-    d.text((42, 140), 'TARKOV DOSSIER QUERY GUIDE  /  DEFAULT: '+safe(card['label'], latin=True), font=font('mono', 18),
+    d.text((42, 140), 'TARKOV DOSSIER QUERY GUIDE  /  DEFAULT: '+str(card['label']), font=font('mono', 18),
            fill=FADED)
     d.line([40, 172, W-40, 172], fill=INK, width=2)
     d.line([40, 177, W-40, 177], fill=INK, width=1)
@@ -104,7 +104,7 @@ def render_help_image(card):
         if remark:
             y = paragraph(d, y+8, remark, x=TAPE_X, size=18, fill=FADED)-4
         y += 18
-    d.text((40, y), safe(card['note']), font=fit(d, card['note'], 'sc', 18, W-80, 400), fill=FADED)
+    d.text((40, y), str(card['note']), font=fit(d, card['note'], 'sc', 18, W-80, 400), fill=FADED)
     y += 46
     d.line([40, y, W-40, y], fill=LINE)
 

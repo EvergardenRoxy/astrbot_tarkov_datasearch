@@ -21,5 +21,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -r requirements.txt
+      - run: python tools/download_font.py
+        timeout-minutes: 3
       - run: python -m unittest discover -s tests -v
         timeout-minutes: 5

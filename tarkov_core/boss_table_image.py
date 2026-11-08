@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageOps
 
 from .boss_monitor import percent
 from .card import when
-from .image import fit, font, jpeg, safe, wrap
+from .image import fit, font, jpeg, wrap
 from .modes import label_of
 
 BACKGROUND = Path(__file__).parent/'assets'/'boss-background.jpg'
@@ -98,7 +98,7 @@ def paginate_table(card, rows):
     for start in range(0,max(1,len(map_ids)),MAPS_PER_PAGE):
         columns = [{'map_id':key,'name':names.get(key,maps[key])} for key in map_ids[start:start+MAPS_PER_PAGE]]
         for column in columns:
-            column['lines'] = wrap(draw,safe(column['name']),font('sc',20,700),MAP_WIDTH-12)
+            column['lines'] = wrap(draw,str(column['name']),font('sc',20,700),MAP_WIDTH-12)
         matrix = []
         for mob_id,name,event in [(m,n,False) for m,n in resident_rows]+[(m,events[m],True) for m in event_ids]:
             cells = []
@@ -162,9 +162,9 @@ def render_boss_page(page,token='',index=1,total=1,command='',portraits=None):
     if page.get('error'): grid_end = 250
     probe = ImageDraw.Draw(Image.new('RGB',(1,1)))
     notes = [line for text in notes_for(page,token,index,total,command)
-             for line in wrap(probe,safe(text),font('sc',18,400),width-2*MARGIN)]
+             for line in wrap(probe,str(text),font('sc',18,400),width-2*MARGIN)]
     summary = [line for text in page.get('change_lines',[])
-               for line in wrap(probe,safe(text),font('sc',20,600),width-2*MARGIN-20)]
+               for line in wrap(probe,str(text),font('sc',20,600),width-2*MARGIN-20)]
     summary_height = len(summary)*30+44 if summary else 0
     height = grid_end+summary_height+len(notes)*26+48
     # Dark translucent panels over the background keep the numbers legible; the texture shows through faintly.
@@ -182,7 +182,7 @@ def render_boss_page(page,token='',index=1,total=1,command='',portraits=None):
     draw.text((MARGIN+LABEL_WIDTH/2,MARGIN+header/2),mode,font=font('sc',26,800),fill=TEXT,anchor='mm')
     if page.get('error'):
         y = MARGIN+header+26
-        for line in wrap(draw,safe(page['error']),font('sc',23,500),width-2*MARGIN-40):
+        for line in wrap(draw,str(page['error']),font('sc',23,500),width-2*MARGIN-40):
             draw.text((MARGIN+20,y),line,font=font('sc',23,500),fill=RED); y += 32
     else:
         for j,column in enumerate(columns):
@@ -202,8 +202,8 @@ def render_boss_page(page,token='',index=1,total=1,command='',portraits=None):
                     img.paste(icon,(MARGIN+10,int(y+(height-icon.height)/2)),icon)
             else:
                 draw.ellipse([MARGIN+20,y+height/2-25,MARGIN+70,y+height/2+25],fill=GRID)
-                draw.text((MARGIN+45,y+height/2),safe(row['boss_name'][:1] or '?'),font=font('sc',24,700),fill=MUTED,anchor='mm')
-            name = safe(row.get('label',row['boss_name']))
+                draw.text((MARGIN+45,y+height/2),str(row['boss_name'][:1] or '?'),font=font('sc',24,700),fill=MUTED,anchor='mm')
+            name = str(row.get('label',row['boss_name']))
             f = fit(draw,name,'sc',23,LABEL_WIDTH-98,label_weight,smallest=17)
             draw.text((MARGIN+90,y+height/2),name,font=f,fill=label_color,anchor='lm')
             for j,cell in enumerate(row['cells']):

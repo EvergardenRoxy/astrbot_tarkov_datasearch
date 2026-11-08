@@ -69,8 +69,10 @@ class ReleaseTests(unittest.TestCase):
             names = archive.namelist()
         self.assertIn('astrbot_tarkov_datasearch/main.py', names)
         self.assertIn('astrbot_tarkov_datasearch/tarkov_core/data/static.json', names)
-        for font in ('NotoSansSC-Subset.ttf', 'NotoSansSC-Subset.chars.txt', 'Oswald-Variable.ttf', 'ShareTechMono-Regular.ttf',
+        for font in ('Oswald-Variable.ttf', 'ShareTechMono-Regular.ttf',
                      'OFL-NotoSansSC.txt', 'OFL-Oswald.txt', 'OFL-ShareTechMono.txt'):
             self.assertIn('astrbot_tarkov_datasearch/tarkov_core/fonts/'+font, names)
+        self.assertFalse(any('Subset' in name or name.endswith('atlas-text-chars.txt') for name in names))
+        self.assertFalse(any(name.endswith('NotoSansSC[wght].ttf') for name in names))
         self.assertLess(path.stat().st_size, 1024*1024)
         self.assertFalse([n for n in names if '/tests/' in n or n.endswith(('.sqlite3', '.pyc'))])

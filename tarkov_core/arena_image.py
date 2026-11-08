@@ -12,7 +12,7 @@ from PIL import Image, ImageChops, ImageDraw
 
 from .arena import best_arp, kd, losses, rank, record, win_rate
 from .card import refresh_note, stale_note
-from .image import W, fit, font, footer, jpeg, right, safe, wrap
+from .image import W, fit, font, footer, jpeg, right, wrap
 
 LEATHER, PAGE, INK, BROWN, GOLD, GOLD_DARK, WAX = (52, 34, 26), (226, 214, 186), (40, 30, 24), (120, 90, 50), (190, 156, 76), (150, 118, 50), (128, 26, 30)
 RULE = (150, 120, 80)
@@ -124,7 +124,7 @@ def overall_table(d, stats, y, pw, font=font, fit=fit):
     return y+86
 
 
-def rare_achievements(d, entries, y, pw, font=font, safe=safe):
+def rare_achievements(d, entries, y, pw, font=font):
     """Compact paper cards; Arena's unavailable achievement art is not substituted."""
     d.rectangle([40, y, pw-40, y+36], fill=INK)
     d.text((54, y+6), f'稀有成就 · 前 {len(entries)} 项', font=font('sc', 17, 700), fill=PAGE)
@@ -140,7 +140,7 @@ def rare_achievements(d, entries, y, pw, font=font, safe=safe):
         d.rectangle([x, top, x+width, top+98], outline=RULE)
         d.rectangle([x, top, x+3, top+98], fill=tone)
         d.text((x+10, top+8), entry['rarity'], font=font('sc', 12, 700), fill=tone)
-        name = safe(entry['name'])
+        name = str(entry['name'])
         f = font('sc', 15, 700)
         lines = wrap(d, name, f, width-20)
         for k, line in enumerate(lines[:2]):
@@ -155,11 +155,11 @@ def rare_achievements(d, entries, y, pw, font=font, safe=safe):
     return y+110*((len(entries)+2)//3)+12
 
 
-def render_arena_image(card, *, font_provider=font, fit_provider=fit, safe_provider=safe,
+def render_arena_image(card, *, font_provider=font, fit_provider=fit,
                        footer_provider=footer, as_image=False):
     """JPEG bytes of the Arena card."""
     # Providers are local to this render, so Atlas' optional full font cannot change other in-flight cards.
-    font, fit, safe = font_provider, fit_provider, safe_provider
+    font, fit = font_provider, fit_provider
     pw = W-80
     page = texture(PAGE, 23, 6, pw, page_height(card))
     d = ImageDraw.Draw(page)
@@ -174,7 +174,7 @@ def render_arena_image(card, *, font_provider=font, fit_provider=fit, safe_provi
     y = 140
     for key, value in rows:
         d.text((40, y), key, font=font('sc', 14, 600), fill=BROWN)
-        value = safe(value)
+        value = str(value)
         f = fit(d, value, 'osw', 26, 300, 600) if value.isascii() else fit(d, value, 'sc', 20, 300, 600)
         d.text((210, y-4), value, font=f, fill=INK)
         d.line([210, y+28, 520, y+28], fill=RULE, width=1)
@@ -206,7 +206,7 @@ def render_arena_image(card, *, font_provider=font, fit_provider=fit, safe_provi
         for label, stats in section['modes']:
             d.line([40, y, pw-40, y], fill=RULE, width=1)
             wins, lost = stats.get('wins'), losses(stats)
-            label = safe(label.upper(), latin=True)
+            label = str(label.upper())
             d.text((40, y+6), label, font=fit(d, label, 'osw', 22, 190, 500), fill=INK)
             values = [stats.get('games', 0), None, win_rate(stats) or '—', stats.get('kills', 0), kd(stats) or '—',
                       stats.get('mvp', 0)]
@@ -223,9 +223,9 @@ def render_arena_image(card, *, font_provider=font, fit_provider=fit, safe_provi
         d.line([40, y, pw-40, y], fill=RULE, width=1)
         y += 30
     if card.get('achievement_details') is not None:
-        y = rare_achievements(d, card['achievement_details'], y, pw, font, safe)
+        y = rare_achievements(d, card['achievement_details'], y, pw, font)
     for note in notes_of(card):
-        for line in wrap(d, safe(note), font('sc', 15, 400), pw-80):
+        for line in wrap(d, str(note), font('sc', 15, 400), pw-80):
             d.text((40, y), line, font=font('sc', 15, 400), fill=INK)
             y += 24
     y += 14

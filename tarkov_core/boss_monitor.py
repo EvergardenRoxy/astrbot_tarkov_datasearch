@@ -8,10 +8,6 @@ from decimal import Decimal, InvalidOperation
 from .text import clean
 from .transport import QueryError
 
-# Font-subset corpus for known upstream labels (translations still come from the API):
-# 工厂、夜间工厂、迷宫、实验室、破冰船、森林、灯塔、海岸线、储备站、中心区、塔科夫街区、教程、桥。
-# 邪教徒祭司、邪教徒战士、掠夺者、游荡者、黑色军团、保镖、守卫、俄军。
-
 BOSS_SCOPE = 'daily-goons-events-selected-maps-matrix-v7'
 # Explicit maintainer scope: Knight represents the GOONS squad. Known display variants are mapped below.
 DAILY_BOSSES = frozenset(('bossTagilla', 'bossBully', 'bossKojaniy', 'bossSanitar', 'bossKilla', 'bossGluhar',

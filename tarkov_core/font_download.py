@@ -1,16 +1,14 @@
 """The full Noto Sans SC font, downloaded once on first use and kept in the plugin's data directory.
 
-The package bundles only a subset (about 1,100 glyphs, tools/build_fonts.py); text outside it draws as '?'. The Atlas
-picture prints achievement names and descriptions, which can hold any character, so it uses the full font once it
-is on disk (maintainer, 2026-11-08: download on first use, prefer a free font that can be downloaded worldwide).
+Every image uses this complete font. First use waits for the shared download; failures are reported to the caller.
+No trimmed font, character collection or missing-character substitution is maintained.
 
-- Font: Noto Sans SC (SIL Open Font License 1.1), the same file the bundled subset is cut from, pinned to one commit
+- Font: Noto Sans SC (SIL Open Font License 1.1), pinned to one commit
   of github.com/google/fonts and checked by size and SHA-256, so every mirror must serve exactly that file.
 - Mirrors, tried in order: an optional address from the settings (e.g. a mirror reachable in the user's region),
   three jsDelivr CDN hosts, then raw.githubusercontent.com. A mirror that fails is skipped; when all fail the next
   try waits RETRY_SECONDS.
-- The first picture is drawn with the bundled subset while the download runs in the background; later pictures use
-  the full font.
+- The file is reused on disk across restarts; simultaneous first renders share one shielded download.
 """
 import asyncio
 import hashlib
@@ -20,8 +18,6 @@ import tempfile
 import time
 
 from yarl import URL
-
-from . import transport
 
 COMMIT = '86aced91de05cd4f96a06838124cca45be337b2b'
 FILE = 'NotoSansSC[wght].ttf'
@@ -38,6 +34,10 @@ CONTENT_TYPES = ('font/ttf', 'font/sfnt', 'application/x-font-ttf', 'application
                  'binary/octet-stream')
 RETRY_SECONDS = 30*60
 TIMEOUT_SECONDS = 300
+
+
+class FontDownloadError(RuntimeError):
+    """The complete font is unavailable; callers should report this instead of drawing an incomplete image."""
 
 
 def custom_mirror(value):
@@ -71,6 +71,7 @@ class FullFont:
         self.closed = False
 
     async def fetch(self, host, path):
+        from . import transport
         buffer = io.BytesIO()
         await transport.http_get(host, path, buffer, limits=(SIZE+1024, SIZE+1024), timeout_seconds=TIMEOUT_SECONDS,
                                  proxy=self.proxy(), client=self.client, content_types=CONTENT_TYPES)
@@ -105,16 +106,26 @@ class FullFont:
             self.checked = self.path
         return self.checked
 
-    async def path_or_start(self):
-        """The font when it is ready; otherwise start the background download (if not running or waiting) and
-        return None, so the caller draws with the bundled subset this time."""
+    async def ensure(self):
+        """Return the complete font, waiting for one shared download when needed. No incomplete fallback."""
         found = await self.available()
-        if found or self.closed:
+        if self.closed:
+            raise RuntimeError('font downloader closed')
+        if found:
             return found
-        if (self.task is None or self.task.done()) and self.clock() >= self.retry_at:
+        if self.clock() < self.retry_at:
+            raise FontDownloadError('完整中文字体下载失败，请稍后再试，或在设置中填写字体镜像地址')
+        if self.task is None or self.task.done():
             self.task = asyncio.ensure_future(self.download_now())
             self.task.add_done_callback(lambda done: done.cancelled() or done.exception())
-        return None
+        try:
+            await asyncio.shield(self.task)
+        except OSError:
+            self.retry_at = self.clock()+RETRY_SECONDS
+            raise FontDownloadError('完整中文字体无法保存，请检查插件数据目录的写入权限') from None
+        if self.checked is None:
+            raise FontDownloadError('完整中文字体下载失败，请稍后再试，或在设置中填写字体镜像地址')
+        return self.checked
 
     def sources(self):
         custom = custom_mirror(self.mirror())

@@ -328,25 +328,24 @@ class FullFontTests(unittest.IsolatedAsyncioTestCase):
     async def test_mirrors_in_order_and_only_the_pinned_file(self):
         self.mirror = 'https://mirror.example/f.ttf'
         self.answers = {'https://mirror.example': b'wrong file', 'https://fastly.jsdelivr.net': self.body}
-        self.assertIsNone(await self.font.path_or_start())
-        await self.font.task
+        await self.font.ensure()
         self.assertEqual(self.asked, ['https://mirror.example', 'https://cdn.jsdelivr.net', 'https://fastly.jsdelivr.net'])
-        found = await self.font.path_or_start()
+        found = await self.font.ensure()
         self.assertEqual(found.read_bytes(), self.body)
         # A new process finds the verified file on disk without downloading.
         again = self.module.FullFont(self.font.root, download=None)
         self.assertEqual(await again.available(), found)
 
     async def test_all_mirrors_failing_waits_before_the_next_try(self):
-        await self.font.path_or_start()
-        await self.font.task
+        with self.assertRaises(self.module.FontDownloadError):
+            await self.font.ensure()
         self.assertEqual(len(self.asked), 4)
-        await self.font.path_or_start()
+        with self.assertRaises(self.module.FontDownloadError):
+            await self.font.ensure()
         self.assertEqual(len(self.asked), 4)
         self.clock.advance(self.module.RETRY_SECONDS)
         self.answers['https://raw.githubusercontent.com'] = self.body
-        await self.font.path_or_start()
-        await self.font.task
+        await self.font.ensure()
         self.assertIsNotNone(await self.font.available())
 
     async def test_a_damaged_file_on_disk_is_not_used(self):
@@ -354,13 +353,63 @@ class FullFontTests(unittest.IsolatedAsyncioTestCase):
         self.font.path.write_bytes(b'x'*len(self.body))
         self.assertIsNone(await self.font.available())
 
-    def test_the_picture_switches_fonts(self):
-        from tarkov_core import atlas_image
-        from tarkov_core.image import FONTS, FONT_FILES
+    async def test_initial_font_download_is_shared_and_cancelling_one_waiter_isolated(self):
+        started, release = asyncio.Event(), asyncio.Event()
+        asked = []
+        async def download(host, path):
+            asked.append(host)
+            started.set()
+            await release.wait()
+            return self.body
+        self.font.download = download
+        first = asyncio.create_task(self.font.ensure())
+        await started.wait()
+        second = asyncio.create_task(self.font.ensure())
+        first.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await first
+        self.assertFalse(self.font.task.cancelled())
+        release.set()
+        self.assertEqual((await second).read_bytes(), self.body)
+        self.assertEqual(len(asked), 1)
+
+    async def test_close_cancels_pending_download_without_publishing_a_partial_file(self):
+        started = asyncio.Event()
+        async def download(host, path):
+            started.set()
+            await asyncio.Event().wait()
+        self.font.download = download
+        waiting = asyncio.create_task(self.font.ensure())
+        await started.wait()
+        await self.font.close()
+        with self.assertRaises(asyncio.CancelledError):
+            await waiting
+        self.assertFalse(self.font.path.exists())
+
+    async def test_unwritable_font_cache_has_a_clear_error_and_retry_wait(self):
+        self.answers['https://cdn.jsdelivr.net'] = self.body
+        with unittest.mock.patch.object(self.font, 'write', side_effect=PermissionError('private path')):
+            with self.assertRaises(self.module.FontDownloadError) as caught:
+                await self.font.ensure()
+        self.assertIn('写入权限', str(caught.exception))
+        self.assertNotIn('private path', str(caught.exception))
+        self.assertIsNone(self.font.checked)
+        count = len(self.asked)
+        with self.assertRaises(self.module.FontDownloadError):
+            await self.font.ensure()
+        self.assertEqual(len(self.asked), count)
+
+    def test_every_renderer_shares_the_complete_font_without_a_subset_fallback(self):
+        from tarkov_core import fonts, atlas_image, matching_image, image
+        original = fonts.chinese_font_path()
         try:
-            atlas_image.use_full_font(str(FONTS/FONT_FILES['sc']))
-            self.assertEqual(atlas_image.safe('龘'), '龘')
+            fonts.use_chinese_font(None)
+            for loader in (atlas_image.font, matching_image.font, image.font):
+                with self.assertRaises(fonts.FontUnavailable):
+                    loader('sc', 20)
+            fonts.use_chinese_font(original)
+            for loader in (atlas_image.font, matching_image.font, image.font):
+                self.assertEqual(Path(loader('sc', 20).path), Path(original))
             self.assertTrue(render_atlas_image(build(atlas_profile('pve'), 'pve')).startswith(b'\xff\xd8'))
         finally:
-            atlas_image.use_full_font(None)
-        self.assertEqual(atlas_image.safe('龘'), '?')
+            fonts.use_chinese_font(original)

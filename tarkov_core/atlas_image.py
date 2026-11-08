@@ -9,19 +9,14 @@ and the pictures atlas_assets.py has on disk; a missing picture draws an empty p
 The old tarkov.dev cards (image.py, arena_image.py) are separate and unchanged.
 """
 import io
-import threading
-from functools import lru_cache
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 from . import NAME, NOTICE, REPO, VERSION
 from .atlas_card import when
-from .image import FONTS, FONT_FILES, jpeg, safe as subset_safe, wrap
+from .image import jpeg, wrap
+from .fonts import basic_font as font
 from .matching_image import ATLAS_NAME, ATLAS_URL, logo, right
-
-# The full Noto Sans SC file once font_download.py has it on disk; None draws with the bundled subset.
-FULL_FONT = None
-FONT_LOCK = threading.Lock()
 
 W = 1600
 M = 32
@@ -31,30 +26,6 @@ ACCENT, BAR, BAR_BG, GOLD = (96, 178, 240), (66, 120, 168), (34, 38, 44), (200, 
 TONES = {'common': (214, 216, 220), 'rare': (186, 140, 246), 'legendary': (240, 198, 64), 'seasonal': (92, 172, 244)}
 LEFT_W, RIGHT_X = 960, M+960+24
 CELL_W, CELL_H, CELL_GAP, LABEL_H = 186, 150, 12, 26
-
-
-def use_full_font(path):
-    """Draw Chinese text with the full font at `path` (None: back to the bundled subset)."""
-    global FULL_FONT
-    with FONT_LOCK:
-        if path != FULL_FONT:
-            FULL_FONT = path
-            font.cache_clear()
-
-
-@lru_cache(maxsize=None)
-def font(name, size, weight=None):
-    """The bundled fonts with basic layout (as the matching picture); 'sc' is the full font when available."""
-    path = FULL_FONT if name == 'sc' and FULL_FONT else FONTS/FONT_FILES[name]
-    f = ImageFont.truetype(str(path), size, layout_engine=ImageFont.Layout.BASIC)
-    if weight is not None:
-        f.set_variation_by_axes([weight])
-    return f
-
-
-def safe(text, latin=False):
-    """Text as drawn: unchanged with the full font, else characters outside the subset become '?'."""
-    return str(text) if FULL_FONT and not latin else subset_safe(text, latin)
 
 
 def picture(data, box):
@@ -98,7 +69,7 @@ def fitted(d, text, name, size, width, weight=None):
 
 
 def clip(d, text, f, width):
-    text = safe(text)
+    text = str(text)
     if d.textlength(text, font=f) <= width:
         return text
     while text and d.textlength(text+'…', font=f) > width:
@@ -126,7 +97,7 @@ def header(img, d, card, icons):
         placeholder(d, M+20, top+22, 88, 88)
     d.text((M+124, top+20), str(card['level'] if card['level'] is not None else '—'), font=font('osw', 72, 500), fill=TEXT)
     x = M+320
-    d.text((x, top+20), safe(card['nickname']), font=fitted(d, safe(card['nickname']), 'sc', 38, 520, 800), fill=ACCENT)
+    d.text((x, top+20), str(card['nickname']), font=fitted(d, str(card['nickname']), 'sc', 38, 520, 800), fill=ACCENT)
     d.text((x, top+76), f"{card['side']}", font=font('osw', 22, 500), fill=DIM)
     exp = f"EXP {card['experience']:,}".replace(',', ' ') if card['experience'] is not None else 'EXP —'
     d.text((x+90, top+78), exp, font=font('mono', 20), fill=TEXT)
@@ -161,7 +132,7 @@ def equipment(img, d, card, icons, top, height):
     side_x = M+16
     d.text((side_x, top+16), '阵营', font=font('sc', 15, 600), fill=DIM)
     d.rectangle([side_x, top+40, side_x+118, top+110], fill=PANEL_2)
-    side = safe(card['side'], latin=True)
+    side = str(card['side'])
     d.text((side_x+59-d.textlength(side, font=font('osw', 30, 600))/2, top+52), side, font=font('osw', 30, 600), fill=TEXT)
     d.text((side_x, top+128), '转生', font=font('sc', 15, 600), fill=DIM)
     d.rectangle([side_x, top+152, side_x+118, top+270], fill=PANEL_2)
@@ -280,7 +251,7 @@ def skills(d, card, top):
     colw = (W-2*M-24-60)/2
     for i, (name, level, elite) in enumerate(card['skills']):
         x0, yy = M+12+(i % 2)*(colw+60), y+(i//2)*38
-        d.text((x0, yy), safe(name), font=font('sc', 19, 500), fill=TEXT)
+        d.text((x0, yy), str(name), font=font('sc', 19, 500), fill=TEXT)
         for k in range(10):
             on = level >= (k+1)*5.1
             d.rectangle([x0+170+k*24, yy+6, x0+186+k*24, yy+22], outline=DIM, width=1,
@@ -304,7 +275,7 @@ def latest(img, d, card, icons, top):
         d.text((cols['name'], y+10), '暂无成就', font=font('sc', 16, 400), fill=FAINT)
         return y+60
     for entry in entries:
-        lines = wrap(d, safe(entry['description']), font('sc', 15, 400), cols['rarity']-cols['desc']-24)[:2]
+        lines = wrap(d, str(entry['description']), font('sc', 15, 400), cols['rarity']-cols['desc']-24)[:2]
         h = max(64, 18+len(lines)*24)
         if not paste_center(img, icons.get('achievements', {}).get(entry['id']), M+12, y+(h-48)/2, 48, 48):
             placeholder(d, M+12, y+(h-48)/2, 48, 48)
@@ -329,7 +300,7 @@ def footer(d, top):
              '特别致谢：Atlas（EFTForge 项目的一部分，作者 Morph1ne / SouthHorizons76）',
              f"{NAME} v{VERSION} · {REPO.removeprefix('https://')}", NOTICE)
     for i, text in enumerate(lines):
-        d.text((W/2-d.textlength(safe(text), font=f)/2, top+12+i*26), safe(text), font=f, fill=FAINT)
+        d.text((W/2-d.textlength(str(text), font=f)/2, top+12+i*26), str(text), font=f, fill=FAINT)
     return top+12+len(lines)*26+16
 
 

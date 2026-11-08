@@ -8,10 +8,11 @@ import datetime
 from functools import lru_cache
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 from . import NAME, REPO, VERSION
-from .image import FONTS, FONT_FILES, jpeg, safe
+from .image import jpeg
+from .fonts import basic_font as font
 
 ATLAS_NAME = 'Atlas'
 ATLAS_URL = 'https://eftforge.com/atlas'
@@ -37,16 +38,6 @@ COLS = {'region': X0, 'name': X0+76, 'current': X0+420, 'spark': X0+444, 'min': 
 SPARK_W = COLS['min']-100-COLS['spark']
 ROW_H = 54
 HEADER_H = 128
-
-
-@lru_cache(maxsize=None)
-def font(name, size, weight=None):
-    """The bundled fonts with basic layout: at these small sizes the complex layout engine rounds glyph positions
-    unevenly (a visible gap in "h ttps"); this picture needs no complex shaping."""
-    f = ImageFont.truetype(str(FONTS/FONT_FILES[name]), size, layout_engine=ImageFont.Layout.BASIC)
-    if weight is not None:
-        f.set_variation_by_axes([weight])
-    return f
 
 
 def wait_text(seconds):
@@ -161,12 +152,12 @@ def row(d, y, label, center, result, span, grid, shade):
         d.rectangle([LEFT_W, y, W, y+ROW_H-1], fill=ROW_ALT)
     mono, name_font = font('mono', 18), font('sc', 21, 500)
     if center is None:
-        d.text((COLS['name'], y+13), safe(label), font=name_font, fill=DIM)
+        d.text((COLS['name'], y+13), str(label), font=name_font, fill=DIM)
         right(d, COLS['current'], y+12, '—', font('mono', 26), FAINT)
         d.text((COLS['spark'], y+16), 'Atlas 暂未提供这个数据中心', font=font('sc', 16, 400), fill=FAINT)
         return
-    d.text((COLS['region'], y+17), safe(center.region, latin=True), font=mono, fill=FAINT)
-    d.text((COLS['name'], y+13), safe(label), font=name_font, fill=TEXT)
+    d.text((COLS['region'], y+17), str(center.region), font=mono, fill=FAINT)
+    d.text((COLS['name'], y+13), str(label), font=name_font, fill=TEXT)
     right(d, COLS['current'], y+12, wait_text(center.wait), font('mono', 26), tone(center.wait))
     sparkline(d, center, y, result, span, grid)
     for key, value in zip(('min', 'avg', 'max'), stats(center)):
@@ -212,7 +203,7 @@ def render_matching_image(result):
     pitch = max(66, (footer_top-36-y)//max(1, len(regions)))
     for code, center in regions:
         top = y+(pitch-60)//2
-        d.text((24, top), safe(REGIONS.get(code, code)), font=font('sc', 22, 600), fill=TEXT)
+        d.text((24, top), str(REGIONS.get(code, code)), font=font('sc', 22, 600), fill=TEXT)
         if center.wait is None:
             d.text((24, top+32), '暂无数据', font=font('sc', 16, 400), fill=FAINT)
         else:
@@ -220,7 +211,7 @@ def render_matching_image(result):
             f = font('sc', 16, 600)
             d.text((24, top+32), label, font=f, fill=tone(center.wait))
             x = 24+d.textlength(label, font=f)
-            name = safe(display_name(center))
+            name = str(display_name(center))
             d.text((x, top+32), name, font=font('sc', 16, 400), fill=DIM)
             x += d.textlength(name, font=font('sc', 16, 400))+10
             d.text((x, top+31), wait_text(center.wait), font=font('mono', 18), fill=tone(center.wait))
