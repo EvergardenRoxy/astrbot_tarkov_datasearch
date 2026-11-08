@@ -27,10 +27,10 @@ earlier). From now on new work is appended as new sections.
 |---|---|
 | Task | AstrBot plugin to look up Escape from Tarkov player profiles in chat (maintainer request, 2026-10-13); since 2026-10-24 also public game data: server status, Boss spawn rates, items. |
 | License / AI statement | GPL-3.0-or-later. README and CHANGELOG state the plugin was written by Claude Opus 5.5 (via Claude Code) and reviewed by the maintainer. |
-| Release target | 0.4.7 (2026-11-04, pending PR review; last release 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
-| Work branch | `1024` carries 0.4.5 (status, Boss, QQ routes). `main` was overwritten with this history on 2026-10-24 (§16); the item query was archived (§11). |
-| Tests | 318 on `fix/boss-modes-v0.4.7`; previously 306 on `1024` (307 before the item query was archived, §11; 193 at 0.4.4) (`python -m unittest discover -s tests`, needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13. 0.4.4 had 193. |
-| AstrBot evidence | 4.16.0 wheel read and its registration/wake/filter/parser bodies replayed by `tools/verify_qq_routes.py` (146 cases after the hotfix; SDK and network boundaries doubled). Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. The maintainer ran a small closed test of 0.3.0. **No live AstrBot run of the 1024 features; QQ image delivery and proactive push are unverified.** |
+| Release target | 0.4.8 (query stability and performance, pending PR review; last release 0.4.7 on 2026-11-04; 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
+| Work branch | `main` was overwritten with the `1024` history on 2026-10-24 (§16); the item query was archived (§11). |
+| Tests | 326 (`python -m unittest discover -s tests`, needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13. |
+| AstrBot evidence | 4.16.0 wheel read and its registration/wake/filter/parser bodies replayed by `tools/verify_qq_routes.py` (146 cases at 0.4.6; SDK and network boundaries doubled). Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. The maintainer ran a small closed test of 0.3.0. **No live AstrBot run of the 1024 features; QQ image delivery and proactive push are unverified.** |
 
 ## 2. Data sources and evidence
 
@@ -102,16 +102,16 @@ Full inventory and request conventions: `docs/tarkov-api-reference.md` (sources 
 | Arena | `arena.py`, `arena_image.py` | `summarize_arena()` (12 counters/mode, ≤ 12 modes/section, ranked/unranked split, no level); `RANKS` from BestArp with the maintainer's overlapping table cut at each upper limit; BestArp is the highest ever reached, so the rank shown is the highest reached; > 7900 shown as "竞技场前100名玩家" without ARP. Image = "ARENA MASTERS · 选手名册" ledger with GP-style ARP medallion, W – L bars. |
 | Static tables | `data/static.json`, `tools/build_static.py` | 79 level rows and 49 skill names from `json.tarkov.dev` (+ zh); not fetched at run time. Re-run on game updates. |
 | Card / outputs | `card.py`, `output.py`, `image.py`, `help_image.py`, `fonts/` | `build_card()` is the single content model; `render_text`, `render_markdown`, `render_image` (JPEG q85, 820 px, seeded grain so output is byte-stable). Image style: dossier paper + dog tag + exit-status bars; footer with data time (GMT+8), plugin name/version/repo and the open-source notice. Exit wording follows the game: 撤离 / 匆匆逃离 / 转移 / KIA / 行动中失踪 (`card.EXITS`). Bundled OFL fonts (Noto Sans SC subset, Oswald, Share Tech Mono); other characters draw as `?`; `tools/build_fonts.py` rebuilds the subset from the characters in code, skill names and `data/item-label-chars.txt`. |
-| Plugin | `main.py` | Commands `tarkov` (alias `塔科夫`), `status`/`状态`, `boss`/`刷率` plus namespace forms (`tarkov status` …). Optional leading `/` accepted. Flow for players: access check → parse `[mode] target` → own binding / link / id / name → profiles → `show()` → `reply()` (output per `output_mode`). One in-flight query per sender (keyed hash). |
+| Plugin | `main.py` | Commands `tarkov` (alias `塔科夫`) with sub-commands (`tarkov status`, `tarkov boss` …) and the QQ single-word commands (§18). Optional leading `/` accepted. Flow for players: access check → parse `[mode] target` → own binding / link / id / name → profiles → `show()` → `reply()` (output per `output_mode`). One in-flight query per sender (keyed hash). |
 | Accounts | `accounts.py` | `bindings(owner, aid, nickname, bound_at)`; `owner` = HMAC-SHA256 with a random 32-byte `binding.key` (mode 0600). `names(key, aid, name, seen_at)` shared by everyone, fed by every fetched profile, exact-case first then most recent, capped at 200,000. |
-| Name index (optional) | `names.py` | Off by default (`name_index_enabled`). Per mode a SQLite `names-<path>.sqlite3` built from the downloaded index with a bytes regex (not `json.loads`), built into a unique temp file then `os.replace`d; one lock per mode; failed refresh keeps the old db and backs off 10 min; first-download failure also backs off; limits 64 MiB / 192 MiB. PvP: 23-26 s, 97 MB db, ~106 MB RSS. Used only for names, never for ids. |
+| Name index (optional) | `names.py` | On by default (`name_index_enabled`, §18). Per mode a SQLite `names-<path>.sqlite3` built from the downloaded index with a bytes regex (not `json.loads`), built into a unique temp file then `os.replace`d; one lock per mode; failed refresh keeps the old db and backs off 10 min; first-download failure also backs off; limits 64 MiB / 192 MiB. PvP: 23-26 s, 97 MB db, ~106 MB RSS. Used only for names, never for ids. |
 | Public data cache | `public_api.py`, `resource_cache.py` | Fixed host `json.tarkov.dev`; validated `ResourceKey` (mode translated pvp→regular, season→pvp-season; language; item id). Limits 32 MiB received / 64 MiB decoded. Lazy SQLite `public-data/resources.sqlite3`: body + validators + cache-control + times; LRU 32 entries / 128 MiB payload; TTL `public_data_cache_minutes` (default 5, 0 = always check); conditional 304; stale fallback only when explicitly allowed (never for 404 or config errors); Retry-After suppression; shared in-flight fetches (cancelled readers don't cancel others); ≤ 2 downloads, ≤ 32 pending; malformed 200 cannot overwrite a good row. Not yet used by player snapshots. |
-| QQ / routing | `platform_compat.py`, `tools/verify_qq_routes.py` | `qq_official_compat_enabled` (default true) adds a second standard handler for slash-prefixed commands on `qq_official`/`qq_official_webhook` only, disjoint from the framework path, delegating to the original handlers. `command_style` (§6). `short_commands_enabled` edits real handler metadata for the four status/Boss short handlers (namespace routes stay). |
-| Polling / notifications | `polling.py`, `notifications.py`, `boss_notifications.py` | One cancellable, non-overlapping task per feature (status, Boss); first check immediate, delay starts after a cycle, no catch-up, failure backoff ≤ 30 min, no worker when disabled or without targets. Separate lazy SQLite files; baseline + event written atomically; first success is a silent baseline; per-target submission state, ≤ 3 attempts, permission errors pause the target durably (reset: disable+save, enable+save); `send_message()` true = submitted, `None` = terminal unknown; no exactly-once. Retention 7 days / 200 events / 64 MiB. Targets are explicit UMOs (≤ 50), intersected with allowed origins and known proactive capability. |
+| QQ / routing | `platform_compat.py`, `tools/verify_qq_routes.py` | QQ single-word commands behind `QQOfficialFilter`, gated by `qq_single_word_commands` (§18); `@机器人 /tarkov` is always accepted on QQ official. `command_style` (§4). |
+| Polling / notifications | `polling.py`, `notifications.py`, `boss_notifications.py` | One cancellable, non-overlapping task per feature (status, Boss); first check immediate, delay starts after a cycle, no catch-up, failure backoff ≤ max(30 min, interval), no worker when disabled or without targets. Separate lazy SQLite files; baseline + event written atomically; first success is a silent baseline; per-target submission state, ≤ 3 attempts, permission errors pause the target durably (reset: disable+save, enable+save); `send_message()` true = submitted, `None` = terminal unknown; no exactly-once. Retention 7 days / 200 events / 64 MiB. Targets are explicit UMOs (≤ 50), intersected with allowed origins and known proactive capability. |
 | Server status | `server_status.py`, `status_image.py` | Normalised feed (component identity by id, then normalised name; compare status codes, add/remove, global message, notice id+content+time; ignore order and display names). Unknown codes are never shown as healthy. Failed requests never mean downtime. Image shows overall/component state, ≤ 3 notice excerpts (400 chars), checked/fetched/version times, stale flags. |
-| Boss | `boss_monitor.py`, `boss_table_image.py`, `boss_portraits.py` | Scope: eleven daily bosses + GOONS (`bossKnight`, shown `三狗 GOONS`) by stable mob-id allowlist; no BEAR/USEC/followers. Resident bosses are rows; other listed bosses are event rows unless generic (§14). Excluded maps: Icebreaker, original Ground Zero, Lab Dark, Labyrinth, tutorial, the pier (`terminal`, id `65cc8f81…`, removed 2026-10-24, §13); retained `ground-zero-21` is labelled `中心区`. Eleven columns: 中心区、白天工厂、夜间工厂、海关、森林、海岸线、立交桥、储备站、灯塔、塔科夫街区、实验室. Conditional records are never summed; compare map+mob+rule identity, then probability; probabilities must be finite 0–1 numbers. Dark matrix (Boss rows, map columns, mode top-left, 1640 px); changes red; exact 100% and its Boss name bold red; explicit 0% printed; unlisted cells blank. Query snapshots/continuation `boss 页 <12-hex> <n>` kept ≤ 24 h, 16 groups, 32 MiB. Scope policy `daily-goons-selected-maps-matrix-v5`: older baselines/events/snapshots are retired on open. Portraits: fixed assets.tarkov.dev paths from the feed's known portrait links, **manual-only** (`boss_portraits_update` one-shot setting), 128 px sanitized thumbnails, 365-day expiry, placeholder when missing; no game art is bundled (THIRD_PARTY). |
+| Boss | `boss_monitor.py`, `boss_table_image.py`, `boss_portraits.py` | Scope: eleven daily bosses + GOONS (`bossKnight`, shown `三狗 GOONS`) by stable mob-id allowlist; no BEAR/USEC/followers. Resident bosses are rows; other listed bosses are event rows unless generic (§14). Excluded maps: Icebreaker, original Ground Zero, Lab Dark, Labyrinth, tutorial, the pier (`terminal`, id `65cc8f81…`, removed 2026-10-24, §13); retained `ground-zero-21` is labelled `中心区`. Eleven columns: 中心区、白天工厂、夜间工厂、海关、森林、海岸线、立交桥、储备站、灯塔、塔科夫街区、实验室. Conditional records are never summed; compare map+mob+rule identity, then probability; probabilities must be finite 0–1 numbers. Dark matrix (Boss rows, map columns, mode top-left, 1640 px); changes red; exact 100% and its Boss name bold red; explicit 0% printed; unlisted cells blank. Query snapshots/continuation `boss 页 <12-hex> <n>` kept ≤ 24 h, 16 groups, 32 MiB. A change of the scope policy (current v7, §20) retires older baselines/events/snapshots on open. Portraits: fixed assets.tarkov.dev paths from the feed's known portrait links, **manual-only** (`boss_portraits_update` one-shot setting), 128 px sanitized thumbnails, 365-day expiry, placeholder when missing; no game art is bundled (THIRD_PARTY). |
 | Items | – | **Archived and removed** (§11). Branch `archive/item-query` @ `9f29e6f`; description in `docs/archive/item-query.md`. |
-| Settings | `_conf_schema.json` | New data features default **off** (`status_enabled`, `boss_enabled` and their broadcast / QQ-push switches). Poll intervals `status_poll_minutes` (5) and `boss_poll_minutes` (10), 2–30 minutes each. `test_release` keeps schema defaults equal to code fallbacks. |
+| Settings | `_conf_schema.json` | New data features default **off** (`status_enabled`, `boss_enabled` and their broadcast / QQ-push switches). Poll intervals `status_poll_minutes` and `boss_poll_minutes`: default 30, 10–90 minutes (§18). `test_release` keeps schema defaults equal to code fallbacks. |
 
 Measured: profile fetch 0.2 s; image 0.2–0.3 s, ~300–400 KB; package under 1 MiB (`tools/package_plugin.py`).
 
@@ -134,8 +134,7 @@ Measured: profile fetch 0.2 s; image 0.2–0.3 s, ~300–400 KB; package under 1
   index only (no download, no network); nickname input rule `[A-Za-z0-9_-]{3,24}`.
 - **Output**: setting `output_mode` image (default) / text / Markdown for profiles, Arena and help; image failure falls
   back to text with a note; unknown value → image. Every help/profile reply also carries its link as plain text.
-- **Command style**: `COMMAND_STYLES` in `tarkov_core/__init__.py` (`mention` = `@机器人 tarkov` default, `slash`,
-  and `mention_slash` for QQ official) is the only place those strings are written; everything else goes through
+- **Command style**: `COMMAND_STYLES` in `tarkov_core/__init__.py` (`mention` = `@机器人 tarkov` default, and `slash`) is the only place those strings are written; everything else goes through
   `TarkovPlugin.cmd()`. Matching is unchanged (`tarkov`/`塔科夫`, optional `/`). Tencent allows unverified QQ bots only
   "@bot + command" without a slash.
 - **Access**: `access_mode` defaults to `all`; `allowed_origins` / `user_whitelist` accept lists (a string counts as one
@@ -159,8 +158,7 @@ link line after images, command-style literals, scope/aliases, 100% styling, mig
 
 Live read-only smokes (real network, SDK stubbed, nothing kept in the tree): player flows in all four modes; public
 cache 200 → 304; status (nine components); Boss tables for three modes (sixteen then twelve maps; 29/29/27 selected
-records, two exact-100% records per mode); item queries before the archive (nine public requests on first load, zero on repeat, one
-thumbnail download). Previews were inspected visually.
+records, two exact-100% records per mode). Previews were inspected visually.
 
 ## 6. Not verified
 
@@ -193,7 +191,7 @@ thumbnail download). Previews were inspected visually.
 
 - Never call `player.tarkov.dev` or try to obtain or replay Turnstile tokens; do not bypass rate limits.
 - Keep `trust_env=False`, `allow_redirects=False`, the fixed hosts (`players.tarkov.dev`, `json.tarkov.dev`, and the
-  fixed `assets.tarkov.dev` paths for chosen item ids / known Boss portrait links), and all size limits. Never fetch a
+  fixed `assets.tarkov.dev` paths for known Boss portrait links), and all size limits. Never fetch a
   feed- or user-chosen host. Keep identifying the client honestly in `User-Agent`.
 - `summarize()` and the status/Boss normalisers must never raise on odd third-party field types; malformed 200
   responses must never overwrite a last-good cache row, baseline or index.
@@ -207,8 +205,8 @@ thumbnail download). Previews were inspected visually.
   (`test_command_style_setting` checks it).
 - Every help and profile reply carries its link as text, whatever the output (`test_links_are_always_given_as_text`).
 - Boss portraits download only on the explicit one-shot setting; no data feature may start a hidden poller (each
-  polling feature has its own 2–30 minute setting).
-- Disabled features must not download data, start tasks, or leave stale price sections reachable through old pages.
+  polling feature has its own 10–90 minute setting).
+- Disabled features must not download data, start tasks, or leave old continuation pages reachable.
 - When upstream game data changes (levels, skills) re-run `tools/build_static.py` and commit the diff.
 
 ## 9. Maintainer requirements and open work
@@ -238,8 +236,7 @@ thumbnail download). Previews were inspected visually.
 **Releases** (the release branches were each one commit on the previous one; on the remote only `v0.3.0-不支持竞技场-留档` and `v0.4.4` remain as branches, tags `v0.3.0beta`, `v0.4.2-release` … `v0.4.4-release` exist, `v0.4.0`–`v0.4.3` branches are gone): 0.1.0 text output; 0.2.0 image and
 Markdown output (maintainer chose the dossier style + dog tag + exit-status bars); `v0.3.0` bind-and-query (tested by the maintainer); `v0.4.0` image footer
 + Arena; `v0.4.1` `_`/`-` name suggestions; `v0.4.2` PMC K/D, source lines, Arena ranks, image wording; `v0.4.3` help as
-an image, links always as text, `@机器人 tarkov` wording, logo; `v0.4.4` `command_style` setting. `1024` carries the
-unreleased status/Boss/QQ work (published 2026-10-24, normal push, no PR).
+an image, links always as text, `@机器人 tarkov` wording, logo; `v0.4.4` `command_style` setting. The status/Boss/QQ work was developed on `1024` (published 2026-10-24, normal push) and became `main` in §16.
 
 **Real player data removed (2026-10-14, maintainer: "你怎么在插件说明文档里写了真实用户名")**: README examples, tests,
 fixtures and previews had used real nicknames, account ids and numbers copied from the maintainer's PVE profile.
@@ -286,7 +283,6 @@ feature proved inefficient. It is sealed, not deleted from history.
   source (sha256 `a3041811…`), 833,760 → 278,292 bytes; other fonts unchanged.
 - **Behaviour now**: `item …` is no longer a command. Typed after the plugin command it falls into the player query
   path like any other word (a nickname lookup), so no special message is shown.
-- **Validation**: 275 tests pass; the AstrBot 4.16.0 route replay passes 101 cases (was 135 with item cases).
 - **Docs**: `docs/development-plan.md` §5/§14 reduced to pointers, item settings/commands removed; checklist updated.
   README had no item section.
 
@@ -303,10 +299,8 @@ feature proved inefficient. It is sealed, not deleted from history.
   carries the block; the stored event (and therefore `boss 变化`, which replays the latest event) shows the same image as
   the broadcast. Cells still show only the new value and Boss names are not red (maintainer: intended; Boss names stay
   plain). Font subset rebuilt for the new characters.
-- Tests 275 → 280 (`ChangeSummaryTests`, `test_only_change_events_carry_the_summary`, two-switch assertions in the lifecycle
+- Tests added (`ChangeSummaryTests`, `test_only_change_events_carry_the_summary`, two-switch assertions in the lifecycle
   test); mutation check: dropping the attachment and dropping the changed-row filter both fail a test.
-- Open (maintainer): a background design for the Boss table image; the maintainer will generate it with an image model from
-  a brief (nothing drawn here). Renderer integration waits for the finished asset and the maintainer's layout notes.
 
 ## 13. Boss footer trimmed, pier map removed, Lab event-boss findings (2026-10-24)
 
@@ -331,7 +325,7 @@ feature proved inefficient. It is sealed, not deleted from history.
   `bossScourgeEventLab` (Lab). Excluded maps hold more non-daily mobs (Wedge, Black Div., Tagilla's shadow, `vsRF`), which
   never reach the rule. Raider/PMC/USEC/BEAR alone are not enough: Rogue and Sentry would otherwise be listed as events.
   Blacklisting by `normalizedName` is feasible; residual risk is a future generic type that is not yet on the list
-  (it would show as an event until added), hence the proposed optional ignore setting. Awaiting go-ahead; not implemented.
+  (it would show as an event until added), hence the optional ignore setting (§14).
 
 ## 14. Event bosses on all selected maps (2026-10-24, maintainer decisions)
 
@@ -354,7 +348,7 @@ maps a listed boss is **resident** if its id is in `DAILY_BOSSES` (fixed rows), 
   baseline. The normalised-state cache key includes the ignore list.
 - New setting `boss_event_ignore` (list of `normalizedName`, lower-cased, ≤ 64 characters, default empty).
 - Residual risk: a new ordinary soldier type that is not on the blacklist shows as an event until added to the list.
-- Tests 282 → 290 (`EventBossTests`, scope-retirement store test, ignore-setting plugin test, footer/summary tests); mutation
+- Tests added (`EventBossTests`, scope-retirement store test, ignore-setting plugin test, footer/summary tests); mutation
   check: dropping `af`, raising the row cap, ignoring the scope and ignoring the ignore list each fail tests. Fonts rebuilt.
 
 ## 15. Boss background image (2026-10-24, maintainer-supplied)
@@ -367,7 +361,7 @@ maps a listed boss is **resident** if its id is in `DAILY_BOSSES` (fixed rows), 
 - The table body, header and label column are translucent dark panels over it (`BODY_ALPHA` 205, `LABEL_ALPHA` 220), plus a
   dark band under the grid (`FOOTER_ALPHA` 120) so the change summary and footer stay legible. The texture is faint inside the
   table and visible in the outer margin, header strip and footer area. Output stays byte-stable.
-- Tests 290 → 294 (`BackgroundTests`: size and readability, texture visible and stable, fallback to black, panel darkness);
+- Tests added (`BackgroundTests`: size and readability, texture visible and stable, fallback to black, panel darkness);
   mutation check: ignoring the file and making the panels see-through both fail.
 - **Provenance**: generator GPT-Image-2.5-sunburst (maintainer's statement, recorded in `THIRD_PARTY.md`). Maintainer's statement: the provider's
   terms do not restrict use of generated content in open-source software, and images carry a hidden traceable watermark.
@@ -388,7 +382,6 @@ PR #6 (`1024` → `main`) could not be merged: `1024`'s history had been rewritt
   keep the old history and must be reset (`git fetch && git reset --hard origin/main`); branch `v0.4.4`, branch
   `v0.3.0-不支持竞技场-留档` and the tags still point at old commits (the tag `v0.4.4-release` carries the nickname; branches do not).
 - The old `main` was `966d0fcef8f5be479e7dbf1974c01009eb9b838f`; no backup branch was pushed (it would keep the nickname).
-  A local, unpushed copy named `main-before-force` existed in the working container only.
 - PR #6 closes as merged once `main` contains its head.
 
 ## 17. README split, rename and live-data previews (2026-10-24, after release)
@@ -446,22 +439,16 @@ interval default 30, range 10–90 minutes.
 - **Name index** (`name_index_enabled`) defaults to **true** in the schema and in `index_enabled()`: the first name lookup that
   misses the recorded names in a mode downloads that mode's index (PvP ~30 MB, ~25 s, ~100 MB on disk). The test helper switches it
   off unless a test passes fake names.
-- Tests 294 → 306; mutation checks: back-off cap, groups-only recording, recording at all, the empty-list fallback each fail a test.
-  Docs updated (README general settings, both detail documents, CHANGELOG 0.4.5, checklist). Version stays 0.4.5, but the
-  config layout change means installs of the previously delivered 0.4.5 zip lose their saved settings: bump to 0.4.6 if that zip
-  was already distributed.
+- Mutation checks: back-off cap, groups-only recording, recording at all, the empty-list fallback each fail a test.
+  Docs updated (README general settings, both detail documents, CHANGELOG 0.4.5, checklist). Installs of the previously delivered 0.4.5 zip lose their saved settings.
 
-## 19. Release 0.4.5hotfix (2026-10-24, maintainer: "v0.4.5hotfix 推送到main 交付发行版")
+## 19. Release 0.4.6, first built as `0.4.5hotfix` (2026-10-24, maintainer: "v0.4.5hotfix 推送到main 交付发行版")
 
-- Version string `0.4.5hotfix` everywhere (`VERSION`, `metadata.yaml` `version: v0.4.5hotfix`, `@register`, CHANGELOG heading
-  `## 0.4.5hotfix`, README and test literals, pictures); package `astrbot_tarkov_datasearch-v0.4.5hotfix.zip`. The changelog
-  keeps `## 0.4.5` as it was delivered and puts the §18 changes under the hotfix section.
-- **AstrBot compares plugin versions with a semver-like regex** (`VersionComparator`): `0.4.5hotfix` has no `-`/`+` separator
-  and does not match, so AstrBot reads it as an empty version (a missing number is treated as 0). The plugin works (the version is
-  only displayed), but an update check by version may mis-order it against `0.4.5` or `0.4.6`. A comparable spelling would be
-  `0.4.5-hotfix` (semver pre-release, which sorts *below* 0.4.5) or `0.4.6`. The maintainer chose `0.4.5hotfix` literally.
-- `main` fast-forwarded to the release commit (no force). The example pictures were rebuilt so their footers read v0.4.5hotfix
-  (player pictures from invented data; status and Boss pictures from live data with portraits, as in §17).
+- The §18 changes were delivered as a hotfix build named `0.4.5hotfix` and **released as 0.4.6** (CHANGELOG `## 0.4.6`; the
+  changelog keeps `## 0.4.5` as it was delivered first). The `0.4.5hotfix` spelling did not match AstrBot's semver-like
+  `VersionComparator`, which is why the release carries a comparable version number.
+- `main` fast-forwarded to the release commit (no force). The example pictures were rebuilt for that release (player pictures
+  from invented data; status and Boss pictures from live data with portraits, as in §17).
 
 ## 20. Boss Halloween robustness, mode queries and personal defaults — v0.4.7 (2026-11-04)
 
@@ -501,7 +488,7 @@ no Boss/map search or cross-mode comparison commands. Implemented with OpenAI Co
   AstrBot registration, metadata, README/footer assertions and changelog agree on 0.4.7. Historical version records are
   preserved. All six bundled example images rebuilt with v0.4.7 footers (player/arena/help use invented fixture data;
   Boss/status use current public game data). Packaging follows metadata and remains an ignored local ZIP.
-- **Validation**: 318 tests pass with the workspace Python 3.12 environment; this includes feed routing, aliases, SQLite
+- **Validation**: the suite passed with the workspace Python 3.12 environment; this includes feed routing, aliases, SQLite
   restart persistence, cross-user/platform isolation, cross-chat reuse, explicit override, permissions/disabled/invalid
   binding, QQ dispatch, default-mode change lookup, Halloween family separation and Partisan missing/zero/restoration.
   The release test checks version consistency and ZIP contents/size. `git diff --check` passes. CI retains Python 3.12
@@ -522,13 +509,12 @@ The managed sandbox can reject asyncio's local socketpair wakeup writes with
 `asyncio.to_thread(lambda: 42)` program during completion or executor shutdown.
 Run the tests with local socket access; do not change production poller logic to
 work around this executor restriction. With network permission enabled, the full
-321-test suite finished in about 10 seconds (the first run exposed a new font
-corpus character in the queue message, subsequently replaced with supported wording).
+suite finished in about 10 seconds.
 CI now prints individual test names and limits the test step to five minutes,
 so future hangs identify the active test and terminate rather than waiting indefinitely.
 
 
-## Query stability and performance follow-up (2026-11-04)
+## Query stability and performance follow-up — v0.4.8 (2026-11-04)
 
 - Nickname parsing validates the entire object grammar, string encoding and EOF
   before publishing the staged SQLite database. Malformed documents leave the old
