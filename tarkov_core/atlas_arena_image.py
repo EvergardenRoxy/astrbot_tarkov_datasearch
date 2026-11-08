@@ -46,13 +46,12 @@ def render_atlas_arena_image(card):
     img.paste(register, (0, header_h))
     d = ImageDraw.Draw(img)
     d.rectangle([14, 14, arena_image.W-14, header_h-6], outline=arena_image.GOLD, width=2)
+    # Logo on the left, the link on the right; no "数据来源" line (maintainer, 2026-11-08).
     mark = logo(38)
     img.paste(mark, (38, 32), mark)
-    x = 38+mark.width+24
-    d.text((x, 25), '数据来源：Atlas', font=ui.font('sc', 19, 600), fill=(226, 214, 186))
-    d.text((x, 55), ATLAS_URL, font=ui.font('mono', 18), fill=(214, 196, 160))
-    if card.get('reference_label'):
-        label = str(card['reference_label'])
+    label = str(card['reference_label']) if card.get('reference_label') else None
+    if label:
         f = ui.fitted(d, label, 'sc', 13, 180, 400)
-        d.text((arena_image.W-38-d.textlength(label, font=f), 32), label, font=f, fill=(214, 196, 160))
+        d.text((arena_image.W-38-d.textlength(label, font=f), 22), label, font=f, fill=(214, 196, 160))
+    ui.mid(d, arena_image.W-38, 51+(12 if label else 0), ATLAS_URL, ui.font('mono', 20), (214, 196, 160), 'r')
     return ui.jpeg(img)

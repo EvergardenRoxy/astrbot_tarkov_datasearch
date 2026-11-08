@@ -900,3 +900,10 @@ Not yet decided: whether the rare-achievement title row, equipment labels and fo
   setting) now only switches the Atlas skills off at 0; the snapshot keeps "all elite + N others". Hint updated.
 - Arena with real data: Atlas' arena nickname search for the reference player returned no result and the direct
   arena lookup by account ID returned HTTP 502 (see the session report); no further requests were made.
+
+### Arena banner (2026-11-08)
+
+Real Arena data now available (reference player found by nickname search; one search + one lookup, scratchpad only).
+First Arena annotation: the banner drops the "数据来源：Atlas" line; the logo stays left and `ATLAS_URL` moves to the
+right (mono 20, ink-centred); the preview-only reference label sits above it. Pushed without a separate review at the
+maintainer's request for small changes.
