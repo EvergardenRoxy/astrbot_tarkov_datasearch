@@ -59,11 +59,11 @@ def failure_text(exc):
 def can_fall_back(exc):
     """Whether the tarkov.dev snapshot may stand in: Atlas failed, rather than answering "no such player" or
     refusing the user's own input or quota."""
-    if isinstance(exc, (AtlasNotFound, QuotaError)):
+    if isinstance(exc, (AtlasNotFound, QuotaError, AtlasBudgetError)):
         return False
     if isinstance(exc, AtlasHTTPError):
         return exc.code not in ('not_found', 'no_profile', 'mode', 'bad_account', 'bad_nickname')
-    return isinstance(exc, (AtlasCooldownError, AtlasBudgetError, ConnectionFailure, AtlasDataError,
+    return isinstance(exc, (AtlasCooldownError, ConnectionFailure, AtlasDataError,
                             AtlasProfileError, TimeoutError))
 
 

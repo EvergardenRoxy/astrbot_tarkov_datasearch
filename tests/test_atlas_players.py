@@ -86,6 +86,17 @@ class ProfileMappingTests(unittest.TestCase):
 
 
 class BudgetAndGateTests(unittest.IsolatedAsyncioTestCase):
+    def test_default_budget_is_ten_per_minute(self):
+        clock = Clock()
+        budget = AtlasBudget(clock=clock)
+        for _ in range(10):
+            budget.reserve()
+        with self.assertRaises(AtlasBudgetError):
+            budget.reserve()
+        clock.advance(60)
+        budget.reserve()
+        self.assertEqual(budget.remaining_hour(), 139)
+
     def test_minute_and_hour_windows(self):
         clock = Clock()
         budget = AtlasBudget(lambda: 2, lambda: 3, clock=clock)
@@ -105,7 +116,7 @@ class BudgetAndGateTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_claim_within_waits_for_the_interval_and_another_request(self):
         clock = Clock()
-        gate = AtlasCooldown(5, clock=clock)
+        gate = AtlasCooldown(10, clock=clock)
         slept = []
         async def sleep(seconds):
             slept.append(seconds)
@@ -114,7 +125,7 @@ class BudgetAndGateTests(unittest.IsolatedAsyncioTestCase):
             pass
         async with gate.claim_within(20, sleep=sleep):
             pass
-        self.assertEqual(slept, [5])
+        self.assertEqual(slept, [10])
         gate.in_flight = True
         async def release(seconds):
             clock.advance(seconds)
@@ -125,7 +136,7 @@ class BudgetAndGateTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_claim_within_fails_fast_on_a_long_pause(self):
         clock = Clock()
-        gate = AtlasCooldown(5, clock=clock)
+        gate = AtlasCooldown(10, clock=clock)
         gate.pause(60)
         async def sleep(seconds):
             self.fail('must not wait for a pause longer than the limit')
@@ -139,7 +150,7 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.clock = Clock()
         self.budget = AtlasBudget(lambda: 15, lambda: 150, clock=self.clock)
-        self.client = AtlasClient(cooldown=AtlasCooldown(1, clock=self.clock), budget=self.budget)
+        self.client = AtlasClient(cooldown=AtlasCooldown(10, clock=self.clock), budget=self.budget)
         self.seen = []
         self.answer = lambda request: web.json_response(atlas_profile('pve'))
         async def serve(request):
@@ -161,7 +172,7 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_lookup_and_search_requests(self):
         await self.client.lookup(1234567, 'pve')
-        self.clock.advance(1)
+        self.clock.advance(10)
         self.answer = lambda request: web.json_response({'nickname': 'Test_Player', 'players': [], 'cached': False})
         await self.client.search('Test_Player', 'season')
         self.assertEqual(self.seen, [('/atlas/api/lookup', {'accountId': '1234567', 'mode': 'pve'}),
@@ -187,7 +198,7 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
             await self.client.lookup(1234567, 'pve')
         self.assertEqual(caught.exception.code, 'busy')
         self.assertEqual(self.budget.remaining_hour(), 150)
-        self.clock.advance(5)
+        self.clock.advance(10)
         self.budget.per_minute = lambda: 0
         with self.assertRaises(AtlasBudgetError):
             await self.client.lookup(1234567, 'pve')
@@ -199,6 +210,48 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
             await self.client.lookup(1234567, 'pve', max_wait=1)
         self.assertEqual(self.budget.remaining_hour(), 150)
         self.assertEqual(self.seen, [])
+
+    async def test_exhausted_windows_block_http_then_recover_at_the_deadline(self):
+        self.budget.per_minute, self.budget.per_hour = lambda: 1, lambda: 2
+        await self.client.lookup(1, 'pve')
+        self.clock.advance(59)
+        with self.assertRaises(AtlasBudgetError) as caught:
+            await self.client.lookup(2, 'pve')
+        self.assertEqual(caught.exception.retry_after_seconds, 1)
+        self.assertEqual(len(self.seen), 1)
+        self.clock.advance(1)
+        await self.client.lookup(2, 'pve')
+        self.clock.advance(3539)
+        with self.assertRaises(AtlasBudgetError) as caught:
+            await self.client.lookup(3, 'pve')
+        self.assertEqual(caught.exception.retry_after_seconds, 1)
+        self.assertEqual(len(self.seen), 2)
+        self.clock.advance(1)
+        await self.client.lookup(3, 'pve')
+        self.assertEqual(len(self.seen), 3)
+
+    async def test_window_uses_http_start_after_gate_wait_and_rechecks_budget(self):
+        from contextlib import asynccontextmanager
+        @asynccontextmanager
+        async def delayed_gate(max_wait):
+            self.clock.advance(20)
+            yield
+        with patch.object(self.client.cooldown, 'claim_within', delayed_gate):
+            await self.client.lookup(1, 'pve')
+        self.assertEqual(list(self.budget.sent), [self.clock()])
+        self.budget.per_minute = lambda: 1
+        self.clock.advance(59)
+        with self.assertRaises(AtlasBudgetError):
+            self.budget.check()
+        self.clock.advance(1)
+        self.budget.check()
+        @asynccontextmanager
+        async def competing_gate(max_wait):
+            self.budget.reserve()  # A different admitted query used the last slot while this one waited.
+            yield
+        with patch.object(self.client.cooldown, 'claim_within', competing_gate), self.assertRaises(AtlasBudgetError):
+            await self.client.lookup(2, 'pve')
+        self.assertEqual(len(self.seen), 1)
 
 
 class FakeAtlas:
@@ -302,7 +355,7 @@ class PlayerServiceTests(unittest.IsolatedAsyncioTestCase):
     def test_failure_classification(self):
         self.assertTrue(can_fall_back(AtlasHTTPError(429, 'busy', 5)))
         self.assertTrue(can_fall_back(AtlasHTTPError(502, 'http')))
-        self.assertTrue(can_fall_back(AtlasBudgetError(60)))
+        self.assertFalse(can_fall_back(AtlasBudgetError(60)))
         self.assertTrue(can_fall_back(AtlasCooldownError(30)))
         self.assertTrue(can_fall_back(ConnectionFailure('x')))
         for exc in (AtlasNotFound('x'), QuotaError('x'), AtlasHTTPError(400, 'bad_account'), ValueError()):
@@ -384,8 +437,6 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
     def plugin(self, config=None, names=None, draw=False):
         config = dict(config or {})
         config.setdefault('name_index_enabled', names is not None)
-        config.setdefault('user_query_cooldown_seconds', 0)
-        config.setdefault('user_refresh_cooldown_seconds', 0)
         plugin = self.module.TarkovPlugin(test_plugin.types.SimpleNamespace(), config)
         plugin.names = names or FakeNames()
         self.atlas = FakeAtlas()
@@ -393,6 +444,8 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         plugin.atlas_players.client = self.atlas
         plugin.atlas_assets = self.assets = FakeAssets()
         plugin.full_font = self.font = FakeFont()
+        self.quota_clock = Clock()
+        plugin.quota.clock = self.quota_clock
         self.cards = []
         if not draw:
             def record(card, icons=None):
@@ -407,7 +460,8 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         """An AtlasHTTPError of the plugin's own copy of the package."""
         return self.atlas.errors.AtlasHTTPError(*args)
 
-    async def ask(self, plugin, text, sender='alice'):
+    async def ask(self, plugin, text, sender='alice', *, advance=30):
+        self.quota_clock.advance(advance)
         return await self.run_command(plugin, Event(text, sender=sender))
 
     @staticmethod
@@ -520,7 +574,7 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([call[0] for call in self.atlas.calls], ['search', 'search'])
 
     async def test_refresh_word_quota_and_cache(self):
-        plugin = self.plugin({'user_refresh_per_hour': 1})
+        plugin = self.plugin({'user_refresh_per_hour': 1})  # Retired setting has no effect.
         self.atlas.put(1, 'pve')
         await self.ask(plugin, '/tarkov pve 1')
         await self.ask(plugin, '/tarkov pve 1')
@@ -529,19 +583,61 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         await self.ask(plugin, '/tarkov pve 1 刷新')
         self.assertEqual(len(self.atlas.calls), 2)
         self.assertTrue(self.cards[-1]['cached'])
-        self.assertIn('刷新次数（1 次）已用完', (await self.ask(plugin, '/tarkov pve 1 refresh'))[0])
-        self.assertEqual(len(self.atlas.calls), 2)
+        await self.ask(plugin, '/tarkov pve 1 refresh', advance=300)
+        await self.ask(plugin, '/tarkov pve 1 refresh', advance=300)
+        self.assertIn('刷新次数（3 次）已用完', (await self.ask(plugin, '/tarkov pve 1 refresh', advance=300))[0])
+        self.assertEqual(len(self.atlas.calls), 4)
         await self.ask(plugin, '/tarkov pve 1 刷新', sender='bob')
-        self.assertEqual(len(self.atlas.calls), 3)
+        self.assertEqual(len(self.atlas.calls), 5)
 
     async def test_user_interval_counts_only_atlas_queries(self):
         plugin = self.plugin({'user_query_cooldown_seconds': 30})
         self.atlas.put(1, 'pve')
         self.atlas.put(2, 'pve')
         await self.ask(plugin, '/tarkov 1')
-        self.assertIsInstance((await self.ask(plugin, '/tarkov 1'))[0][0], ImageStub)
-        self.assertIn('查询太快了', (await self.ask(plugin, '/tarkov 2'))[0])
+        self.assertIsInstance((await self.ask(plugin, '/tarkov 1', advance=0))[0][0], ImageStub)
+        self.assertIn('查询太快了', (await self.ask(plugin, '/tarkov 2', advance=0))[0])
         self.assertEqual(len(self.atlas.calls), 1)
+
+    async def test_fixed_hourly_quota_ignores_removed_settings_and_recovers(self):
+        plugin = self.plugin({'atlas': {'user_query_per_hour': 200, 'user_refresh_per_hour': 60}})
+        for aid in range(1, 12):
+            self.atlas.put(aid, 'pve')
+        for aid in range(1, 11):
+            reply = (await self.ask(plugin, f'/tarkov {aid}'))[0]
+            self.assertIsInstance(reply[0], ImageStub)
+        self.assertIn('查询次数（10 次）已用完', (await self.ask(plugin, '/tarkov 11'))[0])
+        self.assertEqual(len(self.atlas.calls), 10)
+        self.assertIsInstance((await self.ask(plugin, '/tarkov 1'))[0][0], ImageStub)
+        self.assertEqual(len(self.atlas.calls), 10)
+        self.assertIsInstance((await self.ask(plugin, '/tarkov 11', advance=3600))[0][0], ImageStub)
+        self.assertEqual(len(self.atlas.calls), 11)
+
+    async def test_minimum_query_and_refresh_intervals_apply_to_old_zero_settings(self):
+        plugin = self.plugin({'user_query_cooldown_seconds': 0, 'user_refresh_cooldown_seconds': 0})
+        self.atlas.put(1, 'pve')
+        await self.ask(plugin, '/tarkov 1')
+        self.assertIn('查询太快了', (await self.ask(plugin, '/tarkov 1 刷新', advance=29))[0])
+        self.assertEqual(len(self.atlas.calls), 1)
+        self.assertIsInstance((await self.ask(plugin, '/tarkov 1 刷新', advance=1))[0][0], ImageStub)
+        self.assertIn('刷新太频繁了', (await self.ask(plugin, '/tarkov 1 刷新', advance=299))[0])
+        self.assertEqual(len(self.atlas.calls), 2)
+        self.assertIsInstance((await self.ask(plugin, '/tarkov 1 刷新', advance=1))[0][0], ImageStub)
+        self.assertEqual(len(self.atlas.calls), 3)
+
+    async def test_global_pause_keeps_cached_profiles_and_never_uses_a_snapshot(self):
+        plugin = self.plugin()
+        self.atlas.put(1, 'arena')
+        await self.ask(plugin, '/tarkov arena 1')
+        self.profiles[('arena', 2)] = arena_profile(aid=2)
+        self.atlas.docs[(2, 'arena')] = test_plugin.sys.modules['tarkov_test_plugin.tarkov_core.atlas_cooldown'].AtlasBudgetError(60)
+        [reply] = await self.ask(plugin, '/tarkov arena 2')
+        self.assertIn('60 秒后自动恢复', reply)
+        self.assertEqual(self.fetched, [])
+        self.assertIsInstance((await self.ask(plugin, '/tarkov arena 1'))[0][0], ImageStub)
+        self.atlas.put(2, 'arena')
+        self.assertIsInstance((await self.ask(plugin, '/tarkov arena 2', advance=60))[0][0], ImageStub)
+        self.assertEqual(self.fetched, [])
 
     async def test_atlas_failure_falls_back_to_the_old_snapshot_picture(self):
         plugin = self.plugin({'output_mode': 'text'})
@@ -555,7 +651,9 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         self.atlas.docs[(2, 'pve')] = test_plugin.sys.modules['tarkov_test_plugin.tarkov_core.atlas_cooldown'].AtlasBudgetError(120)
         reply = (await self.ask(plugin, '/tarkov 2'))[0]
         self.assertIn('总额度已用完', reply)
-        self.assertIn('tarkov.dev 上也没有账号 ID 2 的 PVE 快照', reply)
+        self.assertIn('自动恢复', reply)
+        self.assertNotIn('tarkov.dev', reply)
+        self.assertEqual(self.fetched, [('pve', 1)])
 
     async def test_not_found_is_not_a_failure(self):
         plugin = self.plugin()

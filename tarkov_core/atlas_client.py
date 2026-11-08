@@ -141,18 +141,13 @@ class AtlasClient:
         proxy = self.validated_proxy()  # Invalid configuration fails before admission.
         task = asyncio.current_task()
         gate = self.cooldown.claim() if max_wait is None else self.cooldown.claim_within(max_wait)
-        # Counted before waiting for the gate, so a used-up budget fails at once and sends nothing; given back when
-        # the gate refuses or the caller gives up before the request starts.
-        token = self.budget.reserve() if counted and self.budget is not None else None
-        started = False
-        try:
-            async with gate:
-                started = True
-                return await self._send(path, params, proxy, limits, token, task)
-        except BaseException:
-            if token is not None and not started:
-                self.budget.refund(token)
-            raise
+        # Fail fast during a local budget pause. Reserve only after admission so sliding windows count HTTP
+        # request starts rather than time spent waiting; recheck then because other waiters may have used slots.
+        if counted and self.budget is not None:
+            self.budget.check()
+        async with gate:
+            token = self.budget.reserve() if counted and self.budget is not None else None
+            return await self._send(path, params, proxy, limits, token, task)
 
     async def _send(self, path, params, proxy, limits, token, task):
         self.tasks.add(task)

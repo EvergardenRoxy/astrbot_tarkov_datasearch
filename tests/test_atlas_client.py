@@ -45,7 +45,7 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
             headers={'Content-Type': 'application/json', 'Content-Encoding': 'gzip', 'Set-Cookie': 'secret=abc'})
         with patch.dict('os.environ', {'HTTP_PROXY': 'http://invalid:1', 'HTTPS_PROXY': 'http://invalid:1'}):
             result = await self.client.matching()
-            self.clock.advance(5)
+            self.clock.advance(10)
             await self.client.matching()
         self.assertEqual(result['hours'], 24)
         self.assertEqual(self.seen[0][:2], ('/atlas/api/matching', {'hours': '24'}))
@@ -64,7 +64,7 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(AtlasCooldownError):
                 async with self.gate.claim():
                     pass
-            self.clock.advance(5)
+            self.clock.advance(10)
             async with self.gate.claim():
                 pass  # Matching's independent 15-minute window does not block players.
             self.assertTrue((await service.get()).from_cache)
@@ -101,7 +101,7 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
                 await self.client.matching()
             self.assertEqual(caught.exception.status, status)
             self.assertNotIn('private', str(caught.exception))
-            self.clock.advance(5)
+            self.clock.advance(10)
         self.assertEqual(len(self.seen), 4)
 
     async def test_wrong_media_json_and_gzip_are_rejected(self):
@@ -113,7 +113,7 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
             self.response = lambda request: response
             with self.assertRaises(AtlasDataError):
                 await self.client.matching()
-            self.clock.advance(5)
+            self.clock.advance(10)
 
     async def test_compressed_decoded_and_raw_limits(self):
         for body, encoding in [(b'x'*65, ''), (gzip.compress(b' '*200), 'gzip'),
@@ -122,7 +122,7 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
                 headers={'Content-Encoding': encoding})
             with patch.object(atlas_client, 'LIMITS', (64, 128)), self.assertRaises(AtlasDataError):
                 await self.client.matching()
-            self.clock.advance(5)
+            self.clock.advance(10)
 
     async def test_invalid_proxy_and_path_fail_before_admission_even_with_cache(self):
         service = MatchingService(self.client, enabled=lambda: True, clock=self.clock)
