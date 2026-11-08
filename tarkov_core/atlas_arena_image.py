@@ -46,7 +46,7 @@ def render_atlas_arena_image(card):
     register = arena_image.render_arena_image(card, font_provider=ui.font, fit_provider=ui.fitted,
                                               footer_provider=footer, as_image=True)
     # No banner above the register (maintainer, 2026-11-08): the Atlas logo and link sit at the right end of the
-    # "ARENA MASTERS" line, on an ink-coloured plate so the logo's white lettering stays legible on the paper.
+    # "ARENA MASTERS" line, on a plate of the border's leather so the logo's white lettering stays legible.
     img = register
     d = ImageDraw.Draw(img)
     title = ui.font('osw', 40, 700)
@@ -56,7 +56,10 @@ def render_atlas_arena_image(card):
     pad, gap = 14, 12
     right = arena_image.W-PAGE_Y-40
     plate_w = pad+mark.width+gap+d.textlength(ATLAS_URL, font=url_font)+pad
-    d.rounded_rectangle([right-plate_w, cy-22, right, cy+22], radius=6, fill=arena_image.INK)
+    # The plate is cut from the register's own leather edge (same colour and grain) with its gold frame line.
+    box = (round(right-plate_w), round(cy-22), round(right), round(cy+22))
+    img.paste(arena_image.texture(arena_image.LEATHER, 21, 14, box[2]-box[0], box[3]-box[1]), box[:2])
+    d.rectangle(box, outline=arena_image.GOLD, width=2)
     img.paste(mark, (round(right-plate_w+pad), round(cy-mark.height/2)), mark)
     ui.mid(d, right-pad, cy, ATLAS_URL, url_font, (226, 214, 186), 'r')
     if card.get('reference_label'):
