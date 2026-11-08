@@ -904,6 +904,8 @@ Not yet decided: whether the rare-achievement title row, equipment labels and fo
 ### Arena banner (2026-11-08)
 
 Real Arena data now available (reference player found by nickname search; one search + one lookup, scratchpad only).
-First Arena annotation: the banner drops the "数据来源：Atlas" line; the logo stays left and `ATLAS_URL` moves to the
-right (mono 20, ink-centred); the preview-only reference label sits above it. Pushed without a separate review at the
-maintainer's request for small changes.
+First Arena annotation (corrected by the maintainer after a first misreading, `233538b`): no banner above the
+register and no "数据来源：Atlas" text; the Atlas logo (28 px) and `ATLAS_URL` (mono 17) sit at the right end of the
+"ARENA MASTERS" line on an ink-coloured rounded plate, because the logo's white lettering is invisible on the paper.
+The preview-only reference label sits under the plate. Small changes are pushed without a separate review at the
+maintainer's request.
