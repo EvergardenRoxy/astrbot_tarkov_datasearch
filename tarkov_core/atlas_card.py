@@ -1,12 +1,13 @@
 """What the Atlas player picture shows, taken from one raw Atlas document (PVP, PVE or season).
 
 Layout and wording follow the Atlas website's player page (maintainer's reference picture, 2026-11-08) with the
-maintainer's changes: no favourite weapons/items, no endings, no edition fields, skills drawn the old way, rare
+maintainer's changes: no favourite weapons/items, no endings, no edition fields, enlarged two-column skills, rare
 achievements (by rarity, then newest; with names and global completion share), the ten latest achievements, item pictures from tarkov.dev.
 
 Counter rules read off the reference picture: K/D = player kills / (killed + left the raid); K/D (all kills) =
-all kills / (killed + left); AI kills = all kills - player kills; the overview column adds PMC and Scav (also the
-longest survival streaks, as Atlas shows). A counter Atlas leaves out means 0. Nothing here raises on odd field
+all kills / (killed + left); survival = (survived + transit) / sessions. The headline adds PMC and Scav (also the
+longest survival streaks, as Atlas shows); the horizontal table and exit bars show each side separately.
+A counter Atlas leaves out means 0. Nothing here raises on odd field
 types except a document without a nickname (atlas_profile.AtlasProfileError).
 """
 import datetime
@@ -77,20 +78,19 @@ def counts(block):
     }
 
 
-def column(stats, play):
-    """The rows of one statistics column (Atlas' order, minus the two values Atlas does not provide)."""
+def survival_rate(stats):
+    """Transit counts as a successful exit, as requested by the maintainer."""
+    return f"{(stats['survived']+stats['transit'])/stats['raids']*100:.1f}%" if stats['raids'] else '—'
+
+
+def combat_row(title, stats):
+    """Horizontal combat-table values, plus raw counters for the exit bars and legend."""
     lost = stats['killed']+stats['left']
-    return [
-        ('战局数', f"{stats['raids']:,}"), ('幸存数', f"{stats['survived']:,}"),
-        ('幸存率', percent(stats['survived'], stats['raids'])),
-        ('K/D', ratio(stats['player_kills'], lost)), ('K/D（全部击杀）', ratio(stats['kills'], lost)),
-        ('击杀数（玩家）', f"{stats['player_kills']:,}"),
-        ('击杀数（AI）', f"{max(0, stats['kills']-stats['player_kills']):,}"),
-        ('阵亡次数', f"{stats['killed']:,}"), ('行动中失踪', f"{stats['mia']:,}"), ('擅离职守', f"{stats['left']:,}"),
-        ('匆匆逃离', f"{stats['runner']:,}"), ('转移', f"{stats['transit']:,}"),
-        ('擅离率', percent(stats['left'], stats['raids'])), ('连续幸存数', f"{stats['streak']:,}"),
-        ('在线', online(play)),
-    ]
+    return {'title': title, 'stats': stats, 'values': [
+        f"{stats['raids']:,}", f"{stats['survived']:,}", survival_rate(stats),
+        f"{stats['kills']:,}", f"{stats['killed']:,}", ratio(stats['kills'], lost),
+        f"{stats['player_kills']:,}", ratio(stats['player_kills'], lost),
+    ]}
 
 
 def headline(total, play):
@@ -99,7 +99,7 @@ def headline(total, play):
     return [
         ('战局数', f"{total['raids']:,}"), ('幸存数', f"{total['survived']:,}"), ('阵亡次数', f"{total['killed']:,}"),
         ('行动中失踪', f"{total['mia']:,}"), ('擅离职守', f"{total['left']:,}"), ('击杀数', f"{total['player_kills']:,}"),
-        ('匆匆逃离', f"{total['runner']:,}"), ('幸存率', percent(total['survived'], total['raids'])),
+        ('匆匆逃离', f"{total['runner']:,}"), ('幸存率', survival_rate(total)),
         ('连续幸存数', f"{total['streak']:,}"), ('擅离率', percent(total['left'], total['raids'])),
         ('K/D', ratio(total['player_kills'], lost)), ('在线', online(play)),
     ]
@@ -221,7 +221,7 @@ def build(doc, mode, *, skill_limit=10, now=None):
         'last_active': when(max([number(s.get('LastAccess')) or 0 for s in common_skills(doc)]
                                 + [a['at'] or 0 for a in done]+[0]) or None),
         'headline': headline(total, play),
-        'columns': [('总览', column(total, play)), ('PMC', column(pmc, play)), ('SCAV', column(scav, play))],
+        'combat_rows': [combat_row('PMC', pmc), combat_row('SCAV', scav)],
         'achievements': achievement,
         'skills': elite+rest,
         'equipment': [[(key, label, wide, equipment.get(key)) for key, label, wide in row] for row in SLOT_ROWS],

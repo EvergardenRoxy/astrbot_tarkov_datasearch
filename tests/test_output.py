@@ -12,7 +12,7 @@ class OutputTests(unittest.TestCase):
     def test_full_profile(self):
         text = render(summarize(profile()), 'PVE', now=NOW)
         for part in ('【塔科夫 PVE 档案】Test_Player（账号 ID 1234567）', '阵营 USEC｜等级 53', '账号总游戏时长 1000 小时｜成就 2 个',
-                     'PMC：战局 1000，撤离 800，存活率 80.0%', '击杀 5000，死亡 100，K/D 50.00，击杀 PMC 900',
+                     'PMC：战局 1000，撤离 800，存活率 84.0%', '击杀 5000，死亡 100，K/D 50.00，击杀 PMC 900',
                      '匆匆逃离 30，转移 40，KIA 120，行动中失踪 10，最长连续存活 40 局',
                      'Scav：战局 50，撤离 30，存活率 60.0%', '精英技能（2 项）：耐力、力量', '其他技能（前 2 项）：魅力 40、活力 25',
                      '档案更新于 2026-10-03 12:00（北京时间）'):
@@ -64,7 +64,7 @@ class OutputTests(unittest.TestCase):
         s['scav'] = dict.fromkeys(s['scav'], 0)
         text = render_markdown(build_card(s, 'PVE', notes=['注意：x_y'], now=NOW))
         self.assertTrue(text.startswith('## 塔科夫 PVE 档案：A\\_b\\*c'))
-        self.assertIn('| PMC | 1000 | 800 | 80.0% | 5000 | 100 | 50.00 | 900 | 9.00 | 40 |', text)
+        self.assertIn('| PMC | 1000 | 800 | 84.0% | 5000 | 100 | 50.00 | 900 | 9.00 | 40 |', text)
         self.assertIn('| Scav | 暂无记录 |', text)
         self.assertNotIn('撤离状态（Scav）', text)
         self.assertIn('**精英技能（2 项）**：耐力、力量', text)
@@ -76,7 +76,7 @@ class OutputTests(unittest.TestCase):
         s = summarize(profile())
         self.assertEqual(render(s, 'PVE', notes=['n'], now=NOW), '\n'.join([
             '【塔科夫 PVE 档案】Test_Player（账号 ID 1234567）', '阵营 USEC｜等级 53', '账号总游戏时长 1000 小时｜成就 2 个',
-            '最近活跃 2026-09-28 20:53', '', 'PMC：战局 1000，撤离 800，存活率 80.0%',
+            '最近活跃 2026-09-28 20:53', '', 'PMC：战局 1000，撤离 800，存活率 84.0%',
             '　击杀 5000，死亡 100，K/D 50.00，击杀 PMC 900，PMC K/D 9.00', '　匆匆逃离 30，转移 40，KIA 120，行动中失踪 10，最长连续存活 40 局',
             'Scav：战局 50，撤离 30，存活率 60.0%', '　击杀 100，死亡 10，K/D 10.00，击杀 PMC 20，PMC K/D 2.00', '　匆匆逃离 5，KIA 15，最长连续存活 5 局',
             '精英技能（2 项）：耐力、力量', '其他技能（前 2 项）：魅力 40、活力 25', '', '数据来自 tarkov.dev，档案更新于 2026-10-03 12:00（北京时间）', 'n',

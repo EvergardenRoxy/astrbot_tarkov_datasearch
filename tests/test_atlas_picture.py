@@ -8,7 +8,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from fixtures import atlas_profile
 from tarkov_core import atlas_assets
@@ -26,28 +26,40 @@ def png(size=(40, 30), colour=(200, 50, 50, 255)):
     return out.getvalue()
 
 
-def rows(card, column):
-    return dict(dict(card['columns'])[column])
-
-
 class CardTests(unittest.TestCase):
-    def test_columns_follow_the_atlas_page(self):
+    def test_combat_rows_preserve_kd_rules_and_exit_counters(self):
         doc = atlas_profile('pvp')
         doc['stats']['pmc']['counters'].append([['ExitStatus', 'Left', 'Pmc'], 20])
         card = build(doc, 'pvp')
-        pmc, scav, total = rows(card, 'PMC'), rows(card, 'SCAV'), rows(card, '总览')
-        # K/D = player kills / (killed + left); all kills / (killed + left); AI = all - player kills.
-        self.assertEqual(pmc['K/D'], f'{900/140:.2f}')
-        self.assertEqual(pmc['K/D（全部击杀）'], f'{5000/140:.2f}')
-        self.assertEqual(pmc['击杀数（AI）'], '4,100')
-        self.assertEqual(pmc['擅离职守'], '20')
-        self.assertEqual(pmc['擅离率'], '2 %')
-        self.assertEqual(scav['擅离职守'], '0')
-        self.assertEqual(total['战局数'], '1,050')
-        self.assertEqual(total['连续幸存数'], '45')
-        self.assertEqual(pmc['在线'], '1000h00m')
+        pmc, scav = card['combat_rows']
+        # K/D (all kills) and PMC K/D both use killed + left, as before.
+        self.assertEqual(pmc['values'], ['1,000', '800', '84.0%', '5,000', '120', '35.71', '900', '6.43'])
+        self.assertEqual(pmc['stats']['left'], 20)
+        self.assertEqual(pmc['stats']['transit'], 40)
+        self.assertEqual(scav['stats']['left'], 0)
+        self.assertEqual(scav['values'][2], '60.0%')
+        headline = dict(card['headline'])
+        self.assertEqual(headline['战局数'], '1,050')
+        self.assertEqual(headline['连续幸存数'], '45')
+        self.assertEqual(headline['在线'], '1000h00m')
+        self.assertEqual(headline['幸存率'], '82.9%')
         self.assertEqual(len(card['headline']), 12)
-        self.assertNotIn('平均存活时间', pmc)
+
+    def test_transits_count_towards_survival_in_all_three_modes(self):
+        pmc = {'counters': [[['Sessions'], 37], [['ExitStatus', 'Survived'], 33],
+                            [['ExitStatus', 'Transit'], 2], [['ExitStatus', 'Killed'], 2]]}
+        scav = {'counters': [[['Sessions'], 8], [['ExitStatus', 'Survived'], 5],
+                             [['ExitStatus', 'Transit'], 1]]}
+        for mode in ('pvp', 'pve', 'season'):
+            with self.subTest(mode=mode):
+                card = build(atlas_profile(mode, stats={'pmc': pmc, 'scav': scav}), mode)
+                self.assertEqual(card['combat_rows'][0]['values'][2], '94.6%')
+                self.assertEqual(card['combat_rows'][1]['values'][2], '75.0%')
+                self.assertEqual(dict(card['headline'])['幸存率'], '91.1%')
+        empty = build(atlas_profile('pve', stats={}), 'pve')
+        self.assertEqual(dict(empty['headline'])['幸存率'], '—')
+        self.assertTrue(all(row['values'][2] == '—' for row in empty['combat_rows']))
+        self.assertTrue(all(row['values'][5] == '—' and row['values'][7] == '—' for row in empty['combat_rows']))
 
     def test_header_league_and_equipment(self):
         doc = atlas_profile('season', league={'rank': 2, 'name': {'en': 'A', 'ch': '甲'}, 'max': 3,
@@ -135,6 +147,50 @@ class CardTests(unittest.TestCase):
 
 
 class RenderTests(unittest.TestCase):
+    def test_horizontal_statistics_and_larger_two_column_skills(self):
+        from tarkov_core import atlas_image as ui
+        card = build(atlas_profile('pve'), 'pve')
+        image = Image.new('RGB', (ui.W, 1200), ui.BG)
+        drawn, boxes = [], []
+        original_text, original_rectangle = ImageDraw.ImageDraw.text, ImageDraw.ImageDraw.rectangle
+        def record_text(self, xy, text, *args, **kwargs):
+            drawn.append((xy, text, kwargs.get('font')))
+            return original_text(self, xy, text, *args, **kwargs)
+        def record_rectangle(self, xy, *args, **kwargs):
+            boxes.append(xy)
+            return original_rectangle(self, xy, *args, **kwargs)
+        with unittest.mock.patch.object(ImageDraw.ImageDraw, 'text', record_text), \
+                unittest.mock.patch.object(ImageDraw.ImageDraw, 'rectangle', record_rectangle):
+            draw = ImageDraw.Draw(image)
+            end = ui.statistics(draw, card, 0)
+            ui.skills(draw, card, end)
+        texts = [text for _, text, _ in drawn]
+        self.assertIn('84.0%', texts)
+        self.assertIn('PMC K/D', texts)
+        self.assertIn('存活率 =（撤离＋转移）÷总战局数', texts)
+        self.assertIn('擅离职守 0/0', texts)
+        self.assertTrue(any(text == '1,000' and font.size == 44 for _, text, font in drawn))
+        skills = [(xy, font) for xy, text, font in drawn if text in ('耐力', '力量')]
+        self.assertEqual(skills[0][0][1], skills[1][0][1])
+        self.assertGreater(skills[1][0][0], ui.W/2)
+        self.assertTrue(all(font.size == 34 for _, font in skills))
+        self.assertEqual(sum(1 for x0, y0, x1, y1 in boxes if x1-x0 == 27 and y1-y0 == 27), 20)
+
+    def test_empty_and_inconsistent_exit_counters_stay_inside_the_bar(self):
+        from tarkov_core import atlas_image as ui
+        for stats in ({}, {'pmc': {'counters': [[['Sessions'], 1], [['ExitStatus', 'Survived'], 10],
+                                               [['ExitStatus', 'Transit'], 9]]}}):
+            card = build(atlas_profile('pve', stats=stats), 'pve')
+            image = Image.new('RGB', (ui.W, 600), ui.BG)
+            boxes = []
+            original = ImageDraw.ImageDraw.rectangle
+            def record(self, xy, *args, **kwargs):
+                boxes.append(xy)
+                return original(self, xy, *args, **kwargs)
+            with unittest.mock.patch.object(ImageDraw.ImageDraw, 'rectangle', record):
+                ui.exit_bars(ImageDraw.Draw(image), card, 0)
+            self.assertTrue(all(0 <= x0 <= x1 <= ui.W-ui.M for x0, _, x1, _ in boxes))
+
     def test_jpeg_with_and_without_pictures(self):
         card = build(atlas_profile('pvp'), 'pvp')
         plain = render_atlas_image(card)

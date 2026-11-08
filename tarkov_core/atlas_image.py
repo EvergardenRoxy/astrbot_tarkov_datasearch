@@ -3,10 +3,10 @@
 Sections, top to bottom: the Atlas logo and link (required by the Atlas author on every output of its data), the
 player header (level badge, level, name, experience), equipment with tarkov.dev's item pictures (no weapon, holster,
 melee or secure container slots) beside the mode's headline numbers, the rare achievements as one full-width row,
-the statistics columns, skills (drawn like the old dossier card),
+the horizontal combat table and exit bars, enlarged two-column skills,
 the ten latest achievements, and the footer with the thanks to Atlas. Drawn locally with Pillow from atlas_card.build()
 and the pictures atlas_assets.py has on disk; a missing picture draws an empty placeholder box, never a substitute.
-The old tarkov.dev cards (image.py, arena_image.py) are separate and unchanged.
+The tarkov.dev renderers remain separate; their survival calculation is aligned in the shared snapshot card.
 """
 import io
 
@@ -225,40 +225,106 @@ def rare(img, d, card, icons, top):
     return top+RARE_H
 
 
+# Widths sum to the drawable board width. Rows follow the old dossier's reading order.
+STAT_COLUMNS = (('', 140), ('战局', 145), ('撤离', 145), ('存活率', 180), ('击杀', 155),
+                ('阵亡', 135), ('K/D', 200), ('击杀 PMC', 180), ('PMC K/D', 256))
+EXIT_FIELDS = (('survived', '撤离', (96, 157, 101)), ('runner', '匆匆逃离', (197, 153, 58)),
+               ('transit', '转移', (72, 130, 179)), ('killed', '阵亡', (169, 72, 72)),
+               ('mia', '行动中失踪', (111, 111, 117)), ('left', '擅离职守', (155, 105, 165)))
+
+
+def large_band(d, top, title):
+    d.rectangle((M, top, W-M, top+66), fill=BAND, outline=(30, 52, 76))
+    d.text((M+20, top+12), title, font=font('sc', 34, 800), fill=ACCENT)
+    return top+86
+
+
+def centered(d, cx, y, value, face, size, width, color, weight=None):
+    value = str(value)
+    f = fitted(d, value, face, size, width, weight)
+    value = clip(d, value, f, width)
+    d.text((cx-d.textlength(value, font=f)/2, y), value, font=f, fill=color)
+
+
 def statistics(d, card, top):
-    y = band(d, top, '统计数据')
-    gap = 16
-    col_w = (W-2*M-2*gap)/3
-    rows = max(len(rows) for _, rows in card['columns'])
-    for i, (title, entries) in enumerate(card['columns']):
-        x = M+i*(col_w+gap)
-        d.rectangle([x, y, x+col_w, y+44+rows*30+12], fill=PANEL, outline=RULE)
-        d.rectangle([x, y, x+col_w, y+36], fill=PANEL_2)
-        d.text((x+16, y+8), title, font=font('sc', 16, 800), fill=ACCENT)
-        for k, (label, value) in enumerate(entries):
-            ry = y+48+k*30
-            d.text((x+16, ry), label, font=font('sc', 16, 400), fill=DIM)
-            right(d, x+col_w-16, ry-1, value, font('mono', 18), TEXT)
-            d.line([x+12, ry+26, x+col_w-12, ry+26], fill=(32, 35, 40))
-    return y+44+rows*30+12+24
+    """Large horizontal PMC/Scav rows; header and headline use the same model's survival formula."""
+    y = large_band(d, top, '统计数据')
+    d.rectangle((M, y, W-M, y+62), fill=PANEL_2)
+    x = M
+    for label, width in STAT_COLUMNS:
+        centered(d, x+width/2, y+13, label, 'sc', 30, width-12, DIM, 700)
+        x += width
+    y += 62
+    for i, row in enumerate(card['combat_rows']):
+        d.rectangle((M, y, W-M, y+88), fill=PANEL if i % 2 == 0 else BG)
+        x = M
+        for k, ((_, width), value) in enumerate(zip(STAT_COLUMNS, [row['title'], *row['values']])):
+            centered(d, x+width/2, y+23, value, 'osw' if k == 0 else 'mono', 40 if k == 3 else 44,
+                     width-12, ACCENT if k == 3 else TEXT)
+            x += width
+        d.line((M, y+88, W-M, y+88), fill=RULE)
+        y += 88
+    d.text((M+10, y+18), '存活率 =（撤离＋转移）÷总战局数', font=font('sc', 27, 500), fill=ACCENT)
+    return exit_bars(d, card, y+79)
+
+
+def exit_bars(d, card, top):
+    rows = card['combat_rows']
+    d.text((M+8, top), '撤离状态', font=font('sc', 30, 700), fill=TEXT)
+    pmc, scav = (row['stats'] for row in rows)
+    note = f"图例数字为 PMC / SCAV · 最长连续存活：PMC {pmc['streak']} 局，SCAV {scav['streak']} 局"
+    d.text((M+210, top+3), clip(d, note, font('sc', 24, 500), W-2*M-210), font=font('sc', 24, 500), fill=DIM)
+    x, bw, y = M+145, W-2*M-145, top+65
+    for percent in (0, 25, 50, 75, 100):
+        xx = x+bw*percent/100
+        centered(d, xx, y-13, f'{percent}%', 'mono', 21, 80, DIM)
+        d.line((xx, y+17, xx, y+27), fill=DIM)
+    y += 40
+    for row in rows:
+        stats = row['stats']
+        d.text((M+8, y+5), row['title'], font=font('osw', 34, 500), fill=TEXT)
+        d.rectangle((x, y, x+bw, y+44), fill=BAR_BG)
+        start = x
+        if stats['raids']:
+            for key, _, color in EXIT_FIELDS:
+                # Keep inconsistent upstream totals inside the bar; legend values remain the original counters.
+                width = min(max(0, bw*stats[key]/stats['raids']), max(0, x+bw-start))
+                if width > 0:
+                    d.rectangle((start, y, start+width, y+44), fill=color)
+                start += width
+        else:
+            d.text((x+14, y+7), '暂无记录', font=font('sc', 23, 500), fill=DIM)
+        d.rectangle((x, y, x+bw, y+44), outline=DIM)
+        y += 66
+    legend_width = (W-2*M)/3
+    for i, (key, label, color) in enumerate(EXIT_FIELDS):
+        xx, yy = M+12+(i % 3)*legend_width, y+(i//3)*40
+        d.rectangle((xx, yy+7, xx+22, yy+29), fill=color)
+        line = f"{label} {pmc[key]}/{scav[key]}"
+        f = fitted(d, line, 'sc', 25, legend_width-55, 500)
+        d.text((xx+35, yy+1), clip(d, line, f, legend_width-55), font=f, fill=DIM)
+    return y+104
 
 
 def skills(d, card, top):
-    """Two columns of name, ten squares and the level, as on the old dossier card (elite in gold)."""
+    """Two columns, larger names/levels and ten 28-pixel squares per skill; elite remains gold."""
     if not card['skills']:
         return top
-    y = band(d, top, '技能')
-    colw = (W-2*M-24-60)/2
+    y = large_band(d, top, '技能')
+    gap = 36
+    colw = (W-2*M-gap)/2
     for i, (name, level, elite) in enumerate(card['skills']):
-        x0, yy = M+12+(i % 2)*(colw+60), y+(i//2)*38
-        d.text((x0, yy), str(name), font=font('sc', 19, 500), fill=TEXT)
+        x, yy = M+(i % 2)*(colw+gap), y+(i//2)*78
+        d.rectangle((x, yy, x+colw, yy+68), fill=PANEL if (i//2) % 2 == 0 else BG)
+        name_font = fitted(d, str(name), 'sc', 34, 225, 600)
+        d.text((x+14, yy+16), clip(d, name, name_font, 225), font=name_font, fill=TEXT)
         for k in range(10):
-            on = level >= (k+1)*5.1
-            d.rectangle([x0+170+k*24, yy+6, x0+186+k*24, yy+22], outline=DIM, width=1,
-                        fill=(GOLD if elite else BAR) if on else None)
-        right(d, x0+colw, yy, '精英' if elite else str(level), font('sc', 19, 800) if elite else font('mono', 21),
-              GOLD if elite else TEXT)
-    return y+((len(card['skills'])+1)//2)*38+20
+            xx = x+255+k*35
+            d.rectangle((xx, yy+21, xx+27, yy+48), outline=DIM,
+                        fill=(GOLD if elite else BAR) if level >= (k+1)*5.1 else None)
+        right(d, x+colw-14, yy+14, '精英' if elite else str(level),
+              font('sc', 35, 700) if elite else font('mono', 35), GOLD if elite else TEXT)
+    return y+((len(card['skills'])+1)//2)*78+28
 
 
 def latest(img, d, card, icons, top):

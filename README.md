@@ -50,7 +50,7 @@ Atlas 竞技场采用选手名册图片：排位／非排位汇总表、各模�
 
 `@机器人 tarkov 帮助` 跟随这个设置：选“图片”时回复一张用法图片，否则回复文字版用法。找不到玩家、同名列表和出错提示，无论选哪种方式都以文字回复。
 
-图片示例（虚构数据，点击查看）：[玩家档案](docs/preview.jpg)、[竞技场快照](docs/arena_preview.jpg)、[Atlas 竞技场](docs/arena_legacy_atlas_reference_v2.jpg)、[帮助](docs/help_preview.jpg)。Atlas 竞技场示例含排位演示，实际只显示接口有记录的分区。
+图片示例（虚构数据，点击查看）：[Atlas 玩家档案](docs/atlas_pve_preview.jpg)、[玩家档案快照](docs/preview.jpg)、[竞技场快照](docs/arena_preview.jpg)、[Atlas 竞技场](docs/arena_legacy_atlas_reference_v2.jpg)、[帮助](docs/help_preview.jpg)。Atlas 玩家档案示例使用图标占位；竞技场示例含排位演示，实际只显示接口有记录的分区。
 
 tarkov.dev 快照的文字回复示例（虚构数据）：
 
@@ -60,7 +60,7 @@ tarkov.dev 快照的文字回复示例（虚构数据）：
 账号总游戏时长 1000 小时｜成就 30 个
 最近活跃 2026-09-21 22:13
 
-PMC：战局 1000，撤离 800，存活率 80.0%
+PMC：战局 1000，撤离 800，存活率 84.0%
 　击杀 5000，死亡 100，K/D 50.00，击杀 PMC 900，PMC K/D 9.00
 　匆匆逃离 30，转移 40，KIA 120，行动中失踪 10，最长连续存活 40 局
 Scav：战局 50，撤离 30，存活率 60.0%

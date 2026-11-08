@@ -816,3 +816,33 @@ waiter cancellation, close cleanup, mirror verification/retry, disk permission f
 Snapshot/help and the approved Atlas Arena preview were rendered from invented data; the snapshot was visually
 inspected and the Arena output remained byte-identical. ZIP packaging passed (519,296 bytes before this documentation
 update); all licences remain. Live AstrBot/QQ and Python 3.13 were not validated here.
+
+## Mobile-readable PVP/PVE/season statistics and skills (2026-11-08)
+
+The maintainer approved complete-profile mockups retaining the existing palette and all other sections, with a
+horizontal combat table and exit-state bars replacing the three narrow statistics columns. Skills stay in two
+columns with larger labels and squares. Arena was explicitly excluded. Implemented with OpenAI Codex.
+
+The earlier `claude/vibrant-newton-lxci9c` branch was merged to main and deleted remotely before implementation.
+Work therefore starts at main `9d19c62` on `feat/player-mobile-statistics`; no deleted branch is recreated.
+
+- `atlas_card.py`: replaces the obsolete display columns with two `combat_rows` containing raw exit counters and
+  table values. Survival = (survived + transit) / sessions, formatted to one decimal place, dash without sessions.
+  The header and headline use the same function. Per-role all-kill and PMC K/D retain the prior killed+left
+  denominator. The existing combined header's player-kill K/D is unchanged.
+- `atlas_image.py`: approved 1600px board retained; larger horizontal PMC/SCAV rows (44px base numbers, 30px
+  headers), exit bars and a six-outcome legend with PMC/SCAV counts. Oversized exit totals cannot draw outside the
+  bar; original legend values remain visible. Skills retain two columns, with 34px base labels, 35px levels,
+  28px squares and 78px row pitch; long text is fitted/clipped inside its cells. Elite stays gold.
+- Snapshot `card.py` uses the same survival formula for all three main-game modes, including text/Markdown and
+  Atlas failure fallback. Existing snapshot styles and K/D rules remain. Arena models, renderers and previews are
+  untouched. The old PMC snapshot example changes from 80.0% to 84.0% because its 40 transits count as success.
+- `tools/build_atlas_player_preview.py [pvp|pve|season]` renders the complete production card from invented counters,
+  skills and achievements, without player or icon HTTP requests. The committed PVE example has icon placeholders;
+  all three modes were also rendered to /tmp for inspection. README uses a link, not an inline test image.
+
+Validation: all 438 tests pass on Python 3.12 (13.088 seconds), including formula regressions in all three modes,
+combined header accuracy, zero games/deaths, exit counters/bar bounds, larger dual-column skills, full image
+rendering and existing Arena tests. Production full previews were rendered for all three modes (1600x3184,
+~482 KB JPEG) and the PVE image visually inspected. Package/whitespace checks pass. Live QQ/mobile delivery and
+Python 3.13 were not run here; phone readability still depends on the chat client's image scaling.
