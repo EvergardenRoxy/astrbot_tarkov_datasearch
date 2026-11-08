@@ -816,3 +816,121 @@ waiter cancellation, close cleanup, mirror verification/retry, disk permission f
 Snapshot/help and the approved Atlas Arena preview were rendered from invented data; the snapshot was visually
 inspected and the Arena output remained byte-identical. ZIP packaging passed (519,296 bytes before this documentation
 update); all licences remain. Live AstrBot/QQ and Python 3.13 were not validated here.
+
+## Mobile-readable PVP/PVE/season statistics and skills (2026-11-08)
+
+The maintainer approved complete-profile mockups retaining the existing palette and all other sections, with a
+horizontal combat table and exit-state bars replacing the three narrow statistics columns. Skills stay in two
+columns with larger labels and squares. Arena was explicitly excluded. Implemented with OpenAI Codex.
+
+The earlier `claude/vibrant-newton-lxci9c` branch was merged to main and deleted remotely before implementation.
+Work therefore starts at main `9d19c62` on `feat/player-mobile-statistics`; no deleted branch is recreated.
+
+- `atlas_card.py`: replaces the obsolete display columns with two `combat_rows` containing raw exit counters and
+  table values. Survival = (survived + transit) / sessions, formatted to one decimal place, dash without sessions.
+  The header and headline use the same function. Per-role all-kill and PMC K/D retain the prior killed+left
+  denominator. The existing combined header's player-kill K/D is unchanged.
+- `atlas_image.py`: approved 1600px board retained; larger horizontal PMC/SCAV rows (44px base numbers, 30px
+  headers), exit bars and a six-outcome legend with PMC/SCAV counts. Oversized exit totals cannot draw outside the
+  bar; original legend values remain visible. Skills retain two columns, with 34px base labels, 35px levels,
+  28px squares and 78px row pitch; long text is fitted/clipped inside its cells. Elite stays gold.
+- Snapshot `card.py` uses the same survival formula for all three main-game modes, including text/Markdown and
+  Atlas failure fallback. Existing snapshot styles and K/D rules remain. Arena models, renderers and previews are
+  untouched. The old PMC snapshot example changes from 80.0% to 84.0% because its 40 transits count as success.
+- `tools/build_atlas_player_preview.py [pvp|pve|season]` renders the complete production card from invented counters,
+  skills and achievements, without player or icon HTTP requests. The committed PVE example has icon placeholders;
+  all three modes were also rendered to /tmp for inspection. README uses a link, not an inline test image.
+
+Validation: all 438 tests pass on Python 3.12 (13.088 seconds), including formula regressions in all three modes,
+combined header accuracy, zero games/deaths, exit counters/bar bounds, larger dual-column skills, full image
+rendering and existing Arena tests. Production full previews were rendered for all three modes (1600x3184,
+~482 KB JPEG) and the PVE image visually inspected. Package/whitespace checks pass. Live QQ/mobile delivery and
+Python 3.13 were not run here; phone readability still depends on the chat client's image scaling.
+
+## 0.5.1 review: labels, survival wording and alignment (2026-11-08)
+
+Review of the mobile statistics commit (Claude Code), with the maintainer's decisions:
+
+- Version 0.5.1 everywhere (`__init__`, `metadata.yaml`, `main.py`, CHANGELOG heading, footer test strings). Only
+  the mobile-statistics entry moved from the untagged 0.5.0 section into 0.5.1; the other post-0.5.0 bullets
+  (font pipeline, Atlas limits, Arena) were left where the maintainer wrote them.
+- Equal labels now mean equal numbers: the table's all-kills ratio is "K/D（全部击杀）" again; the header/headline
+  player-kill count is "击杀 PMC" (was "击杀数", which clashed with the table's all-kills "击杀"). Header/headline
+  "K/D" still = player kills ÷ (killed + left). "擅离率" drops the space before "%".
+- "幸存率" is the single wording (maintainer): Atlas picture, snapshot picture, text and Markdown, plus
+  "最长连续幸存". Survival still counts transits (maintainer confirmed). Headline "幸存数" remains survived only,
+  so 幸存数 ÷ 战局数 differs from 幸存率 whenever there are transits.
+- `atlas_image.mid()` centres each text on its ink ('H0' for Latin/digits, one ideograph for Chinese) with a
+  baseline anchor; used by the statistics table, exit bars, skills, both band styles and the header numbers, so
+  Oswald, Share Tech Mono and Noto Sans SC sit on one visual line. The "100%" tick hangs inward inside the margin.
+  Column widths rebalanced for the longer K/D header (still summing to 1536).
+- README/CHANGELOG AI statement and badges add OpenAI Codex, matching the handoff notes.
+
+Validation: 438 tests pass (Python 3.13), with new assertions for the labels, wording and in-margin text.
+`docs/atlas_pve_preview.jpg` and `docs/preview.jpg` regenerated and inspected; PVP and season rendered for
+inspection only. Arena and help previews untouched. Open item: the small-text sections (header, rare and latest
+achievements, equipment) remain hard to read on phones — a full-board rescale is pending the maintainer's choice.
+
+### Revert and real-data annotations (2026-11-08)
+
+The full-board rescale (`b35b71a`) was reverted (`e78ee0f`) at the maintainer's request. The maintainer then
+annotated a real PVE picture (one Atlas search + one lookup through the plugin's client; data and picture kept in
+the session scratchpad only, never committed) and asked for:
+
+- Atlas logo and source link moved into the player header's right side, replacing the small duplicate numbers; the
+  top row now holds the mode title (left) and the query time (right). Badge position unchanged.
+- Headline panel: Oswald 44 values and 22 px labels (fitted/clipped per cell).
+- Rare achievements: the "% 玩家" line removed; names 24 px (min 18, then clipped) and rarity 20 px.
+- Latest achievements: same table, larger type (header 22, name 26, description 22 with two wrapped lines, rarity
+  24, time mono 24, 60 px icons); the "% 玩家" column removed in all modes. The Arena register's achievement cards
+  also lose their share label (maintainer: all modes). Atlas reports 0 % for every PVE achievement.
+- Maintainer decisions: transit counts as survival; "幸存数" stays survived-only; the empty body-armour slot with a
+  plate-carrier rig is correct; a missing rarity ("—") is a game-side issue and is left alone.
+- `fitted()`/`centered()` regain an optional `minimum` (default 10, so Arena output is unchanged).
+
+Validation: 439 tests pass. The PVE example and the Arena Atlas example were regenerated from invented data.
+Not yet decided: whether the rare-achievement title row, equipment labels and footer are enlarged too.
+
+### Second annotation round (2026-11-08)
+
+- The title row (mode + query time) is gone; the header starts at `HEADER_TOP` = 24. The mode remains on the headline
+  panel, the query time in the info row, whose label becomes "查询时间（Atlas 缓存）" for Atlas-cached documents.
+- Rare achievement icons 80 → 116 px (`RARE_H` 274).
+- Skills: `atlas_card.SKILL_TOTAL` = 16 places, elite first then highest. `skill_limit` (the "显示的技能数"
+  setting) now only switches the Atlas skills off at 0; the snapshot keeps "all elite + N others". Hint updated.
+- Arena with real data: Atlas' arena nickname search for the reference player returned no result and the direct
+  arena lookup by account ID returned HTTP 502 (see the session report); no further requests were made.
+
+### Arena banner (2026-11-08)
+
+Real Arena data now available (reference player found by nickname search; one search + one lookup, scratchpad only).
+First Arena annotation (corrected by the maintainer after a first misreading, `233538b`): no banner above the
+register and no "数据来源：Atlas" text; the Atlas logo (28 px) and `ATLAS_URL` (mono 17) sit at the right end of the
+"ARENA MASTERS" line on a plate cut from the border's leather texture (`texture(LEATHER, 21, 14)`) with a gold
+frame line (maintainer), because the logo's white lettering is invisible on the paper.
+The preview-only reference label sits under the plate. Small changes are pushed without a separate review at the
+maintainer's request.
+
+## 0.5.0–0.5.1 code review (2026-11-08)
+
+Scope: `v0.4.8..HEAD` (42 commits; main.py, every `atlas_*` module, font_download/fonts, matching, Arena and
+snapshot changes, tests, docs). Read for correctness, request limits, file/network safety and doc accuracy.
+
+Fixed in this branch:
+- `AtlasAssets.catalog_for(ids)`: a saved icon catalog never refreshed, so achievements added to the game kept
+  placeholder icons until the one-shot prefetch. An unknown achievement id now rebuilds it (at most every
+  `REBUILD_SECONDS` = 6 h; a failed rebuild keeps the old catalog). `main.atlas_icons` uses it.
+- `UserQuota`/`AtlasPlayers`: a query refused by the plugin's budget or the shared gate (`AtlasBudgetError`,
+  `AtlasCooldownError`; nothing sent) no longer consumes the user's hourly count and 30-second interval
+  (`charge.refund()`); answered requests, errors included, still count. Joiners of a shared request were never charged.
+- README link to the deleted `claude/vibrant-newton-lxci9c` branch made relative; the 0.5.0 changelog line about a
+  5-second / 1-300 s interval now notes the later 10-300 s range.
+
+Reviewed, left as is (noted for the maintainer):
+- `retry_after()` maps an absurdly large numeric Retry-After to an infinite pause (fail closed by design, tested);
+  only a restart clears it.
+- One transient matching failure without a cache blocks matching for 15 minutes (by design: no retry storm).
+- History recording is on by default and stores other players' Atlas documents locally (documented privacy switch).
+- Pre-0.5 unused imports in `boss_table_image.py` are out of scope.
+
+Validation: 441 tests pass (Python 3.13); pyflakes clean for the reviewed modules apart from intentional re-exports.

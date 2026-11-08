@@ -28,6 +28,8 @@ MAX_PIXELS = 16*1024*1024
 # Stored pictures are scaled down to fit this box (item pictures are drawn at most ~300 px wide).
 STORE_SIZE = 512
 FAILURE_SECONDS = 10*60
+# An achievement the saved catalog does not know (a new one in the game) rebuilds it, at most this often.
+REBUILD_SECONDS = 6*3600
 # Downloads at once, and at most per picture (the rest draw placeholders and come next time).
 SLOTS = 4
 PER_PICTURE = 48
@@ -103,6 +105,7 @@ class AtlasAssets:
         self.clock = clock
         self.memory, self.failed, self.pending = {}, {}, {}
         self.catalog_data = None
+        self.rebuild_after = 0
         self.slots = asyncio.Semaphore(SLOTS)
         self.lock = asyncio.Lock()
         self.closed = False
@@ -151,6 +154,22 @@ class AtlasAssets:
         if not self.closed:
             await asyncio.to_thread(self.write_catalog, catalog)
             self.catalog_data = catalog
+        return catalog
+
+    async def catalog_for(self, achievement_ids):
+        """The catalog, rebuilt from the public feeds when it lacks one of `achievement_ids` (at most every
+        REBUILD_SECONDS; a failed rebuild keeps the old catalog)."""
+        catalog = await self.catalog()
+        known = catalog.get('achievements', {})
+        if any(key not in known for key in achievement_ids) and self.clock() >= self.rebuild_after:
+            self.rebuild_after = self.clock()+REBUILD_SECONDS
+            try:
+                async with self.lock:
+                    catalog = await self.catalog(rebuild=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                pass
         return catalog
 
     # ---- pictures ----

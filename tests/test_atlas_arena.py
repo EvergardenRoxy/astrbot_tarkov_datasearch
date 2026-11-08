@@ -48,7 +48,8 @@ class ArenaCardTests(unittest.TestCase):
             return real(self, xy, text, *args, **kwargs)
         with patch.object(ImageDraw.ImageDraw, 'text', record):
             data = render_atlas_image(card)
-        self.assertIn('数据来源：Atlas', drawn)
+        # The banner carries the Atlas logo and link; the "数据来源" line was removed (maintainer, 2026-11-08).
+        self.assertNotIn('数据来源：Atlas', drawn)
         self.assertIn('https://eftforge.com/atlas', drawn)
         self.assertIn('1 / 80', drawn)
         self.assertIn('最近成就 LAST HONOUR', drawn)

@@ -26,6 +26,10 @@ def build_arena(doc, *, now=None):
     return card
 
 
+# Where render_arena_image() puts the page and its title (page offset 40, title at y 30 on the page).
+PAGE_Y, TITLE_Y = 40, 30
+
+
 def render_atlas_arena_image(card):
     from . import atlas_image as ui
 
@@ -41,18 +45,24 @@ def render_atlas_arena_image(card):
 
     register = arena_image.render_arena_image(card, font_provider=ui.font, fit_provider=ui.fitted,
                                               footer_provider=footer, as_image=True)
-    header_h = 100
-    img = arena_image.texture(arena_image.LEATHER, 21, 14, arena_image.W, register.height+header_h)
-    img.paste(register, (0, header_h))
+    # No banner above the register (maintainer, 2026-11-08): the Atlas logo and link sit at the right end of the
+    # "ARENA MASTERS" line, on a plate of the border's leather so the logo's white lettering stays legible.
+    img = register
     d = ImageDraw.Draw(img)
-    d.rectangle([14, 14, arena_image.W-14, header_h-6], outline=arena_image.GOLD, width=2)
-    mark = logo(38)
-    img.paste(mark, (38, 32), mark)
-    x = 38+mark.width+24
-    d.text((x, 25), '数据来源：Atlas', font=ui.font('sc', 19, 600), fill=(226, 214, 186))
-    d.text((x, 55), ATLAS_URL, font=ui.font('mono', 18), fill=(214, 196, 160))
+    title = ui.font('osw', 40, 700)
+    _, top, _, bottom = title.getbbox('ARENA MASTERS')
+    cy = PAGE_Y+TITLE_Y+(top+bottom)/2
+    mark, url_font = logo(28), ui.font('mono', 17)
+    pad, gap = 14, 12
+    right = arena_image.W-PAGE_Y-40
+    plate_w = pad+mark.width+gap+d.textlength(ATLAS_URL, font=url_font)+pad
+    # The plate is cut from the register's own leather edge (same colour and grain) with its gold frame line.
+    box = (round(right-plate_w), round(cy-22), round(right), round(cy+22))
+    img.paste(arena_image.texture(arena_image.LEATHER, 21, 14, box[2]-box[0], box[3]-box[1]), box[:2])
+    d.rectangle(box, outline=arena_image.GOLD, width=2)
+    img.paste(mark, (round(right-plate_w+pad), round(cy-mark.height/2)), mark)
+    ui.mid(d, right-pad, cy, ATLAS_URL, url_font, (226, 214, 186), 'r')
     if card.get('reference_label'):
         label = str(card['reference_label'])
-        f = ui.fitted(d, label, 'sc', 13, 180, 400)
-        d.text((arena_image.W-38-d.textlength(label, font=f), 32), label, font=f, fill=(214, 196, 160))
+        ui.mid(d, right, PAGE_Y+92, label, ui.fitted(d, label, 'sc', 13, 180, 400), arena_image.BROWN, 'r')
     return ui.jpeg(img)

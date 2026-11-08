@@ -96,7 +96,7 @@ def every(seconds):
     return f'每 {hours} 小时'
 
 
-@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.5.0')
+@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.5.1')
 class TarkovPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -1105,7 +1105,7 @@ class TarkovPlugin(Star):
     async def atlas_icons(self, card, trace):
         """The pictures the card needs from the local cache, downloading missing ones (failures draw placeholders)."""
         try:
-            catalog = await self.atlas_assets.catalog()
+            catalog = await self.atlas_assets.catalog_for(card['achievement_ids'])
         except asyncio.CancelledError:
             raise
         except Exception as exc:

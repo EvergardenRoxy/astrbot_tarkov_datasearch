@@ -201,7 +201,7 @@ def render_image(card):
     y = 460
     d.text((40, y), f'{next(number)}、作战记录', font=font('sc', 22, 800), fill=INK)
     y += 40
-    head = ['', '战局', SURVIVED, '存活率', '击杀', '死亡', 'K/D', '击杀 PMC', 'PMC K/D']
+    head = ['', '战局', SURVIVED, '幸存率', '击杀', '死亡', 'K/D', '击杀 PMC', 'PMC K/D']
     xs = [40, 135, 210, 285, 385, 470, 540, 615, 705, W-40]
     for x, h in zip(xs, head):
         d.text((x, y), h, font=fit(d, h, 'sc', 16, xs[xs.index(x)+1]-x-6, 700), fill=INK)
@@ -224,7 +224,7 @@ def render_image(card):
     y += 22
     pmc, scav = (card_side['stats'] for card_side in card['sides'])
     d.text((40, y), '撤离状态', font=font('sc', 18, 700), fill=INK)
-    d.text((124, y+3), f"图例数字为 PMC/Scav · 最长连续存活：PMC {pmc['streak']} 局，Scav {scav['streak']} 局",
+    d.text((124, y+3), f"图例数字为 PMC/Scav · 最长连续幸存：PMC {pmc['streak']} 局，Scav {scav['streak']} 局",
            font=font('sc', 15, 400), fill=FADED)
     y = exit_bars(d, card['sides'], 40, y+52, W-80)+26
 

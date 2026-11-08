@@ -8,7 +8,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from fixtures import atlas_profile
 from tarkov_core import atlas_assets
@@ -26,28 +26,44 @@ def png(size=(40, 30), colour=(200, 50, 50, 255)):
     return out.getvalue()
 
 
-def rows(card, column):
-    return dict(dict(card['columns'])[column])
-
-
 class CardTests(unittest.TestCase):
-    def test_columns_follow_the_atlas_page(self):
+    def test_combat_rows_preserve_kd_rules_and_exit_counters(self):
         doc = atlas_profile('pvp')
         doc['stats']['pmc']['counters'].append([['ExitStatus', 'Left', 'Pmc'], 20])
         card = build(doc, 'pvp')
-        pmc, scav, total = rows(card, 'PMC'), rows(card, 'SCAV'), rows(card, '总览')
-        # K/D = player kills / (killed + left); all kills / (killed + left); AI = all - player kills.
-        self.assertEqual(pmc['K/D'], f'{900/140:.2f}')
-        self.assertEqual(pmc['K/D（全部击杀）'], f'{5000/140:.2f}')
-        self.assertEqual(pmc['击杀数（AI）'], '4,100')
-        self.assertEqual(pmc['擅离职守'], '20')
-        self.assertEqual(pmc['擅离率'], '2 %')
-        self.assertEqual(scav['擅离职守'], '0')
-        self.assertEqual(total['战局数'], '1,050')
-        self.assertEqual(total['连续幸存数'], '45')
-        self.assertEqual(pmc['在线'], '1000h00m')
+        pmc, scav = card['combat_rows']
+        # K/D (all kills) and PMC K/D both use killed + left, as before.
+        self.assertEqual(pmc['values'], ['1,000', '800', '84.0%', '5,000', '120', '35.71', '900', '6.43'])
+        self.assertEqual(pmc['stats']['left'], 20)
+        self.assertEqual(pmc['stats']['transit'], 40)
+        self.assertEqual(scav['stats']['left'], 0)
+        self.assertEqual(scav['values'][2], '60.0%')
+        headline = dict(card['headline'])
+        self.assertEqual(headline['战局数'], '1,050')
+        self.assertEqual(headline['连续幸存数'], '45')
+        self.assertEqual(headline['在线'], '1000h00m')
+        self.assertEqual(headline['幸存率'], '82.9%')
+        # Equal labels mean equal numbers: the headline's player kills are "击杀 PMC", as in the table.
+        self.assertEqual(headline['击杀 PMC'], '920')
+        self.assertNotIn('击杀数', headline)
+        self.assertEqual(headline['擅离率'], '2%')
         self.assertEqual(len(card['headline']), 12)
-        self.assertNotIn('平均存活时间', pmc)
+
+    def test_transits_count_towards_survival_in_all_three_modes(self):
+        pmc = {'counters': [[['Sessions'], 37], [['ExitStatus', 'Survived'], 33],
+                            [['ExitStatus', 'Transit'], 2], [['ExitStatus', 'Killed'], 2]]}
+        scav = {'counters': [[['Sessions'], 8], [['ExitStatus', 'Survived'], 5],
+                             [['ExitStatus', 'Transit'], 1]]}
+        for mode in ('pvp', 'pve', 'season'):
+            with self.subTest(mode=mode):
+                card = build(atlas_profile(mode, stats={'pmc': pmc, 'scav': scav}), mode)
+                self.assertEqual(card['combat_rows'][0]['values'][2], '94.6%')
+                self.assertEqual(card['combat_rows'][1]['values'][2], '75.0%')
+                self.assertEqual(dict(card['headline'])['幸存率'], '91.1%')
+        empty = build(atlas_profile('pve', stats={}), 'pve')
+        self.assertEqual(dict(empty['headline'])['幸存率'], '—')
+        self.assertTrue(all(row['values'][2] == '—' for row in empty['combat_rows']))
+        self.assertTrue(all(row['values'][5] == '—' and row['values'][7] == '—' for row in empty['combat_rows']))
 
     def test_header_league_and_equipment(self):
         doc = atlas_profile('season', league={'rank': 2, 'name': {'en': 'A', 'ch': '甲'}, 'max': 3,
@@ -101,6 +117,16 @@ class CardTests(unittest.TestCase):
         card = build(atlas_profile('pve'), 'pve', skill_limit=0)
         self.assertEqual(card['skills'], [])
         self.assertEqual(build(atlas_profile('pve'), 'pve')['skills'], [('耐力', 51, True), ('力量', 25, False)])
+        # Two full columns: 16 places, elite first, whatever the snapshot's "other skills" setting says.
+        keys = ['Endurance', 'Strength', 'Vitality', 'Health', 'StressResistance', 'Metabolism', 'Immunity',
+                'Perception', 'Intellect', 'Attention', 'Charisma', 'Search', 'Surgery', 'CovertMovement', 'Throwing',
+                'AimDrills', 'HideoutManagement', 'Crafting']
+        many = {'common': [{'id': key, 'progress': (5100 if i < 3 else 3000-i*100), 'lastAccess': 1700000000}
+                           for i, key in enumerate(keys)]}
+        shown = build(atlas_profile('pve', skills=many), 'pve', skill_limit=10)['skills']
+        self.assertEqual(len(shown), 16)
+        self.assertEqual([elite for _, _, elite in shown[:4]], [True, True, True, False])
+        self.assertEqual([level for _, level, _ in shown[3:]], sorted([level for _, level, _ in shown[3:]], reverse=True))
 
     def test_achievement_chinese_is_from_atlas_with_per_field_english_fallback(self):
         done = [
@@ -135,6 +161,75 @@ class CardTests(unittest.TestCase):
 
 
 class RenderTests(unittest.TestCase):
+    def test_horizontal_statistics_and_larger_two_column_skills(self):
+        from tarkov_core import atlas_image as ui
+        card = build(atlas_profile('pve'), 'pve')
+        image = Image.new('RGB', (ui.W, 1200), ui.BG)
+        drawn, boxes = [], []
+        original_text, original_rectangle = ImageDraw.ImageDraw.text, ImageDraw.ImageDraw.rectangle
+        inked = []
+        def record_text(self, xy, text, *args, **kwargs):
+            drawn.append((xy, text, kwargs.get('font')))
+            inked.append((text, self.textbbox(xy, text, font=kwargs.get('font'), anchor=kwargs.get('anchor'))))
+            return original_text(self, xy, text, *args, **kwargs)
+        def record_rectangle(self, xy, *args, **kwargs):
+            boxes.append(xy)
+            return original_rectangle(self, xy, *args, **kwargs)
+        with unittest.mock.patch.object(ImageDraw.ImageDraw, 'text', record_text), \
+                unittest.mock.patch.object(ImageDraw.ImageDraw, 'rectangle', record_rectangle):
+            draw = ImageDraw.Draw(image)
+            end = ui.statistics(draw, card, 0)
+            ui.skills(draw, card, end)
+        texts = [text for _, text, _ in drawn]
+        self.assertIn('84.0%', texts)
+        self.assertIn('PMC K/D', texts)
+        self.assertIn('K/D（全部击杀）', texts)
+        # Every label, including the "100%" tick at the bar's right end, stays inside the margins.
+        self.assertTrue(all(ui.M <= box[0] and box[2] <= ui.W-ui.M for _, box in inked), inked)
+        self.assertNotIn('存活率', ''.join(map(str, texts)))
+        self.assertIn('幸存率 =（撤离＋转移）÷总战局数', texts)
+        self.assertIn('擅离职守 0/0', texts)
+        self.assertTrue(any(text == '1,000' and font.size == 44 for _, text, font in drawn))
+        skills = [(xy, font) for xy, text, font in drawn if text in ('耐力', '力量')]
+        self.assertEqual(skills[0][0][1], skills[1][0][1])
+        self.assertGreater(skills[1][0][0], ui.W/2)
+        self.assertTrue(all(font.size == 34 for _, font in skills))
+        self.assertEqual(sum(1 for x0, y0, x1, y1 in boxes if x1-x0 == 27 and y1-y0 == 27), 20)
+
+    def test_header_carries_the_atlas_link_and_no_player_share_is_drawn(self):
+        done = [{'id': f'a{i}', 'at': 1700000000+i, 'rarity': 'Rare', 'percent': 12.5,
+                 'ch': {'name': f'成就{i}', 'description': '描述'}} for i in range(3)]
+        drawn = []
+        original = ImageDraw.ImageDraw.text
+        def record(self, xy, text, *args, **kwargs):
+            drawn.append(str(text))
+            return original(self, xy, text, *args, **kwargs)
+        for mode in ('pvp', 'pve', 'season'):
+            card = build(atlas_profile(mode, achievements={'count': 3, 'total': 9, 'done': done}), mode)
+            with unittest.mock.patch.object(ImageDraw.ImageDraw, 'text', record):
+                render_atlas_image(card)
+        # The completion share is not shown anywhere (maintainer, 2026-11-08), in any mode.
+        self.assertFalse([text for text in drawn if '玩家' in text and '%' in text])
+        self.assertNotIn('% 玩家', drawn)
+        self.assertIn('数据来源：Atlas  ', drawn)
+        self.assertIn('达成时间（UTC+8）', drawn)
+        self.assertNotIn('击杀 PMC：', drawn)  # The header's small numbers were replaced by the Atlas link.
+
+    def test_empty_and_inconsistent_exit_counters_stay_inside_the_bar(self):
+        from tarkov_core import atlas_image as ui
+        for stats in ({}, {'pmc': {'counters': [[['Sessions'], 1], [['ExitStatus', 'Survived'], 10],
+                                               [['ExitStatus', 'Transit'], 9]]}}):
+            card = build(atlas_profile('pve', stats=stats), 'pve')
+            image = Image.new('RGB', (ui.W, 600), ui.BG)
+            boxes = []
+            original = ImageDraw.ImageDraw.rectangle
+            def record(self, xy, *args, **kwargs):
+                boxes.append(xy)
+                return original(self, xy, *args, **kwargs)
+            with unittest.mock.patch.object(ImageDraw.ImageDraw, 'rectangle', record):
+                ui.exit_bars(ImageDraw.Draw(image), card, 0)
+            self.assertTrue(all(0 <= x0 <= x1 <= ui.W-ui.M for x0, _, x1, _ in boxes))
+
     def test_jpeg_with_and_without_pictures(self):
         card = build(atlas_profile('pvp'), 'pvp')
         plain = render_atlas_image(card)
@@ -144,7 +239,8 @@ class RenderTests(unittest.TestCase):
             self.assertEqual(image.width, 1600)
             self.assertGreater(image.height, 2000)
             # The level badge (red test picture) is drawn in the header.
-            self.assertGreater(image.convert('RGB').getpixel((32+20+44, 112+22+44))[0], 150)
+            from tarkov_core.atlas_image import HEADER_TOP
+            self.assertGreater(image.convert('RGB').getpixel((32+20+44, HEADER_TOP+22+44))[0], 150)
 
 
 class CatalogTests(unittest.TestCase):
@@ -226,6 +322,19 @@ class AssetCacheTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await reloaded.catalog())['prestige'], {'1': 'https://assets.tarkov.dev/prestige-1-icon.webp'})
         self.assertEqual(await self.assets.clear(), 4)
         self.assertEqual(list(self.root.iterdir()), [])
+
+    async def test_an_unknown_achievement_rebuilds_the_catalog_at_most_every_few_hours(self):
+        await self.assets.catalog()
+        self.assertEqual(len(self.feeds), 3)
+        self.assertIn('a1', (await self.assets.catalog_for(['a1']))['achievements'])
+        self.assertEqual(len(self.feeds), 3)  # Known achievements need no rebuild.
+        await self.assets.catalog_for(['new'])
+        self.assertEqual(len(self.feeds), 6)  # A new achievement in the game: rebuilt once.
+        await self.assets.catalog_for(['new'])
+        self.assertEqual(len(self.feeds), 6)
+        self.clock.advance(atlas_assets.REBUILD_SECONDS)
+        await self.assets.catalog_for(['new'])
+        self.assertEqual(len(self.feeds), 9)
 
     async def test_concurrent_requests_share_one_download(self):
         url = 'https://assets.tarkov.dev/shared.png'

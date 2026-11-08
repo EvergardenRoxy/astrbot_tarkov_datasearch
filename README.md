@@ -1,11 +1,11 @@
-[![AI Assisted](https://img.shields.io/badge/AI-Claude%20Opus%205.5%20%2B%20Claude%20Code-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](#ai-制作声明)
+[![AI Assisted](https://img.shields.io/badge/AI-Claude%20Opus%205.5%20%2B%20Claude%20Code-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](#ai-制作声明) [![AI Assisted](https://img.shields.io/badge/AI-OpenAI%20Codex-412991?style=for-the-badge&logo=openai&logoColor=white)](#ai-制作声明)
 
 <a id="ai-制作声明"></a>
 
 > [!IMPORTANT]
 > **AI 制作声明：塔科夫数据查询采用生成式 AI 参与架构设计、编码、文档与测试。** AI 生成或修改的内容由项目维护者审阅、验证并承担最终维护责任。
 >
-> 参与的 AI：**Claude Opus 5.5**（通过 **Claude Code**）；Boss 图的背景纹理由维护者用 **GPT-Image-2.5-sunburst** 生成。
+> 参与的 AI：**Claude Opus 5.5**（通过 **Claude Code**）、**OpenAI Codex**；Boss 图的背景纹理由维护者用 **GPT-Image-2.5-sunburst** 生成。
 
 # 塔科夫数据查询
 
@@ -15,11 +15,11 @@ Atlas 竞技场采用选手名册图片：排位／非排位汇总表、各模�
 
 ## tarkov.dev 对机器人调用的限制与现状（玩家档案）
 
-**只有在 tarkov.dev 上被搜索过的玩家才有档案，档案不会自动更新，第一次查某个玩家之前要先到网站搜索他一次。** 默认 Atlas 查询不需要这一步，可在命令末尾加“刷新”重新查询。详细说明见 [玩家数据查询](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/claude/vibrant-newton-lxci9c/docs/player-query.md#tarkovdev-对机器人调用的限制与现状)。特别感谢作者 Morph1ne，其维护的项目 [**Atlas**](https://eftforge.com/atlas) 解决了长期以来的这部分难题。
+**只有在 tarkov.dev 上被搜索过的玩家才有档案，档案不会自动更新，第一次查某个玩家之前要先到网站搜索他一次。** 默认 Atlas 查询不需要这一步，可在命令末尾加“刷新”重新查询。详细说明见 [玩家数据查询](docs/player-query.md#tarkovdev-对机器人调用的限制与现状)。特别感谢作者 Morph1ne，其维护的项目 [**Atlas**](https://eftforge.com/atlas) 解决了长期以来的这部分难题。
 
 ## 功能
 
-- **[塔科夫玩家数据查询](docs/player-query.md)**：绑定自己的账号，用昵称、账号 ID 或玩家页网址查询自己或他人的档案——等级、阵营、PMC 与 Scav 的战局、存活率、K/D、技能；支持 PVP、PVE、PVP 赛季和塔科夫竞技场（段位、ARP、胜率）。
+- **[塔科夫玩家数据查询](docs/player-query.md)**：绑定自己的账号，用昵称、账号 ID 或玩家页网址查询自己或他人的档案——等级、阵营、PMC 与 Scav 的战局、幸存率、K/D、技能；支持 PVP、PVE、PVP 赛季和塔科夫竞技场（段位、ARP、胜率）。
 - **[服务器状态与 Boss 刷率](docs/status-and-boss.md)**（0.4.5 新增，默认关闭）：服务器各组件状态；各地图日常 Boss 与三狗的刷率全表，另显示活动 Boss；两者都可开启变化推送。
 - **[服务器匹配时间](docs/matching.md)**（0.5.0 新增，默认开启）：各数据中心的平均匹配等待时间和最近 24 小时走势，列出各地区最快、最快的 8 个数据中心，以及香港、日本、韩国三个常用服务器；数据来自 Atlas，所有会话共用一份结果，15 分钟更新一次。
 - **通用**：图片、文字、Markdown 三种回复方式（玩家查询）；所有人、仅管理员、管理员和指定用户三种权限，也可限定聊天；支持 QQ 官方机器人：`@机器人 /命令` 写法，以及不含空格的单词命令（tpve、tstatus、tboss、tmatch 等）。
@@ -50,7 +50,7 @@ Atlas 竞技场采用选手名册图片：排位／非排位汇总表、各模�
 
 `@机器人 tarkov 帮助` 跟随这个设置：选“图片”时回复一张用法图片，否则回复文字版用法。找不到玩家、同名列表和出错提示，无论选哪种方式都以文字回复。
 
-图片示例（虚构数据，点击查看）：[玩家档案](docs/preview.jpg)、[竞技场快照](docs/arena_preview.jpg)、[Atlas 竞技场](docs/arena_legacy_atlas_reference_v2.jpg)、[帮助](docs/help_preview.jpg)。Atlas 竞技场示例含排位演示，实际只显示接口有记录的分区。
+图片示例（虚构数据，点击查看）：[Atlas 玩家档案](docs/atlas_pve_preview.jpg)、[玩家档案快照](docs/preview.jpg)、[竞技场快照](docs/arena_preview.jpg)、[Atlas 竞技场](docs/arena_legacy_atlas_reference_v2.jpg)、[帮助](docs/help_preview.jpg)。Atlas 玩家档案示例使用图标占位；竞技场示例含排位演示，实际只显示接口有记录的分区。
 
 tarkov.dev 快照的文字回复示例（虚构数据）：
 
@@ -60,18 +60,18 @@ tarkov.dev 快照的文字回复示例（虚构数据）：
 账号总游戏时长 1000 小时｜成就 30 个
 最近活跃 2026-09-21 22:13
 
-PMC：战局 1000，撤离 800，存活率 80.0%
+PMC：战局 1000，撤离 800，幸存率 84.0%
 　击杀 5000，死亡 100，K/D 50.00，击杀 PMC 900，PMC K/D 9.00
-　匆匆逃离 30，转移 40，KIA 120，行动中失踪 10，最长连续存活 40 局
-Scav：战局 50，撤离 30，存活率 60.0%
+　匆匆逃离 30，转移 40，KIA 120，行动中失踪 10，最长连续幸存 40 局
+Scav：战局 50，撤离 30，幸存率 60.0%
 　击杀 100，死亡 10，K/D 10.00，击杀 PMC 20，PMC K/D 2.00
-　匆匆逃离 5，KIA 15，最长连续存活 5 局
+　匆匆逃离 5，KIA 15，最长连续幸存 5 局
 精英技能（4 项）：耐力、力量、代谢、专注
 其他技能（前 10 项）：魅力 40、感知 35、搜索 30、手术 26、活力 25、投掷物 20、弹匣训练 18、健康 15、抗压 12、突击步枪 10
 
 数据来自 tarkov.dev，档案更新于 2026-10-03 12:00（北京时间）
 数据不会自动更新：在 tarkov.dev 用该模式搜索一次这名玩家，或打开 https://tarkov.dev/players/pve/1234567，即可刷新档案，几分钟后再查。
-astrbot_tarkov_datasearch v0.5.0 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch
+astrbot_tarkov_datasearch v0.5.1 · https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch
 本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系
 ```
 

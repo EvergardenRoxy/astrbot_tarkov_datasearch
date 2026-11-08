@@ -11,12 +11,12 @@ def side_lines(card_side):
         return [f'{title}：暂无记录']
     kd = card_side['kd'] or '—（无死亡记录）'
     lines = [
-        f"{title}：战局 {stats['raids']}，{SURVIVED} {stats['survived']}，存活率 {card_side['rate']}",
+        f"{title}：战局 {stats['raids']}，{SURVIVED} {stats['survived']}，幸存率 {card_side['rate']}",
         f"　击杀 {stats['kills']}，死亡 {stats['deaths']}，K/D {kd}，击杀 PMC {stats['pmc_kills']}，PMC K/D {card_side['pmc_kd'] or '—'}",
     ]
     detail = [f'{label} {stats[key]}' for key, label in EXITS if stats[key]]
     if stats['streak']:
-        detail.append(f"最长连续存活 {stats['streak']} 局")
+        detail.append(f"最长连续幸存 {stats['streak']} 局")
     if detail:
         lines.append('　'+'，'.join(detail))
     return lines
@@ -97,7 +97,7 @@ def render_markdown(card):
     if card['last_active']:
         extra.append(f"最近活跃 {card['last_active']}")
     lines += [' · '.join(extra), '']
-    lines.append(f'| | 战局 | {SURVIVED} | 存活率 | 击杀 | 死亡 | K/D | 击杀 PMC | PMC K/D | 最长连续存活 |')
+    lines.append(f'| | 战局 | {SURVIVED} | 幸存率 | 击杀 | 死亡 | K/D | 击杀 PMC | PMC K/D | 最长连续幸存 |')
     lines.append('|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|')
     for card_side in card['sides']:
         stats = card_side['stats']

@@ -1,12 +1,12 @@
 """The Atlas player picture (PVP, PVE, season): a dark board after the Atlas website's player page.
 
-Sections, top to bottom: the Atlas logo and link (required by the Atlas author on every output of its data), the
-player header (level badge, level, name, experience), equipment with tarkov.dev's item pictures (no weapon, holster,
-melee or secure container slots) beside the mode's headline numbers, the rare achievements as one full-width row,
-the statistics columns, skills (drawn like the old dossier card),
-the ten latest achievements, and the footer with the thanks to Atlas. Drawn locally with Pillow from atlas_card.build()
+Sections, top to bottom (no title row): the player header (level badge, level, name, experience; the Atlas logo
+and link on its right, required by the Atlas author on every output of its data), equipment with tarkov.dev's item pictures (no weapon, holster,
+melee or secure container slots) beside the mode's headline numbers, the rare achievements as one full-width row (name and rarity; no player share),
+the horizontal combat table and exit bars, enlarged two-column skills (16 places),
+the ten latest achievements (no player share column), and the footer with the thanks to Atlas. Drawn locally with Pillow from atlas_card.build()
 and the pictures atlas_assets.py has on disk; a missing picture draws an empty placeholder box, never a substitute.
-The old tarkov.dev cards (image.py, arena_image.py) are separate and unchanged.
+The tarkov.dev renderers remain separate; their survival calculation is aligned in the shared snapshot card.
 """
 import io
 
@@ -55,15 +55,24 @@ def placeholder(d, x, y, w, h):
     d.rectangle([x, y, x+w, y+h], outline=RULE, width=1)
 
 
+def mid(d, x, cy, text, f, fill, align='l'):
+    """Draw `text` with its ink centred on the line y = cy. Digits/Latin are centred by 'H0' and Chinese by one
+    ideograph, so mixed fonts (Oswald, Share Tech Mono, Noto Sans SC) in one row line up visually. align: l, m or r."""
+    text = str(text)
+    _, top, _, bottom = f.getbbox('H0' if text.isascii() else '技', anchor='ls')
+    d.text((x, cy-(top+bottom)/2), text, font=f, fill=fill, anchor=align+'s')
+
+
 def band(d, y, title):
     """A section title bar across the board; the y below it."""
     d.rectangle([M, y, W-M, y+44], fill=BAND, outline=(30, 52, 76))
-    d.text((M+20, y+10), title, font=font('sc', 20, 800), fill=ACCENT)
+    mid(d, M+20, y+22, title, font('sc', 20, 800), ACCENT)
     return y+60
 
 
-def fitted(d, text, name, size, width, weight=None):
-    while size > 10 and d.textlength(text, font=font(name, size, weight)) > width:
+def fitted(d, text, name, size, width, weight=None, minimum=10):
+    """The largest font up to `size` that fits `width`, never below `minimum` (clip() the rest)."""
+    while size > minimum and d.textlength(text, font=font(name, size, weight)) > width:
         size -= 1
     return font(name, size, weight)
 
@@ -77,20 +86,13 @@ def clip(d, text, f, width):
     return text+'…'
 
 
-def header(img, d, card, icons):
-    """Logo row and the player header; the y below."""
-    mark = logo(48)
-    img.paste(mark, (M, 22), mark)
-    x = M+mark.width+20
-    label = f'数据来源：{ATLAS_NAME}  '
-    d.text((x, 30), label, font=font('sc', 18, 600), fill=TEXT)
-    d.text((x+d.textlength(label, font=font('sc', 18, 600)), 30), ATLAS_URL, font=font('sc', 18, 400), fill=ACCENT)
-    right(d, W-M, 20, f"{card['mode_label']} 玩家档案", font('sc', 30, 800), TEXT)
-    stamp = f"查询于 {card['looked_up'] or '—'}（UTC+8）" + ('，Atlas 缓存' if card['cached'] else '')
-    right(d, W-M, 62, stamp, font('sc', 16, 400), DIM)
-    d.line([0, 96, W, 96], fill=RULE)
+HEADER_TOP = 24
 
-    top = 112
+
+def header(img, d, card, icons):
+    """The player header (no title row: the mode is on the headline panel, the query time in the info row); the y
+    below."""
+    top = HEADER_TOP
     d.rectangle([M, top, W-M, top+132], fill=PANEL, outline=RULE)
     badge_drawn = paste_center(img, icons.get('level_badge'), M+20, top+22, 88, 88)
     if not badge_drawn:
@@ -107,14 +109,13 @@ def header(img, d, card, icons):
         d.rectangle([x, bar_y, x+round(520*card['progress']), bar_y+8], fill=BAR)
         if card['to_next'] is not None:
             right(d, x+520, top+80, f"距下一级 {card['to_next']:,}".replace(',', ' '), font('sc', 15, 400), DIM)
-    # Small numbers on the right, as on the Atlas page.
-    picks = {label: value for label, value in card['headline']}
-    small = (('战局数', picks['战局数']), ('幸存率', picks['幸存率']), ('击杀数', picks['击杀数']),
-             ('K/D', picks['K/D']), ('擅离率', picks['擅离率']), ('在线', picks['在线']))
-    for i, (label, value) in enumerate(small):
-        cx, cy = W-M-430+(i % 3)*145, top+26+(i//3)*48
-        d.text((cx, cy), label+'：', font=font('sc', 16, 400), fill=DIM)
-        d.text((cx+d.textlength(label+'：', font=font('sc', 16, 400)), cy-2), value, font=font('mono', 19), fill=TEXT)
+    # The Atlas logo and source link (required by the Atlas author) sit where the small numbers used to be.
+    mark = logo(48)
+    img.paste(mark, (W-M-24-mark.width, top+22), mark)
+    label = f'数据来源：{ATLAS_NAME}  '
+    url_w = d.textlength(ATLAS_URL, font=font('sc', 20, 400))
+    mid(d, W-M-24, top+98, ATLAS_URL, font('sc', 20, 400), ACCENT, 'r')
+    mid(d, W-M-24-url_w, top+98, label, font('sc', 20, 600), TEXT, 'r')
     return top+132+20
 
 
@@ -165,7 +166,7 @@ def equipment(img, d, card, icons, top, height):
             x += w+CELL_GAP
         y += GRID_ROW
     info = (('账号 ID', card['aid'] or '—'), ('最高段位', card['league']), ('最近活跃', card['last_active'] or '—'),
-            ('查询时间', card['looked_up'] or '—'))
+            ('查询时间（Atlas 缓存）' if card['cached'] else '查询时间', card['looked_up'] or '—'))
     y = top+height-62
     for i, (label, value) in enumerate(info):
         x = grid_x+i*196
@@ -181,15 +182,14 @@ def headline(d, card, top, height):
     d.line([RIGHT_X, top+44, W-M, top+44], fill=GOLD, width=2)
     label = card['mode_label']
     d.text((RIGHT_X+width/2-d.textlength(label, font=font('sc', 20, 800))/2, top+9), label, font=font('sc', 20, 800), fill=GOLD)
-    cell, pitch = width/4, (height-64)/3
+    cell, pitch = width/4, (height-56)/3
     for i, (name, value) in enumerate(card['headline']):
-        cx, cy = RIGHT_X+cell*(i % 4)+cell/2, top+44+(pitch-66)/2+(i//4)*pitch
-        f = fitted(d, value, 'osw', 30, cell-12, 500)
-        d.text((cx-d.textlength(value, font=f)/2, cy), value, font=f, fill=TEXT)
-        d.text((cx-d.textlength(name, font=font('sc', 14, 400))/2, cy+44), name, font=font('sc', 14, 400), fill=DIM)
+        cx, block = RIGHT_X+cell*(i % 4)+cell/2, top+48+(i//4)*pitch
+        centered(d, cx, block+pitch*0.40, value, 'osw', 44, cell-14, TEXT, 500)
+        centered(d, cx, block+pitch*0.76, name, 'sc', 22, cell-10, DIM, 500)
 
 
-RARE_H = 250
+RARE_H = 274
 
 
 def rare(img, d, card, icons, top):
@@ -213,81 +213,146 @@ def rare(img, d, card, icons, top):
     cell_w = (W-2*M-32)/max(len(data['rare']), 9)
     for i, entry in enumerate(data['rare']):
         cx = M+16+cell_w*i+cell_w/2
-        if not paste_center(img, icons.get('achievements', {}).get(entry['id']), cx-40, top+78, 80, 80):
-            placeholder(d, cx-40, top+78, 80, 80)
-        name = clip(d, entry['name'], font('sc', 15, 600), cell_w-10)
-        d.text((cx-d.textlength(name, font=font('sc', 15, 600))/2, top+166), name, font=font('sc', 15, 600),
-               fill=TONES[entry['tone']])
-        detail = f"{entry['percent']:g}% 玩家" if entry['percent'] is not None else '—'
-        d.text((cx-d.textlength(detail, font=font('sc', 13, 400))/2, top+190), detail, font=font('sc', 13, 400), fill=DIM)
-        d.text((cx-d.textlength(entry['rarity'], font=font('sc', 13, 400))/2, top+210), entry['rarity'],
-               font=font('sc', 13, 400), fill=TONES[entry['tone']])
+        if not paste_center(img, icons.get('achievements', {}).get(entry['id']), cx-58, top+72, 116, 116):
+            placeholder(d, cx-58, top+72, 116, 116)
+        # No completion share (maintainer, 2026-11-08: Atlas reports 0 % for every PVE achievement).
+        centered(d, cx, top+212, entry['name'], 'sc', 24, cell_w-10, TONES[entry['tone']], 700, minimum=18)
+        centered(d, cx, top+246, entry['rarity'], 'sc', 20, cell_w-10, TONES[entry['tone']], 500, minimum=16)
     return top+RARE_H
 
 
+# Widths sum to the drawable board width. Rows follow the old dossier's reading order; the all-kills ratio says so,
+# because the header and headline K/D count player kills only.
+STAT_COLUMNS = (('', 140), ('战局', 140), ('撤离', 140), ('幸存率', 175), ('击杀', 150),
+                ('阵亡', 130), ('K/D（全部击杀）', 265), ('击杀 PMC', 180), ('PMC K/D', 216))
+EXIT_FIELDS = (('survived', '撤离', (96, 157, 101)), ('runner', '匆匆逃离', (197, 153, 58)),
+               ('transit', '转移', (72, 130, 179)), ('killed', '阵亡', (169, 72, 72)),
+               ('mia', '行动中失踪', (111, 111, 117)), ('left', '擅离职守', (155, 105, 165)))
+
+
+def large_band(d, top, title):
+    d.rectangle((M, top, W-M, top+66), fill=BAND, outline=(30, 52, 76))
+    mid(d, M+20, top+33, title, font('sc', 34, 800), ACCENT)
+    return top+86
+
+
+def centered(d, cx, cy, value, face, size, width, color, weight=None, align='m', minimum=10):
+    """Fit (down to `minimum`, then clip) `value` into `width`, ink-centred on cy."""
+    value = str(value)
+    f = fitted(d, value, face, size, width, weight, minimum)
+    mid(d, cx, cy, clip(d, value, f, width), f, color, align)
+
+
 def statistics(d, card, top):
-    y = band(d, top, '统计数据')
-    gap = 16
-    col_w = (W-2*M-2*gap)/3
-    rows = max(len(rows) for _, rows in card['columns'])
-    for i, (title, entries) in enumerate(card['columns']):
-        x = M+i*(col_w+gap)
-        d.rectangle([x, y, x+col_w, y+44+rows*30+12], fill=PANEL, outline=RULE)
-        d.rectangle([x, y, x+col_w, y+36], fill=PANEL_2)
-        d.text((x+16, y+8), title, font=font('sc', 16, 800), fill=ACCENT)
-        for k, (label, value) in enumerate(entries):
-            ry = y+48+k*30
-            d.text((x+16, ry), label, font=font('sc', 16, 400), fill=DIM)
-            right(d, x+col_w-16, ry-1, value, font('mono', 18), TEXT)
-            d.line([x+12, ry+26, x+col_w-12, ry+26], fill=(32, 35, 40))
-    return y+44+rows*30+12+24
+    """Large horizontal PMC/Scav rows; header and headline use the same model's survival formula."""
+    y = large_band(d, top, '统计数据')
+    d.rectangle((M, y, W-M, y+62), fill=PANEL_2)
+    x = M
+    for label, width in STAT_COLUMNS:
+        centered(d, x+width/2, y+31, label, 'sc', 30, width-12, DIM, 700)
+        x += width
+    y += 62
+    for i, row in enumerate(card['combat_rows']):
+        d.rectangle((M, y, W-M, y+88), fill=PANEL if i % 2 == 0 else BG)
+        x = M
+        for k, ((_, width), value) in enumerate(zip(STAT_COLUMNS, [row['title'], *row['values']])):
+            centered(d, x+width/2, y+44, value, 'osw' if k == 0 else 'mono', 40 if k == 3 else 44,
+                     width-12, ACCENT if k == 3 else TEXT)
+            x += width
+        d.line((M, y+88, W-M, y+88), fill=RULE)
+        y += 88
+    mid(d, M+10, y+34, '幸存率 =（撤离＋转移）÷总战局数', font('sc', 27, 500), ACCENT)
+    return exit_bars(d, card, y+79)
+
+
+def exit_bars(d, card, top):
+    rows = card['combat_rows']
+    mid(d, M+8, top+20, '撤离状态', font('sc', 30, 700), TEXT)
+    pmc, scav = (row['stats'] for row in rows)
+    note = f"图例数字为 PMC / SCAV · 最长连续幸存：PMC {pmc['streak']} 局，SCAV {scav['streak']} 局"
+    mid(d, M+210, top+20, clip(d, note, font('sc', 24, 500), W-2*M-210), font('sc', 24, 500), DIM)
+    x, bw, y = M+145, W-2*M-145, top+65
+    for percent in (0, 25, 50, 75, 100):
+        xx = x+bw*percent/100
+        # The end labels hang inwards so "100%" stays inside the right margin.
+        centered(d, xx-2 if percent == 100 else xx, y+3, f'{percent}%', 'mono', 21, 80, DIM,
+                 align={0: 'l', 100: 'r'}.get(percent, 'm'))
+        d.line((xx, y+17, xx, y+27), fill=DIM)
+    y += 40
+    for row in rows:
+        stats = row['stats']
+        mid(d, M+8, y+22, row['title'], font('osw', 34, 500), TEXT)
+        d.rectangle((x, y, x+bw, y+44), fill=BAR_BG)
+        start = x
+        if stats['raids']:
+            for key, _, color in EXIT_FIELDS:
+                # Keep inconsistent upstream totals inside the bar; legend values remain the original counters.
+                width = min(max(0, bw*stats[key]/stats['raids']), max(0, x+bw-start))
+                if width > 0:
+                    d.rectangle((start, y, start+width, y+44), fill=color)
+                start += width
+        else:
+            mid(d, x+14, y+22, '暂无记录', font('sc', 23, 500), DIM)
+        d.rectangle((x, y, x+bw, y+44), outline=DIM)
+        y += 66
+    legend_width = (W-2*M)/3
+    for i, (key, label, color) in enumerate(EXIT_FIELDS):
+        xx, yy = M+12+(i % 3)*legend_width, y+(i//3)*40
+        d.rectangle((xx, yy+7, xx+22, yy+29), fill=color)
+        line = f"{label} {pmc[key]}/{scav[key]}"
+        f = fitted(d, line, 'sc', 25, legend_width-55, 500)
+        mid(d, xx+35, yy+18, clip(d, line, f, legend_width-55), f, DIM)
+    return y+104
 
 
 def skills(d, card, top):
-    """Two columns of name, ten squares and the level, as on the old dossier card (elite in gold)."""
+    """Two columns, larger names/levels and ten 28-pixel squares per skill; elite remains gold."""
     if not card['skills']:
         return top
-    y = band(d, top, '技能')
-    colw = (W-2*M-24-60)/2
+    y = large_band(d, top, '技能')
+    gap = 36
+    colw = (W-2*M-gap)/2
     for i, (name, level, elite) in enumerate(card['skills']):
-        x0, yy = M+12+(i % 2)*(colw+60), y+(i//2)*38
-        d.text((x0, yy), str(name), font=font('sc', 19, 500), fill=TEXT)
+        x, yy = M+(i % 2)*(colw+gap), y+(i//2)*78
+        d.rectangle((x, yy, x+colw, yy+68), fill=PANEL if (i//2) % 2 == 0 else BG)
+        name_font = fitted(d, str(name), 'sc', 34, 225, 600)
+        mid(d, x+14, yy+34, clip(d, name, name_font, 225), name_font, TEXT)
         for k in range(10):
-            on = level >= (k+1)*5.1
-            d.rectangle([x0+170+k*24, yy+6, x0+186+k*24, yy+22], outline=DIM, width=1,
-                        fill=(GOLD if elite else BAR) if on else None)
-        right(d, x0+colw, yy, '精英' if elite else str(level), font('sc', 19, 800) if elite else font('mono', 21),
-              GOLD if elite else TEXT)
-    return y+((len(card['skills'])+1)//2)*38+20
+            xx = x+255+k*35
+            d.rectangle((xx, yy+21, xx+27, yy+48), outline=DIM,
+                        fill=(GOLD if elite else BAR) if level >= (k+1)*5.1 else None)
+        mid(d, x+colw-14, yy+34, '精英' if elite else str(level),
+            font('sc', 35, 700) if elite else font('mono', 35), GOLD if elite else TEXT, 'r')
+    return y+((len(card['skills'])+1)//2)*78+28
 
 
 def latest(img, d, card, icons, top):
+    """The table of the latest achievements: icon, name, description, rarity and time (no player share column,
+    maintainer 2026-11-08), at a size readable on phones."""
     entries = card['achievements']['latest']
     y = band(d, top, f'最新获得的 {len(entries)} 个成就' if entries else '最新获得的成就')
-    cols = {'name': M+76, 'desc': M+380, 'rarity': W-M-380, 'percent': W-M-250, 'time': W-M-16}
-    d.rectangle([M, y, W-M, y+34], fill=PANEL_2)
+    cols = {'name': M+88, 'desc': M+420, 'rarity': W-M-340, 'time': W-M-16}
+    d.rectangle([M, y, W-M, y+46], fill=PANEL_2)
     for key, label in (('name', '成就'), ('desc', '成就描述'), ('rarity', '稀有度')):
-        d.text((cols[key], y+7), label, font=font('sc', 15, 700), fill=ACCENT)
-    right(d, cols['percent'], y+7, '% 玩家', font('sc', 15, 700), ACCENT)
-    right(d, cols['time'], y+7, '达成时间（UTC+8）', font('sc', 15, 700), ACCENT)
-    y += 40
+        mid(d, cols[key], y+23, label, font('sc', 22, 700), ACCENT)
+    mid(d, cols['time'], y+23, '达成时间（UTC+8）', font('sc', 22, 700), ACCENT, 'r')
+    y += 52
     if not entries:
-        d.text((cols['name'], y+10), '暂无成就', font=font('sc', 16, 400), fill=FAINT)
-        return y+60
+        mid(d, cols['name'], y+24, '暂无成就', font('sc', 24, 400), FAINT)
+        return y+70
+    desc_font = font('sc', 22, 400)
     for entry in entries:
-        lines = wrap(d, str(entry['description']), font('sc', 15, 400), cols['rarity']-cols['desc']-24)[:2]
-        h = max(64, 18+len(lines)*24)
-        if not paste_center(img, icons.get('achievements', {}).get(entry['id']), M+12, y+(h-48)/2, 48, 48):
-            placeholder(d, M+12, y+(h-48)/2, 48, 48)
-        d.text((cols['name'], y+h/2-12), clip(d, entry['name'], font('sc', 18, 600), cols['desc']-cols['name']-16),
-               font=font('sc', 18, 600), fill=TEXT)
+        lines = wrap(d, str(entry['description']), desc_font, cols['rarity']-cols['desc']-30)[:2]
+        h = max(84, 26+len(lines)*32)
+        if not paste_center(img, icons.get('achievements', {}).get(entry['id']), M+12, y+(h-60)/2, 60, 60):
+            placeholder(d, M+12, y+(h-60)/2, 60, 60)
+        name_font = fitted(d, str(entry['name']), 'sc', 26, cols['desc']-cols['name']-20, 600, 20)
+        mid(d, cols['name'], y+h/2, clip(d, entry['name'], name_font, cols['desc']-cols['name']-20), name_font, TEXT)
         for k, text in enumerate(lines):
-            d.text((cols['desc'], y+(h-len(lines)*24)/2+k*24), text, font=font('sc', 15, 400), fill=DIM)
-        d.text((cols['rarity'], y+h/2-12), entry['rarity'], font=font('sc', 17, 700), fill=TONES[entry['tone']])
-        right(d, cols['percent'], y+h/2-12, f"{entry['percent']:g}%" if entry['percent'] is not None else '—',
-              font('mono', 18), TEXT)
-        right(d, cols['time'], y+h/2-12, when(entry['at'], '%Y-%m-%d %H:%M:%S') or '—' if entry['at'] else '—',
-              font('mono', 18), TEXT)
+            mid(d, cols['desc'], y+h/2+(k-(len(lines)-1)/2)*32, text, desc_font, DIM)
+        mid(d, cols['rarity'], y+h/2, entry['rarity'], font('sc', 24, 700), TONES[entry['tone']])
+        mid(d, cols['time'], y+h/2, when(entry['at'], '%Y-%m-%d %H:%M:%S') or '—' if entry['at'] else '—',
+            font('mono', 24), TEXT, 'r')
         y += h
         d.line([M, y, W-M, y], fill=(32, 35, 40))
     return y+24

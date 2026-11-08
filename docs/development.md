@@ -25,6 +25,7 @@ TARKOV_TEST_FONT='/absolute/path/NotoSansSC[wght].ttf' python -m unittest discov
 ```sh
 python tools/build_preview.py
 python tools/build_arena_legacy_preview.py
+python tools/build_atlas_player_preview.py pve
 ```
 
 其中玩家与竞技场示例使用虚构数据；`build_public_preview.py` 和不传已保存响应的 `build_matching_preview.py` 会读取公开服务数据。新增中文文案或显示新的成就名称时，不需要额外更新字符清单。
