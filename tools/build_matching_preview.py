@@ -29,6 +29,8 @@ URL = 'https://www.eftforge.com/atlas/api/matching?hours=24'
 
 
 def main():
+    from download_font import prepare
+    prepare()
     if len(sys.argv) > 1:
         path = Path(sys.argv[1])
         document, fetched_at = json.loads(path.read_text(encoding='utf-8')), path.stat().st_mtime

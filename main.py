@@ -17,8 +17,9 @@ from .tarkov_core.atlas_players import AtlasNotFound, AtlasPlayers, UserQuota, c
 from .tarkov_core.atlas_assets import AtlasAssets, level_badge
 from .tarkov_core.atlas_card import build as build_atlas_card
 from .tarkov_core.atlas_history import AtlasHistory
-from .tarkov_core.atlas_image import render_atlas_image, use_full_font
-from .tarkov_core.font_download import FullFont
+from .tarkov_core.atlas_image import render_atlas_image
+from .tarkov_core.font_download import FontDownloadError, FullFont
+from .tarkov_core.fonts import use_chinese_font
 from .tarkov_core.matching import MatchingService
 from .tarkov_core.matching_image import ATLAS_NAME, ATLAS_URL, render_matching_image
 from .tarkov_core.accounts import Accounts, load_secret, owner_key
@@ -247,6 +248,10 @@ class TarkovPlugin(Star):
         except (TypeError, ValueError, OverflowError):
             return default
 
+    async def prepare_font(self):
+        """Every image waits for the same verified complete Chinese font; no trimmed fallback."""
+        use_chinese_font(await self.full_font.ensure())
+
     def atlas_interval(self):
         value = self.config.get('atlas_query_cooldown_seconds', 10)
         if type(value) is not int or not 1 <= value <= 300:
@@ -430,10 +435,13 @@ class TarkovPlugin(Star):
         text or Markdown or drawing fails."""
         if self.output_mode() == 'image':
             try:
+                await self.prepare_font()
                 data = await asyncio.to_thread(render_help_image, self.help_card())
                 return event.chain_result([Image.fromBytes(data), Plain(self.search_line())])
             except Exception as exc:
                 logger.warning('Tarkov help image failed, sending text: %s', type(exc).__name__)
+                if isinstance(exc, FontDownloadError):
+                    return event.plain_result(f'{exc}\n\n{self.help_text()}')
         return event.plain_result(self.help_text())
 
     @filter.command('tarkov', alias={'塔科夫'})
@@ -1032,12 +1040,13 @@ class TarkovPlugin(Star):
         mode = self.output_mode()
         if mode == 'image':
             try:
+                await self.prepare_font()
                 data = await asyncio.to_thread(render_image, card)
                 # The image cannot carry a clickable link; one text line after it does.
                 return event.chain_result([Image.fromBytes(data), Plain(f'刷新数据：在 tarkov.dev 打开 {refresh}')])
             except Exception as exc:
                 logger.warning('Tarkov [%s] image rendering failed, sending text: %s', trace, type(exc).__name__)
-                card['notes'].append('（图片生成失败，已改为文字）')
+                card['notes'].append(str(exc) if isinstance(exc, FontDownloadError) else '（图片生成失败，已改为文字）')
                 return event.plain_result(render_text(card))
         if mode == 'markdown':
             return event.plain_result(render_markdown(card))
@@ -1051,11 +1060,12 @@ class TarkovPlugin(Star):
         mode = self.output_mode()
         if mode == 'image':
             try:
+                await self.prepare_font()
                 data = await asyncio.to_thread(render_arena_image, card)
                 return event.chain_result([Image.fromBytes(data), Plain(f'刷新数据：在 tarkov.dev 打开 {refresh}')])
             except Exception as exc:
                 logger.warning('Tarkov [%s] arena image failed, sending text: %s', trace, type(exc).__name__)
-                card['notes'].append('（图片生成失败，已改为文字）')
+                card['notes'].append(str(exc) if isinstance(exc, FontDownloadError) else '（图片生成失败，已改为文字）')
         if mode == 'markdown':
             return event.plain_result(render_arena_markdown(card))
         return event.plain_result(render_arena_text(card))
@@ -1079,15 +1089,15 @@ class TarkovPlugin(Star):
             card['aid'] = aid if mode == 'arena' else str(aid)
             # Arena achievements have no known icons in tarkov.dev's catalog; the register uses text cards.
             icons = {} if mode == 'arena' else await self.atlas_icons(card, trace)
-            # The full Chinese font once downloaded (first use starts the download; until then the bundled subset).
-            font_path = await self.full_font.path_or_start()
-            use_full_font(str(font_path) if font_path else None)
+            await self.prepare_font()
             async with self.atlas_image_slots:
                 data = await asyncio.to_thread(render_atlas_image, card, icons)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.warning('Tarkov [%s] Atlas picture failed: %s', trace, type(exc).__name__)
+            if isinstance(exc, FontDownloadError):
+                return event.plain_result('\n'.join([str(exc), *lines]))
             return event.plain_result('\n'.join([f"{summary['nickname']}（账号 ID {aid}）的 {label_of(mode)} 档案图片生成失败"
                                                  f'（{type(exc).__name__}），请稍后再试。', *lines]))
         return event.chain_result([Image.fromBytes(data), Plain('\n'.join(lines))])
@@ -1290,6 +1300,7 @@ class TarkovPlugin(Star):
         return await self.status_snapshot(fresh=True)
 
     async def prepare_status_image(self, card):
+        await self.prepare_font()
         async with self.status_image_slots:
             return await asyncio.to_thread(render_status_image, card)
 
@@ -1299,6 +1310,8 @@ class TarkovPlugin(Star):
             return event.chain_result([Image.fromBytes(data)])
         except Exception as exc:
             self.status_monitor_error(exc)
+            if isinstance(exc, FontDownloadError):
+                return event.plain_result(str(exc))
             return event.plain_result('服务器状态图片生成失败，请稍后再试。')
 
     async def status_query(self, event, arguments=''):
@@ -1394,9 +1407,12 @@ class TarkovPlugin(Star):
                 'translation_warning': warning}
 
     async def fetch_boss_for_monitor(self, mode):
+        # Freezing the notification's pages measures labels with the same font as the final image.
+        await self.prepare_font()
         return await self.boss_snapshot(mode, fresh=True)
 
     async def prepare_boss_image(self, page, index=1, total=1, token=None):
+        await self.prepare_font()
         token = page.get('snapshot_token', '') if token is None else token
         command = self.cmd('boss', '页', token, index+1 if index < total else 1) if token else ''
         async with self.boss_image_slots:
@@ -1409,6 +1425,8 @@ class TarkovPlugin(Star):
             return event.chain_result([Image.fromBytes(image)])
         except Exception as exc:
             self.boss_monitor_error(exc)
+            if isinstance(exc, FontDownloadError):
+                return event.plain_result(str(exc))
             return event.plain_result('Boss 表格图片生成失败，请稍后再试。')
 
     async def boss_query(self, event, arguments=''):
@@ -1462,6 +1480,7 @@ class TarkovPlugin(Star):
                         card = await self.boss_snapshot(mode, allow_stale=True)
                         rows, _ = await asyncio.to_thread(build_table, None, card['state'])
                         meta = {key: value for key, value in card.items() if key != 'state'}
+                        await self.prepare_font()
                         pages.extend(await asyncio.to_thread(paginate_table, meta, rows))
                 except asyncio.CancelledError:
                     raise
@@ -1513,10 +1532,13 @@ class TarkovPlugin(Star):
                 logger.warning('Tarkov matching query failed: %s', type(exc).__name__)
                 return event.plain_result('匹配时间查询失败，请稍后再试。')
             try:
+                await self.prepare_font()
                 async with self.matching_image_slots:
                     data = await asyncio.to_thread(render_matching_image, result)
             except Exception as exc:
                 logger.warning('Tarkov matching image failed: %s', type(exc).__name__)
+                if isinstance(exc, FontDownloadError):
+                    return event.plain_result(str(exc))
                 return event.plain_result('匹配时间图片生成失败，请稍后再试。')
             return event.chain_result([Image.fromBytes(data), Plain(f'数据来源：{ATLAS_NAME} {ATLAS_URL}')])
         finally:

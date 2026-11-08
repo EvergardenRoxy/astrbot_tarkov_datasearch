@@ -101,7 +101,7 @@ Full inventory and request conventions: `docs/tarkov-api-reference.md` (sources 
 | Profile | `profile.py` | `summarize()` never raises on odd field types except a missing `info.nickname`; counters clamped ≥ 0; skills de-duplicated by id (≤ 49); level from the bundled table. Counter lookup by shortest key containing all parts (as tarkov.dev). MIA = `MissingInAction`, falling back to `Left`. |
 | Arena | `arena.py`, `arena_image.py` | `summarize_arena()` (12 counters/mode, ≤ 12 modes/section, ranked/unranked split, no level); `RANKS` from BestArp with the maintainer's overlapping table cut at each upper limit; BestArp is the highest ever reached, so the rank shown is the highest reached; > 7900 shown as "竞技场前100名玩家" without ARP. Image = "ARENA MASTERS · 选手名册" ledger with GP-style ARP medallion, W – L bars. |
 | Static tables | `data/static.json`, `tools/build_static.py` | 79 level rows and 49 skill names from `json.tarkov.dev` (+ zh); not fetched at run time. Re-run on game updates. |
-| Card / outputs | `card.py`, `output.py`, `image.py`, `help_image.py`, `fonts/` | `build_card()` is the single content model; `render_text`, `render_markdown`, `render_image` (JPEG q85, 820 px, seeded grain so output is byte-stable). Image style: dossier paper + dog tag + exit-status bars; footer with data time (GMT+8), plugin name/version/repo and the open-source notice. Exit wording follows the game: 撤离 / 匆匆逃离 / 转移 / KIA / 行动中失踪 (`card.EXITS`). Bundled OFL fonts (Noto Sans SC subset, Oswald, Share Tech Mono); other characters draw as `?`; `tools/build_fonts.py` rebuilds the subset from the characters in code, skill names and `data/item-label-chars.txt`. |
+| Card / outputs | `card.py`, `output.py`, `image.py`, `help_image.py`, `fonts/` | `build_card()` is the single content model; `render_text`, `render_markdown`, `render_image` (JPEG q85, 820 px, seeded grain so output is byte-stable). Image style: dossier paper + dog tag + exit-status bars; footer with data time (GMT+8), plugin name/version/repo and the open-source notice. Exit wording follows the game: 撤离 / 匆匆逃离 / 转移 / KIA / 行动中失踪 (`card.EXITS`). OFL fonts: complete Noto Sans SC downloaded and verified before drawing, bundled Oswald and Share Tech Mono. All renderers share `fonts.py`; no glyph collection, trimmed font or missing-character substitution. |
 | Plugin | `main.py` | Commands `tarkov` (alias `塔科夫`) with sub-commands (`tarkov status`, `tarkov boss` …) and the QQ single-word commands (§18). Optional leading `/` accepted. Flow for players: access check → parse `[mode] target` → own binding / link / id / name → profiles → `show()` → `reply()` (output per `output_mode`). One in-flight query per sender (keyed hash). |
 | Accounts | `accounts.py` | `bindings(owner, aid, nickname, bound_at)`; `owner` = HMAC-SHA256 with a random 32-byte `binding.key` (mode 0600). `names(key, aid, name, seen_at)` shared by everyone, fed by every fetched profile, exact-case first then most recent, capped at 200,000. |
 | Name index (optional) | `names.py` | On by default (`name_index_enabled`, §18). Per mode a SQLite `names-<path>.sqlite3` built from the downloaded index with a bytes regex (not `json.loads`), built into a unique temp file then `os.replace`d; one lock per mode; failed refresh keeps the old db and backs off 10 min; first-download failure also backs off; limits 64 MiB / 192 MiB. PvP: 23-26 s, 97 MB db, ~106 MB RSS. Used only for names, never for ids. |
@@ -198,8 +198,8 @@ records, two exact-100% records per mode). Previews were inspected visually.
 - Chat messages come from `QueryError` texts written here or exception type names, never raw exception strings.
 - Upstream failure is never "game down", "0% spawn" or "item does not exist". Failed requests do not advance baselines.
 - Never render through AstrBot's `text_to_image`/`html_render` (they post content to a remote renderer by default); draw
-  locally with the bundled fonts. After adding Chinese text run `python tools/build_fonts.py`
-  (`test_font_covers_every_character_of_the_code` fails until then). Never subset or modify `ShareTechMono-Regular.ttf`
+  locally with the complete Chinese font prepared through `FullFont.ensure()` and the bundled Latin fonts.
+  Do not collect glyphs or rebuild fonts after changing text. Never subset or modify `ShareTechMono-Regular.ttf`
   (Reserved Font Name 'Share').
 - Commands shown to users are built only through `TarkovPlugin.cmd()` from `COMMAND_STYLES`
   (`test_command_style_setting` checks it).
@@ -781,3 +781,38 @@ seconds; global player minute budget configurable from 1 to 10, default 10. The 
 
 Validation: all 432 tests passed on Python 3.12 in 12.567 seconds, including release ZIP and font checks;
 `git diff --check` passed. No live QQ/AstrBot configuration panel or Python 3.13 validation in this environment.
+
+## Remove the font-subsetting pipeline; complete typography everywhere (2026-11-08)
+
+The maintainer explicitly chose to unify all pictures on the complete font and remove the trimmed font and
+missing-character substitution, rather than retaining a frozen fallback. Implemented with OpenAI Codex.
+This supersedes all earlier instructions in this file about rebuilding glyph subsets or updating character corpora.
+Historical build records above are retained only as history.
+
+- Removed `tools/build_fonts.py`, `tools/build_atlas_chars.py`, `data/atlas-text-chars.txt`, the bundled
+  Noto Sans SC subset and its character list; removed the Boss-comment glyph corpus and source-character coverage
+  tests. There is no fontTools dependency, font editing, code scan for glyphs or runtime `safe()` character
+  substitution. Dynamic text is passed through unchanged; non-ASCII snapshot nicknames use the Chinese face.
+- New `fonts.py` is shared by snapshot, Arena, Atlas, matching, help, status and Boss pictures. It retains the
+  existing basic-layout choice for Atlas/matching and the original layout for the older cards. Font instances
+  are bounded-cache entries keyed by font path, size, weight and layout. Bundled Latin fonts and OFL licences stay.
+- `FullFont.ensure()` waits for a single shielded first-use download, reuses the verified file on disk and preserves
+  existing pinned size/hash, mirrors, explicit proxy and retry wait. Failed downloads and unwritable caches have
+  curated error messages. Cancelling a waiter does not cancel the shared download; plugin close does.
+  No first-picture trimmed-font fallback remains.
+- All chat and notification rendering paths prepare the font before drawing. Boss pagination also requires it
+  before measuring and freezing pages, including monitor observations. Snapshot/help can return text with the
+  font error; Atlas/status/Boss/matching report the font error when no picture can be drawn. Data queries, quotas,
+  image styles and message permissions are otherwise unchanged.
+- Development uses `tools/download_font.py` to cache the same unmodified pinned file under ignored `.cache/fonts/`.
+  CI prepares this file before running tests. `tests/font_support.py` accepts this cache or `TARKOV_TEST_FONT` and
+  verifies it without making network requests. Plugin test doubles return the prepared file instead of downloading.
+  Preview tools use the same cached file; see `docs/development.md` for commands. Complete Chinese font data is not
+  included in the plugin ZIP, and the removed subset/character artifacts are checked absent from it.
+
+Validation: 435 tests passed on Python 3.12 in 14.639 seconds. Coverage includes complete-font glyphs outside the old
+character list, unchanged non-ASCII names, all-renderer font source selection, no-font errors, shared first download,
+waiter cancellation, close cleanup, mirror verification/retry, disk permission failures and image/text fallbacks.
+Snapshot/help and the approved Atlas Arena preview were rendered from invented data; the snapshot was visually
+inspected and the Arena output remained byte-identical. ZIP packaging passed (519,296 bytes before this documentation
+update); all licences remain. Live AstrBot/QQ and Python 3.13 were not validated here.

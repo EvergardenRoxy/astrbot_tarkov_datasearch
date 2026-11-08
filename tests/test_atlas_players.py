@@ -419,9 +419,10 @@ class FakeFont:
     def __init__(self):
         self.calls = 0
 
-    async def path_or_start(self):
+    async def ensure(self):
         self.calls += 1
-        return None
+        from font_support import TEST_FONT
+        return TEST_FONT
 
     async def close(self):
         pass
@@ -482,7 +483,7 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('@机器人 tarkov pve 1234567 刷新', text)
         [card] = self.cards
         self.assertEqual((card['nickname'], card['mode_label'], card['aid']), ('Test_Player', 'PVE', '1234567'))
-        # The first picture asks for the full font (the download starts in the background).
+        # The first picture asks for the full font (the verified full font is prepared before rendering).
         self.assertEqual(self.font.calls, 1)
         # The icons asked for: item pictures, the known achievement icon and the level badge.
         self.assertIn('https://assets.tarkov.dev/player-level-group-1.png', self.assets.asked[0])
@@ -681,6 +682,28 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
             reply = (await self.ask(plugin, '/tarkov 1'))[0]
         self.assertIn('档案图片生成失败（OSError）', reply)
         self.assertIn('tarkov.dev 玩家页：https://tarkov.dev/players/pve/1', reply)
+
+    async def test_missing_complete_font_reports_a_clear_error_instead_of_rendering(self):
+        from unittest.mock import AsyncMock
+        plugin = self.plugin()
+        self.atlas.put(1, 'arena')
+        plugin.full_font.ensure = AsyncMock(side_effect=self.module.FontDownloadError('完整中文字体下载失败'))
+        [reply] = await self.ask(plugin, '/tarkov arena 1')
+        self.assertIn('完整中文字体下载失败', reply)
+        self.assertIn('数据来源：Atlas', reply)
+        self.assertEqual(self.cards, [])
+
+    async def test_snapshot_and_help_keep_text_replies_when_font_download_fails(self):
+        from unittest.mock import AsyncMock
+        plugin = self.plugin({'player_source': 'tarkov-dev', 'output_mode': 'image'})
+        self.profiles[('pve', 1)] = profile(aid=1)
+        plugin.full_font.ensure = AsyncMock(side_effect=self.module.FontDownloadError('完整中文字体下载失败'))
+        [reply] = await self.ask(plugin, '/tarkov pve 1')
+        self.assertIn('完整中文字体下载失败', reply)
+        self.assertIn('【塔科夫 PVE 档案】', reply)
+        [help_reply] = await self.ask(plugin, '/tarkov 帮助')
+        self.assertIn('完整中文字体下载失败', help_reply)
+        self.assertIn('tarkov', help_reply)
 
     async def test_the_real_picture_is_drawn(self):
         plugin = self.plugin(draw=True)

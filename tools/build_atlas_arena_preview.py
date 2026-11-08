@@ -1,6 +1,6 @@
 """Build a layout reference from invented Arena data, without querying any player.
 
-    python tools/build_atlas_arena_preview.py [full-NotoSansSC-font.ttf]
+    python tools/build_atlas_arena_preview.py
 """
 import sys
 from pathlib import Path
@@ -35,13 +35,6 @@ def demo():
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1:
-        from tarkov_core.atlas_image import use_full_font
-        from tarkov_core.font_download import verify
-        font_path = Path(sys.argv[1]).resolve()
-        if not verify(font_path.read_bytes()):
-            raise ValueError('Expected the pinned full Noto Sans SC font')
-        use_full_font(str(font_path))
     out = ROOT/'docs'/'atlas_arena_reference.jpg'
     card = build(demo(), 'arena')
     card['reference_label'] = '虚构数据预览'

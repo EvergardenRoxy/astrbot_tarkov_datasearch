@@ -1,3 +1,5 @@
+from font_support import TEST_FONT  # Complete font fixture; no network access.
+
 import dataclasses
 import io
 import unittest

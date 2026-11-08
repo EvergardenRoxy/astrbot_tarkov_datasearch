@@ -1,24 +1,19 @@
 """The profile card as an image: an intel-dossier page with a dog tag and exit-status bars (handoff §14.2).
 
-Drawn locally with Pillow (an AstrBot dependency); nothing is sent to a rendering service. The fonts are bundled in
-fonts/ under the SIL Open Font License (see THIRD_PARTY.md). Game references are drawn, no game assets are used.
+Drawn locally with Pillow (an AstrBot dependency); nothing is sent to a rendering service. Complete Chinese
+typography is prepared by the caller, Latin fonts are bundled (see THIRD_PARTY.md). Game references are drawn.
 """
 import io
 import math
 import random
 from functools import lru_cache
-from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from . import NAME, NOTICE, REPO, VERSION
+from .fonts import FONTS, FONT_FILES, font
 from .card import EXITS, SURVIVED, refresh_note, stale_note
 
-FONTS = Path(__file__).with_name('fonts')
-FONT_FILES = {'sc': 'NotoSansSC-Subset.ttf', 'osw': 'Oswald-Variable.ttf', 'mono': 'ShareTechMono-Regular.ttf'}
-# Characters of the subset CJK font, written by tools/build_fonts.py next to the font.
-CHARSET_FILE = 'NotoSansSC-Subset.chars.txt'
-ASCII = frozenset(chr(code) for code in range(32, 127))
 
 W = 820
 PAPER, INK, FADED, RED, LINE = (204, 192, 160), (44, 40, 34), (110, 100, 82), (156, 44, 36), (150, 138, 110)
@@ -28,25 +23,6 @@ EXIT_COLORS = {'survived': (86, 122, 64), 'killed': (150, 46, 38), 'runner': (18
 EXIT_LABELS = (('survived', SURVIVED),)+EXITS
 MODE_EN = {'PVP': 'PVP', 'PVE': 'PVE', 'PVP 赛季': 'PVP SEASON'}
 JPEG_QUALITY = 85
-
-
-@lru_cache(maxsize=None)
-def font(name, size, weight=None):
-    f = ImageFont.truetype(str(FONTS/FONT_FILES[name]), size)
-    if weight is not None:
-        f.set_variation_by_axes([weight])
-    return f
-
-
-@lru_cache(maxsize=1)
-def charset():
-    return frozenset((FONTS/CHARSET_FILE).read_text(encoding='utf-8')) | ASCII
-
-
-def safe(text, latin=False):
-    """`text` with every character the bundled fonts cannot draw replaced by '?'. latin: the Latin-only fonts."""
-    allowed = ASCII if latin else charset()
-    return ''.join(char if char in allowed else '?' for char in str(text))
 
 
 def fit(d, text, name, size, width, weight=None, smallest=10):
@@ -100,7 +76,7 @@ def stamp(img, side):
     md.rectangle([12, 12, 287, 107], outline=RED+(170,), width=2)
     # "Snapshot", not "verified": the data is whatever tarkov.dev stored last (review R-13).
     md.text((30, 22), '存档快照', font=font('sc', 40, 900), fill=RED+(210,))
-    md.text((32, 74), 'SNAPSHOT · '+safe(side, latin=True)[:12], font=font('mono', 20), fill=RED+(210,))
+    md.text((32, 74), 'SNAPSHOT · '+str(side)[:12], font=font('mono', 20), fill=RED+(210,))
     mark = mark.rotate(-12, expand=True, resample=Image.BICUBIC)
     img.paste(mark, (W-345, 18), mark)
 
@@ -114,11 +90,11 @@ def dog_tag(img, card, mode_en, x, y, angle=-4):
     td.rounded_rectangle([6, 6, tw-7, th-7], 31, outline=TAG_EDGE, width=2)
     td.ellipse([20, 20, 42, 42], fill=(0, 0, 0, 0))
     td.ellipse([20, 20, 42, 42], outline=(110, 110, 104), width=2)
-    name = safe(card['nickname'], latin=True)
-    td.text((60, 20), name, font=fit(td, name, 'osw', 36, tw-80, 700), fill=TAG_TEXT)
+    name = str(card['nickname'])
+    td.text((60, 20), name, font=fit(td, name, 'osw' if name.isascii() else 'sc', 36, tw-80, 700), fill=TAG_TEXT)
     level = card['level'] if card['level'] is not None else '?'
     prestige = f"  ·  P{card['prestige']}" if card['prestige'] else ''
-    line = f"{safe(card['side'], latin=True)}  ·  LVL {level}{prestige}"
+    line = f"{str(card['side'])}  ·  LVL {level}{prestige}"
     td.text((60, 68), line, font=fit(td, line, 'osw', 26, tw-80, 500), fill=TAG_TEXT)
     ident = f"ID {card['aid']}" if card['aid'] is not None else 'ID —'
     td.text((60, 106), ident, font=fit(td, ident, 'osw', 24, tw-80, 400), fill=TAG_TEXT)
@@ -198,7 +174,7 @@ def render_image(card):
     height = 1340+skill_rows*34+sum(26*(1+len(note)//34) for note in notes)
     img = paper(height)
     d = ImageDraw.Draw(img)
-    mode_en = MODE_EN.get(card['mode'], safe(card['mode'], latin=True))
+    mode_en = MODE_EN.get(card['mode'], str(card['mode']))
 
     # header
     d.rectangle([40, 30, 300, 70], fill=(186, 172, 136))
@@ -217,7 +193,7 @@ def render_image(card):
     for i, (key, value) in enumerate(fields):
         y = 214+i*42
         d.text((410, y), key, font=font('sc', 16, 600), fill=FADED)
-        value = safe(value)
+        value = str(value)
         d.text((410, y+18), value, font=font('mono', 20) if value.isascii() else font('sc', 18, 500), fill=INK)
         d.line([410, y+40, W-40, y+40], fill=LINE)
 
@@ -258,7 +234,7 @@ def render_image(card):
         colw = (W-80-40)/2
         for i, (name, level, elite) in enumerate(card['skills']):
             x0, yy = 40+(i % 2)*(colw+40), y+(i//2)*34
-            d.text((x0, yy), safe(name), font=font('sc', 17, 500), fill=INK)
+            d.text((x0, yy), str(name), font=font('sc', 17, 500), fill=INK)
             for k in range(10):
                 on = level >= (k+1)*5.1
                 d.rectangle([x0+130+k*18, yy+6, x0+142+k*18, yy+18], outline=INK, width=1,
@@ -274,7 +250,7 @@ def render_image(card):
     d.text((340, y), '（权限不足）', font=font('sc', 17, 400), fill=FADED)
     y += 34
     for note in notes:
-        for line in wrap(d, safe(note), font('sc', 16, 400), W-80):
+        for line in wrap(d, str(note), font('sc', 16, 400), W-80):
             d.text((40, y), line, font=font('sc', 16, 400), fill=INK)
             y += 26
     y += 16

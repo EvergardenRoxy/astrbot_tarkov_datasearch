@@ -4,7 +4,7 @@ import email.utils
 from PIL import ImageDraw
 
 from .card import when
-from .image import FADED, INK, LINE, RED, W, fit, font, footer, jpeg, paper, safe, wrap
+from .image import FADED, INK, LINE, RED, W, fit, font, footer, jpeg, paper, wrap
 
 GREEN = (64, 108, 66)
 
@@ -33,11 +33,11 @@ def render_status_image(card):
     if state:
         overall = state['overall']
         text = f"总体状态：{overall['label']}"
-        d.text((40, y), safe(text), font=fit(d, safe(text), 'sc', 28, W-80, 700),
+        d.text((40, y), str(text), font=fit(d, str(text), 'sc', 28, W-80, 700),
                fill=GREEN if overall['code'] in ('ok', 'operational') else RED)
         y += 60
         for row in rows:
-            name, label = safe(row['name']), safe(row['label'])
+            name, label = str(row['name']), str(row['label'])
             names = wrap(d, name, font('sc', 20, 500), 450)
             labels = wrap(d, label, font('sc', 20, 600), W-560)
             for i, line in enumerate(names):
@@ -52,7 +52,7 @@ def render_status_image(card):
             d.text((40, y), '上游未提供组件列表', font=font('sc', 20, 400), fill=FADED)
             y += 40
     for text in paragraphs:
-        for line in wrap(d, safe(text), font('sc', 20, 400), W-80):
+        for line in wrap(d, str(text), font('sc', 20, 400), W-80):
             d.text((40, y), line, font=font('sc', 20, 400), fill=RED if card.get('error') else INK)
             y += 28
         y += 14

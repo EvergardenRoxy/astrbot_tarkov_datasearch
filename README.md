@@ -44,7 +44,7 @@ Atlas 竞技场采用选手名册图片：排位／非排位汇总表、各模�
 
 默认 Atlas 玩家查询统一回复图片，竞技场使用选手名册风格，其他模式使用深色面板；图片后附来源链接和刷新用法。以下三种“输出方式”适用于选择 tarkov.dev 来源或 Atlas 故障时的快照回复：
 
-- **图片**：情报档案风格，用自带的开源字体在本地绘制，不经过在线渲染服务；图片最下方写明插件名称、版本、仓库和开源许可，后面附一行玩家页链接。画图失败时自动改发文字。图上的元素都是插件自己画的，没有使用游戏素材；昵称里字体画不出的字符显示为 `?`。
+- **图片**：情报档案风格，用开源字体在本地绘制，不经过在线渲染服务；图片最下方写明插件名称、版本、仓库和开源许可，后面附一行玩家页链接。画图失败时自动改发文字。所有图片统一使用完整中文字体，首次生成前下载约 17 MB，之后复用本地文件；下载失败会提示，可在设置中填写镜像地址。插件不再维护裁剪字库，也不把未收录字符替换为 `?`。
 - **文字**：纯文字，任何平台都能正常显示。
 - **Markdown 文字**：带标题、表格和加粗，适合 Telegram、Discord 等；在 QQ 等平台上会显示出原始符号。
 
@@ -102,7 +102,7 @@ astrbot_tarkov_datasearch v0.5.0 · https://github.com/EvergardenRoxy/astrbot_ta
 
 本项目采用 **GNU General Public License v3.0 or later（GPL-3.0-or-later）**。完整许可见 [LICENSE](LICENSE)，数据来源与第三方声明见 [THIRD_PARTY.md](THIRD_PARTY.md)。
 
-Boss 图的背景纹理是 AI 生成的图片（见 [THIRD_PARTY.md](THIRD_PARTY.md)）。图片使用的三款字体（思源黑体 Noto Sans SC 的裁剪版、Oswald、Share Tech Mono）采用 SIL Open Font License 1.1，许可文本与字体一起放在 `tarkov_core/fonts/`。文档里的 Boss 示例图含有 Boss 头像，是 Battlestate Games 的游戏美术，不适用本项目的许可，也不包含在插件包里。
+Boss 图的背景纹理是 AI 生成的图片（见 [THIRD_PARTY.md](THIRD_PARTY.md)）。图片使用的三款字体（完整 Noto Sans SC、Oswald、Share Tech Mono）采用 SIL Open Font License 1.1，许可文本放在 `tarkov_core/fonts/`。完整中文字体首次使用时下载到插件数据目录，两个西文字体随插件提供。文档里的 Boss 示例图含有 Boss 头像，是 Battlestate Games 的游戏美术，不适用本项目的许可，也不包含在插件包里。
 
 本插件与 Battlestate Games、tarkov.dev 和 Atlas 没有关联。
 
@@ -111,6 +111,7 @@ Boss 图的背景纹理是 AI 生成的图片（见 [THIRD_PARTY.md](THIRD_PARTY
 - [塔科夫玩家数据查询](docs/player-query.md)：命令、模式、绑定、竞技场、数字含义、设置和数据存储。
 - [服务器状态与 Boss 刷率](docs/status-and-boss.md)：命令、设置、读图方法、活动 Boss 规则、变化推送和数据存储。
 - [服务器匹配时间](docs/matching.md)：命令、读图方法、缓存与请求频率、设置。
+- [完整字体与图片开发](docs/development.md)：首次字体下载、本地测试和示例图准备。
 - [CHANGELOG.md](CHANGELOG.md)：每个版本给使用者带来了哪些变化。
 - [checklist.md](checklist.md)：用通俗的话说明做了什么、为什么、怎么核对。
 - [handoff.md](handoff.md)：给 AI 和工程师看的英文技术记录，写明每次修改的代码位置、依据和测试。

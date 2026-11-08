@@ -397,7 +397,7 @@
                 "type": "string",
                 "description": "完整中文字体下载地址（可选）",
                 "default": "",
-                "hint": "Atlas 图片第一次生成时在后台下载完整 Noto Sans SC 字体（约 17 MB，开源免费），之后中文都能显示。默认依次试 jsDelivr、GitHub；访问不了可填 https 镜像地址（最先尝试）。文件必须与固定版本的校验值一致才会使用。"
+                "hint": "所有图片首次生成前下载完整 Noto Sans SC 字体（约 17 MB），之后复用本地缓存。下载失败会提示，不使用裁剪字库。默认依次试 jsDelivr、GitHub；可填 https 镜像地址优先尝试，文件大小与校验值须匹配固定版本。"
             }
         }
     }

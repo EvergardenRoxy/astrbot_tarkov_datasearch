@@ -1,15 +1,12 @@
 """Preview the old Arena register with Atlas attribution, using invented data only.
 
-    python tools/build_arena_legacy_preview.py [full-NotoSansSC-font.ttf]
+    python tools/build_arena_legacy_preview.py
 
 Uses the production Atlas Arena renderer. No network requests or real player data.
 """
-import sys
-from pathlib import Path
 from build_atlas_arena_preview import ROOT, demo
 from tarkov_core import atlas_image
 from tarkov_core.atlas_card import build as build_atlas_card
-from tarkov_core.font_download import verify
 
 
 def reference_document():
@@ -33,11 +30,6 @@ def render(doc=None):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1:
-        font_path = Path(sys.argv[1]).resolve()
-        if not verify(font_path.read_bytes()):
-            raise ValueError('Expected the pinned full Noto Sans SC font')
-        atlas_image.use_full_font(str(font_path))
     out = ROOT/'docs'/'arena_legacy_atlas_reference_v2.jpg'
     out.write_bytes(render())
     print(out)

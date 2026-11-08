@@ -120,6 +120,11 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.module)
         self.transport = sys.modules['tarkov_test_plugin.tarkov_core.transport']
+        from font_support import TEST_FONT
+        async def offline_font(_):
+            return TEST_FONT
+        self.font_guard = patch.object(sys.modules['tarkov_test_plugin.tarkov_core.font_download'].FullFont, 'ensure', offline_font)
+        self.font_guard.start()
         # No test may reach the real Atlas service (the Atlas source has fakes in test_atlas_players).
         async def no_atlas(*args, **kwargs):
             raise AssertionError('unexpected Atlas player request')
@@ -131,6 +136,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self):
         self.atlas_guard.stop()
+        self.font_guard.stop()
         self.modules.stop()
         for name in [n for n in sys.modules if n.startswith('tarkov_test_plugin')]:
             del sys.modules[name]

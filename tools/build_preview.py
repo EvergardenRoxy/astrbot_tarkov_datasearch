@@ -17,6 +17,9 @@ api.logger = types.SimpleNamespace(warning=print, info=print, debug=print)
 sys.modules.setdefault('astrbot', types.ModuleType('astrbot'))
 sys.modules.setdefault('astrbot.api', api)
 
+from download_font import prepare  # noqa: E402
+prepare()
+
 from fixtures import arena_profile, profile  # noqa: E402
 from tarkov_core import COMMAND_STYLES  # noqa: E402
 from tarkov_core.arena import build_arena_card, summarize_arena  # noqa: E402
