@@ -53,18 +53,34 @@ class CardTests(unittest.TestCase):
         doc = atlas_profile('season', league={'rank': 2, 'name': {'en': 'A', 'ch': '甲'}, 'max': 3,
                                               'maxName': {'en': 'B', 'ch': '乙'}}, prestigeLevel=2)
         doc['slots'] = [{'slot': 'FirstPrimaryWeapon', 'en': {'short': 'RIFLE'}, 'ch': {'short': '步枪'},
-                         'image': 'https://assets.tarkov.dev/abc-base-image.webp', 'render': '/atlas/api/lookup-art/x'},
-                        {'slot': 'Headwear', 'en': {'short': 'HAT'}, 'image': 'https://evil.example/x.png'}]
+                         'image': 'https://assets.tarkov.dev/abc-base-image.webp', 'render': '/atlas/api/lookup-art/x',
+                         'children': [
+                             {'slot': 'mod_reciever', 'slot_name': 'Receiver', 'en': {'short': 'UPPER'},
+                              'image': 'https://assets.tarkov.dev/upper-base-image.webp',
+                              'children': [{'slot': 'mod_scope', 'slot_name': 'Scope', 'en': {'short': 'SCOPE'},
+                                            'icon': 'https://assets.tarkov.dev/scope-icon.webp'}]},
+                             {'slot': 'patron_in_weapon', 'en': {'short': 'BP'}, 'image': 'https://assets.tarkov.dev/bp.webp'},
+                             'junk']},
+                        {'slot': 'Headwear', 'en': {'short': 'HAT'}, 'image': 'https://evil.example/x.png'},
+                        {'slot': 'Backpack', 'en': {'short': 'BAG'}, 'image': 'https://assets.tarkov.dev/bag-base-image.webp'}]
         card = build(doc, 'season')
         self.assertEqual((card['mode_label'], card['league'], card['prestige'], card['level']), ('PVP 赛季', '乙', 2, 50))
         self.assertAlmostEqual(card['progress'], 0.5)
         self.assertEqual(card['to_next'], 1000000)
         equipment = {key: item for row in card['equipment'] for key, _, _, item in row}
-        self.assertEqual(equipment['FirstPrimaryWeapon'], {'name': 'RIFLE', 'image': 'https://assets.tarkov.dev/abc-base-image.webp'})
-        # Only assets.tarkov.dev pictures are used; never Atlas' own weapon render.
+        # A gun: name only, no picture (neither tarkov.dev's nor Atlas' render); attachments listed without cartridges.
+        gun = equipment['FirstPrimaryWeapon']
+        self.assertEqual((gun['name'], gun['image'], gun['weapon']), ('RIFLE', None, True))
+        self.assertEqual(gun['parts'], [(0, 'UPPER', 'Receiver', 'https://assets.tarkov.dev/upper-base-image.webp'),
+                                        (1, 'SCOPE', 'Scope', 'https://assets.tarkov.dev/scope-icon.webp')])
+        self.assertEqual(card['weapons'], [{'label': '主武器（吊索）', 'name': 'RIFLE', 'parts': gun['parts']}])
+        # Only assets.tarkov.dev pictures are used.
         self.assertIsNone(equipment['Headwear']['image'])
         self.assertIsNone(equipment['Earpiece'])
-        self.assertEqual(card['assets'], ['https://assets.tarkov.dev/abc-base-image.webp'])
+        self.assertEqual(card['assets'], ['https://assets.tarkov.dev/bag-base-image.webp',
+                                          'https://assets.tarkov.dev/scope-icon.webp',
+                                          'https://assets.tarkov.dev/upper-base-image.webp'])
+        self.assertTrue(render_atlas_image(card).startswith(b'\xff\xd8'))
 
     def test_rare_and_latest_achievements(self):
         done = [{'id': f'a{i}', 'at': 1700000000+i, 'rarity': ('Common', 'Rare', 'Legendary', 'Seasonal')[i % 4],
@@ -72,13 +88,13 @@ class CardTests(unittest.TestCase):
         done.append({'id': 'x', 'at': 1600000000, 'rarity': 'Odd', 'percent': None, 'en': {'name': 'No share'}})
         card = build(atlas_profile('pve', achievements={'count': 13, 'total': 100, 'done': done}), 'pve')
         data = card['achievements']
-        # Rarity first (legendary, seasonal, rare, common, others), newest first within a rarity; the share does not
+        # Rarity first (seasonal, legendary, rare, common, others), newest first within a rarity; the share does not
         # rank (every PVE share is 0 in Atlas' data).
-        self.assertEqual([a['id'] for a in data['rare']], ['a10', 'a6', 'a2', 'a11', 'a7', 'a3', 'a9', 'a5', 'a1'])
+        self.assertEqual([a['id'] for a in data['rare']], ['a11', 'a7', 'a3', 'a10', 'a6', 'a2', 'a9', 'a5', 'a1'])
         self.assertEqual([a['id'] for a in data['latest']][:3], ['a11', 'a10', 'a9'])
         self.assertEqual(len(data['latest']), 10)
-        self.assertEqual((data['rare'][0]['rarity'], data['rare'][0]['tone']), ('传奇', 'legendary'))
-        self.assertEqual((data['rare'][3]['rarity'], data['rare'][3]['tone']), ('赛季', 'seasonal'))
+        self.assertEqual((data['rare'][0]['rarity'], data['rare'][0]['tone']), ('赛季', 'seasonal'))
+        self.assertEqual((data['rare'][3]['rarity'], data['rare'][3]['tone']), ('传奇', 'legendary'))
         zero = [dict(entry, percent=0) for entry in done]
         ranked = build(atlas_profile('pve', achievements={'count': 13, 'total': 100, 'done': zero}), 'pve')
         self.assertEqual([a['id'] for a in ranked['achievements']['rare']], [a['id'] for a in data['rare']])

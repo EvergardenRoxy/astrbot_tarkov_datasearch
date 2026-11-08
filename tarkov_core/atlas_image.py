@@ -1,8 +1,8 @@
 """The Atlas player picture (PVP, PVE, season): a dark board after the Atlas website's player page.
 
 Sections, top to bottom: the Atlas logo and link (required by the Atlas author on every output of its data), the
-player header (level badge, level, name, experience), equipment with tarkov.dev's item pictures beside the
-mode's headline numbers and the rare achievements, the statistics columns, skills (drawn like the old dossier card),
+player header (level badge, level, name, experience), equipment with tarkov.dev's item pictures (guns by name only)
+beside the mode's headline numbers and the rare achievements, each gun's attachments, the statistics columns, skills (drawn like the old dossier card),
 the ten latest achievements, and the footer with the thanks to Atlas. Drawn locally with Pillow from atlas_card.build()
 and the pictures atlas_assets.py has on disk; a missing picture draws an empty placeholder box, never a substitute.
 The old tarkov.dev cards (image.py, arena_image.py) are separate and unchanged.
@@ -175,7 +175,15 @@ def equipment(img, d, card, icons, top):
             d.text((x+10, y+4), label, font=font('sc', 15, 600), fill=TEXT)
             box_y = y+LABEL_H+2
             d.rectangle([x, box_y, x+w, box_y+CELL_H], fill=(30, 33, 38) if item else (19, 21, 24), outline=RULE)
-            if item:
+            if item and item.get('weapon'):
+                # A gun shows only its name; its attachments are listed in the "武器配件" section.
+                name = safe(item['name'])
+                f = fitted(d, name, 'osw', 34, w-24, 500)
+                d.text((x+w/2-d.textlength(name, font=f)/2, box_y+CELL_H/2-30), name, font=f, fill=TEXT)
+                count = f"{len(item['parts'])} 个配件" if item['parts'] else '无配件'
+                d.text((x+w/2-d.textlength(count, font=font('sc', 14, 400))/2, box_y+CELL_H/2+18), count,
+                       font=font('sc', 14, 400), fill=DIM)
+            elif item:
                 drawn = paste_center(img, icons.get('items', {}).get(item['image']), x+8, box_y+22, w-16, CELL_H-30)
                 if not drawn:
                     d.text((x+w/2-d.textlength('图片暂缺', font=font('sc', 14, 400))/2, box_y+CELL_H/2-6), '图片暂缺',
@@ -239,6 +247,37 @@ def rare(img, d, card, icons, top, bottom):
                fill=TONES[entry['tone']])
         detail = f"{entry['percent']:g}% 玩家" if entry['percent'] is not None else '—'
         d.text((cx+cell_w/2-d.textlength(detail, font=font('sc', 13, 400))/2, cy+96), detail, font=font('sc', 13, 400), fill=DIM)
+
+
+TILE, TILE_GAP = 112, 20
+
+
+def weapons(img, d, card, icons, top):
+    """Each gun: its name and every attachment with picture, name and slot (top-level slots in gold)."""
+    guns = card.get('weapons') or []
+    if not guns:
+        return top
+    y = band(d, top, '武器配件')
+    per_row = int((W-2*M-32+TILE_GAP)//(TILE+TILE_GAP))
+    for gun in guns:
+        rows = max(1, (len(gun['parts'])+per_row-1)//per_row)
+        height = 52+rows*(TILE+46)+8
+        d.rectangle([M, y, W-M, y+height], fill=PANEL, outline=RULE)
+        title = f"{gun['label']} · {gun['name']}"
+        d.text((M+16, y+12), safe(title), font=font('sc', 18, 700), fill=TEXT)
+        right(d, W-M-16, y+14, f"{len(gun['parts'])} 个配件" if gun['parts'] else '无配件', font('sc', 15, 400), DIM)
+        for i, (depth, name, slot, link) in enumerate(gun['parts']):
+            x, ty = M+16+(i % per_row)*(TILE+TILE_GAP), y+52+(i//per_row)*(TILE+46)
+            d.rectangle([x, ty, x+TILE, ty+TILE], fill=PANEL_2, outline=RULE)
+            if not paste_center(img, icons.get('items', {}).get(link), x+6, ty+6, TILE-12, TILE-12):
+                placeholder(d, x+6, ty+6, TILE-12, TILE-12)
+            label = clip(d, name, font('sc', 13, 600), TILE+TILE_GAP-4)
+            d.text((x+TILE/2-d.textlength(label, font=font('sc', 13, 600))/2, ty+TILE+4), label, font=font('sc', 13, 600), fill=TEXT)
+            slot_text = clip(d, slot, font('sc', 12, 400), TILE+TILE_GAP-4)
+            d.text((x+TILE/2-d.textlength(slot_text, font=font('sc', 12, 400))/2, ty+TILE+22), slot_text,
+                   font=font('sc', 12, 400), fill=GOLD if depth == 0 else DIM)
+        y += height+16
+    return y+8
 
 
 def statistics(d, card, top):
@@ -330,7 +369,8 @@ def render_atlas_image(card, icons=None):
     left_bottom = equipment(img, d, card, icons, y)
     right_top = headline(d, card, y)
     rare(img, d, card, icons, right_top+16, left_bottom)
-    y = statistics(d, card, left_bottom+24)
+    y = weapons(img, d, card, icons, left_bottom+24)
+    y = statistics(d, card, y)
     y = skills(d, card, y)
     y = latest(img, d, card, icons, y)
     end = footer(d, y)

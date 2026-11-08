@@ -631,7 +631,7 @@ fallback. Search, budgets, per-user quotas and the refresh word stay as in `docs
   small numbers), equipment grid (13 slots; tarkov.dev item picture from Atlas' `image` link = `base-image`, i.e. the
   weapon without attachments; never Atlas' `render`; English short name as on the Atlas page), faction (text) and
   prestige (icon), info row (account id, highest league, last active, lookup time), the mode's 12 numbers, rare
-  achievements (9, by rarity legendary > seasonal > rare > common, then newest first; icon + name + share), statistics (overview/PMC/Scav, 15 rows), skills
+  achievements (9, by rarity seasonal > legendary > rare > common, then newest first; icon + name + share), statistics (overview/PMC/Scav, 15 rows), skills
   drawn like the old card (`skill_count`), the 10 latest achievements (icon, name, description <= 2 lines, rarity,
   share, time), footer with the Atlas thanks. Not shown (maintainer): favourite weapons/items, endings, edition and
   profile icon, armour class badges, stat icons, average survival time, account age.
@@ -665,7 +665,7 @@ Invariant change (§8): besides the fixed Boss portrait paths, `assets.tarkov.de
 and tarkov.dev's public data are fetched, validated by the URL pattern above; no other picture host.
 
 Decisions taken without the maintainer (revisit): history switch on by default; size cap default 64 MB; stored
-pictures scaled into 512 px; 10-minute retry wait and 48 downloads per picture; the place of "seasonal" in the rarity order; arena temporarily on tarkov.dev; equipment names in English.
+pictures scaled into 512 px; 10-minute retry wait and 48 downloads per picture;  arena temporarily on tarkov.dev; equipment names in English.
 
 Observations for the maintainer: every PVE achievement in Atlas' PVE sample has `percent` 0, so "rare" cannot rank
 there (tarkov.dev's PVE feed has its own completion shares); tarkov.dev's `base-image` of a weapon is the bare weapon
@@ -708,3 +708,9 @@ Follow-up 2 (maintainer, 2026-11-08):
   this only helps unmodified presets; (b) a loadout board: weapon picture plus every attachment picture with name and
   slot (all 17/10 pictures found): complete and correct, but a parts list rather than an assembled gun, and three rows
   tall. Waiting for the maintainer's choice.
+
+Follow-up 3 (maintainer, 2026-11-08): **option B adopted, guns by name only** — the equipment cells of the guns
+(primary on sling, primary on back, holster) show the gun's English short name and its attachment count, no picture;
+a new section "武器配件" lists each gun's attachments (depth first, loaded cartridges left out, at most 40) with the
+tarkov.dev picture, name and slot name (top-level slots in gold). Rarity order for rare achievements: seasonal first,
+then legendary, rare, common (maintainer). The "known problem" above is thereby handled by listing, not composing.
