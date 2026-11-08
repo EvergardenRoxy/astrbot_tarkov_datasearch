@@ -15,7 +15,7 @@ Atlas 竞技场采用选手名册图片：排位／非排位汇总表、各模�
 
 ## tarkov.dev 对机器人调用的限制与现状（玩家档案）
 
-以下限制适用于选择 tarkov.dev 数据来源或 Atlas 故障时使用的快照：**只有在 tarkov.dev 上被搜索过的玩家才有档案，档案不会自动更新，第一次查某个玩家之前要先到网站搜索他一次。** 默认 Atlas 查询不需要这一步，可在命令末尾加“刷新”重新查询。详细说明见 [玩家数据查询](docs/player-query.md#tarkovdev-对机器人调用的限制与现状)。
+**只有在 tarkov.dev 上被搜索过的玩家才有档案，档案不会自动更新，第一次查某个玩家之前要先到网站搜索他一次。** 默认 Atlas 查询不需要这一步，可在命令末尾加“刷新”重新查询。详细说明见 [玩家数据查询](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/claude/vibrant-newton-lxci9c/docs/player-query.md#tarkovdev-对机器人调用的限制与现状)。特别感谢作者 Morph1ne，其维护的项目 [**Atlas**](https://eftforge.com/atlas) 解决了长期以来的这部分难题。
 
 ## 功能
 
@@ -80,17 +80,9 @@ Boss 显式指定模式优先于个人默认模式；未绑定默认模式时保
 
 `@机器人 tarkov 帮助` 跟随这个设置：选“图片”时回复一张用法图片，否则回复文字版用法。找不到玩家、同名列表和出错提示，无论选哪种方式都以文字回复。
 
-![图片回复示例](docs/preview.jpg)
+图片示例（虚构数据，点击查看）：[玩家档案](docs/preview.jpg)、[竞技场快照](docs/arena_preview.jpg)、[Atlas 竞技场](docs/arena_legacy_atlas_reference_v2.jpg)、[帮助](docs/help_preview.jpg)。Atlas 竞技场示例含排位演示，实际只显示接口有记录的分区。
 
-![竞技场图片示例](docs/arena_preview.jpg)
-
-Atlas 竞技场图片（虚构数据，含排位演示；实际只显示接口有记录的分区）：
-
-![Atlas 竞技场图片示例](docs/arena_legacy_atlas_reference_v2.jpg)
-
-![帮助图片示例](docs/help_preview.jpg)
-
-以上示例都是玩家数据查询的回复，数据均为虚构，由 `tools/build_preview.py` 生成。文字示例：
+tarkov.dev 快照的文字回复示例（虚构数据）：
 
 ```text
 【塔科夫 PVE 档案】Test_Player（账号 ID 1234567）
@@ -134,7 +126,7 @@ astrbot_tarkov_datasearch v0.5.0 · https://github.com/EvergardenRoxy/astrbot_ta
 
 ## 特别致谢
 
-- **[Atlas](https://eftforge.com/atlas)**（[EFTForge](https://github.com/SouthHorizons76/EFTForge) 项目的一部分，作者 Morph1ne / SouthHorizons76）：Atlas 开发者已允许本项目调用其公开接口。0.5.0 起，“服务器匹配时间”使用 Atlas 的数据，图片按 Atlas 开发者的要求带有 Atlas 标志、名称和链接（标志来源见 [THIRD_PARTY.md](THIRD_PARTY.md)）。“可主动刷新的玩家数据查询”仍在规划中，当前版本的玩家数据仍来自 tarkov.dev 的公开快照（规划见 [docs/atlas-integration-plan.md](docs/atlas-integration-plan.md)）。Atlas 是独立的开源项目（AGPL-3.0-or-later），与本插件没有隶属关系，也不是 Battlestate Games 或 tarkov.dev 的项目。
+- **[Atlas](https://eftforge.com/atlas)**（[EFTForge](https://github.com/SouthHorizons76/EFTForge) 项目的一部分，作者 Morph1ne / SouthHorizons76）
 
 ## 开源许可
 
