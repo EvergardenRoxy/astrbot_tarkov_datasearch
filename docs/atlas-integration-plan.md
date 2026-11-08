@@ -80,7 +80,7 @@
 
 ### 2.7 只读实测记录（2026-11-08，本开发环境）
 
-环境已放行 `eftforge.com`、`www.eftforge.com`、`players.tarkov.dev`。请求都带说明身份的 `User-Agent`，全部只读；样本只存在临时目录，不进仓库。完整的请求与返回见维护者另行收到的记录。
+环境已放行 `eftforge.com`、`www.eftforge.com`、`players.tarkov.dev`。请求都带说明身份的 `User-Agent`，全部只读；样本只存在临时目录，不进仓库。完整的请求与返回见 [atlas-probe-record.md](atlas-probe-record.md)（玩家昵称和账号 ID 已打码）。
 
 - **匹配时间**：`GET https://www.eftforge.com/atlas/api/matching?hours=1` → 200，gzip，`application/json`，`Cache-Control: public, max-age=60`。结构与 2.4 一致：28 个数据中心，`region` 为 RUS/EUR/USA/OCE/ASI/SAM/ME/AF；名称是英文（如 `Russia Central`、`Asia Central`）；个别名称带多余空格或前缀（如 `Sa   Colombia`、`Me   Dubai`、`Af Nigeria`），显示前需要规整；个别数据中心的 `wait` 为 `null`（`Europe South`）；`hours=1` 时历史步长 300 秒、每个数据中心 12 个点。数值是几十到几百秒不等。
 - **主机**：`https://eftforge.com/...` 返回 301 到 `https://www.eftforge.com/...`。
