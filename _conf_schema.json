@@ -80,11 +80,25 @@
         "type": "object",
         "description": "玩家数据查询",
         "items": {
+            "player_source": {
+                "type": "string",
+                "description": "玩家数据来源",
+                "default": "atlas",
+                "hint": "Atlas：按需实时查询，不用先在 tarkov.dev 搜索，每次只查一个模式；Atlas 出错或额度用完时自动改用 tarkov.dev 快照，回复里会注明。tarkov.dev：只读 tarkov.dev 的公开快照（旧方式）。",
+                "options": [
+                    "atlas",
+                    "tarkov-dev"
+                ],
+                "labels": [
+                    "Atlas（推荐）",
+                    "tarkov.dev 快照"
+                ]
+            },
             "default_mode": {
                 "type": "string",
                 "description": "默认模式",
-                "default": "pvp",
-                "hint": "命令里没写模式时先看这个模式；没有档案会自动换成有档案的模式。",
+                "default": "pve",
+                "hint": "命令里没写模式时查这个模式。数据来源是 Atlas 时只查这一个模式；是 tarkov.dev 时没有档案会自动换成有档案的模式。",
                 "options": [
                     "pvp",
                     "pve",
@@ -100,7 +114,7 @@
                 "type": "bool",
                 "description": "不写模式时也查竞技场",
                 "default": false,
-                "hint": "开启后每次查询多一个请求。"
+                "hint": "只对 tarkov.dev 快照生效，开启后每次查询多一个请求。数据来源是 Atlas 时竞技场要写明模式。"
             },
             "output_mode": {
                 "type": "string",
@@ -133,7 +147,7 @@
                 "type": "int",
                 "description": "档案缓存（分钟）",
                 "default": 10,
-                "hint": "只存内存；用玩家页网址查询和绑定时不用缓存；0 不缓存。",
+                "hint": "只存内存，命中时不再联网；Atlas 数据最少缓存 1 分钟（与 Atlas 自己的缓存一致），命令最后加“刷新”可跳过缓存。tarkov.dev：用玩家页网址查询和绑定时不用缓存；0 不缓存。",
                 "slider": {
                     "min": 0,
                     "max": 1440,
@@ -276,7 +290,7 @@
     },
     "atlas": {
         "type": "object",
-        "description": "Atlas 查询后端",
+        "description": "Atlas 查询与限额",
         "items": {
             "matching_enabled": {
                 "type": "bool",
@@ -288,10 +302,76 @@
                 "type": "int",
                 "description": "Atlas 共用请求间隔（秒）",
                 "default": 5,
-                "hint": "Atlas 匹配时间和未来玩家请求共用的最短请求间隔，缓存读取不占用。匹配时间另有独立的 15 分钟缓存窗口。",
+                "hint": "Atlas 匹配时间和玩家查询共用的最短请求间隔，缓存读取不占用。玩家查询会在这个间隔内排队等待（最多 20 秒）；匹配时间另有独立的 15 分钟缓存窗口。",
                 "slider": {
                     "min": 1,
                     "max": 300,
+                    "step": 1
+                }
+            },
+            "user_query_per_hour": {
+                "type": "int",
+                "description": "每人每小时 Atlas 查询次数",
+                "default": 20,
+                "hint": "只计需要联网的查询（含刷新）；命中缓存的查询不计。",
+                "slider": {
+                    "min": 1,
+                    "max": 200,
+                    "step": 1
+                }
+            },
+            "user_refresh_per_hour": {
+                "type": "int",
+                "description": "每人每小时刷新次数",
+                "default": 3,
+                "hint": "命令最后加“刷新”会跳过缓存重新向 Atlas 查询，计入上面的查询次数；0 表示不允许刷新。",
+                "slider": {
+                    "min": 0,
+                    "max": 60,
+                    "step": 1
+                }
+            },
+            "user_query_cooldown_seconds": {
+                "type": "int",
+                "description": "每人两次 Atlas 查询的最短间隔（秒）",
+                "default": 10,
+                "hint": "命中缓存的查询不受限制。",
+                "slider": {
+                    "min": 0,
+                    "max": 3600,
+                    "step": 1
+                }
+            },
+            "user_refresh_cooldown_seconds": {
+                "type": "int",
+                "description": "每人两次刷新的最短间隔（秒）",
+                "default": 300,
+                "hint": "默认 5 分钟。",
+                "slider": {
+                    "min": 0,
+                    "max": 86400,
+                    "step": 1
+                }
+            },
+            "atlas_budget_per_minute": {
+                "type": "int",
+                "description": "全部用户每分钟 Atlas 玩家请求上限",
+                "default": 15,
+                "hint": "Atlas 按服务器出口 IP 限制每分钟 20 次，所有用户共用（同一 IP 上的其他机器人也共用）。用完时改用 tarkov.dev 快照。最大 20。",
+                "slider": {
+                    "min": 1,
+                    "max": 20,
+                    "step": 1
+                }
+            },
+            "atlas_budget_per_hour": {
+                "type": "int",
+                "description": "全部用户每小时 Atlas 玩家请求上限",
+                "default": 150,
+                "hint": "Atlas 按服务器出口 IP 限制每小时 200 次，所有用户共用。按昵称第一次查询可能要 2 次请求（搜索 + 查询）。最大 200。",
+                "slider": {
+                    "min": 1,
+                    "max": 200,
                     "step": 1
                 }
             }

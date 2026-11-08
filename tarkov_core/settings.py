@@ -4,9 +4,11 @@ from collections.abc import MutableMapping
 GROUPS = {
     'general': ('command_style', 'qq_single_word_commands', 'access_mode', 'user_whitelist', 'allowed_origins',
                 'proxy_enabled', 'proxy_url', 'public_data_cache_minutes'),
-    'player': ('default_mode', 'arena_by_default', 'output_mode', 'skill_count', 'profile_cache_minutes',
+    'player': ('player_source', 'default_mode', 'arena_by_default', 'output_mode', 'skill_count', 'profile_cache_minutes',
                'name_index_enabled', 'name_index_refresh_hours', 'download_timeout_seconds'),
-    'atlas': ('matching_enabled', 'atlas_query_cooldown_seconds'),
+    'atlas': ('matching_enabled', 'atlas_query_cooldown_seconds', 'user_query_per_hour', 'user_refresh_per_hour',
+              'user_query_cooldown_seconds', 'user_refresh_cooldown_seconds', 'atlas_budget_per_minute',
+              'atlas_budget_per_hour'),
     'status': ('status_enabled', 'status_broadcast_enabled', 'status_poll_minutes', 'status_notify_targets',
                'status_qq_push_enabled'),
     'boss': ('boss_enabled', 'boss_broadcast_enabled', 'boss_poll_minutes', 'boss_modes', 'boss_notify_targets',

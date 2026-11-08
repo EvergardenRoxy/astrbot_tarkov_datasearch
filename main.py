@@ -11,8 +11,9 @@ from astrbot.api.message_components import Image, Plain
 from astrbot.api.star import Context, Star, StarTools, register
 
 from .tarkov_core import COMMAND_STYLES, transport
-from .tarkov_core.atlas_client import AtlasClient
-from .tarkov_core.atlas_cooldown import AtlasCooldown
+from .tarkov_core.atlas_client import NICKNAME as ATLAS_NICKNAME, AtlasClient
+from .tarkov_core.atlas_cooldown import AtlasBudget, AtlasCooldown
+from .tarkov_core.atlas_players import AtlasNotFound, AtlasPlayers, UserQuota, can_fall_back, failure_text
 from .tarkov_core.matching import MatchingService
 from .tarkov_core.matching_image import ATLAS_NAME, ATLAS_URL, render_matching_image
 from .tarkov_core.accounts import Accounts, load_secret, owner_key
@@ -60,10 +61,19 @@ UNBIND_WORDS = ('unbind', '解绑')
 STATUS_WORDS = ('status', '状态')
 BOSS_WORDS = ('boss', '刷率')
 MATCHING_WORDS = ('matching', '匹配')
+# The last word of a player query: skip the local cache and ask Atlas again (maintainer: refresh is part of the query).
+REFRESH_WORDS = ('refresh', '刷新')
+PLAYER_SOURCES = ('atlas', 'tarkov-dev')
 
 
 class IndexTimeout(TimeoutError):
     """A name index download timed out (the one download the timeout setting can help with)."""
+
+
+class Resolved:
+    """A name resolved to an account (yielded by atlas_resolve among its chat messages)."""
+    def __init__(self, aid, where):
+        self.aid, self.where = aid, where
 
 
 class QQOfficialFilter(filter.CustomFilter):
@@ -99,8 +109,13 @@ class TarkovPlugin(Star):
         # (mode, account id) -> the request in flight, shared by every query that needs it (review R-08).
         self.pending = {}
         self.http = transport.HTTPClient()
+        self.atlas_budget = AtlasBudget(lambda: self.int_setting('atlas_budget_per_minute', 15, 1, 20),
+                                        lambda: self.int_setting('atlas_budget_per_hour', 150, 1, 200))
         self.atlas = AtlasClient(client=self.http, proxy=self.proxy,
-            cooldown=AtlasCooldown(self.atlas_interval()))
+            cooldown=AtlasCooldown(self.atlas_interval()), budget=self.atlas_budget)
+        self.atlas_players = AtlasPlayers(self.atlas,
+            cache_seconds=lambda: self.int_setting('profile_cache_minutes', 10, 0, 1440)*60)
+        self.quota = UserQuota(self.quota_limits)
         self.matching = MatchingService(self.atlas, enabled=self.matching_enabled)
         self.fetches = asyncio.Semaphore(FETCHES_AT_ONCE)
         self.active = set()
@@ -208,8 +223,21 @@ class TarkovPlugin(Star):
         return mode == 'all'
 
     def default_mode(self):
-        mode = parse_mode(self.config.get('default_mode', 'pvp'))
-        return mode if mode in GAME_MODES else 'pvp'
+        mode = parse_mode(self.config.get('default_mode', 'pve'))
+        return mode if mode in GAME_MODES else 'pve'
+
+    def player_source(self):
+        """'atlas' (default: live lookups, tarkov.dev snapshots as the fallback) or 'tarkov-dev' (snapshots only)."""
+        value = str(self.config.get('player_source', 'atlas')).strip().lower()
+        return value if value in PLAYER_SOURCES else 'atlas'
+
+    def quota_limits(self):
+        return (self.int_setting('user_query_per_hour', 20, 1, 200), self.int_setting('user_refresh_per_hour', 3, 0, 60),
+                self.int_setting('user_query_cooldown_seconds', 10, 0, 3600),
+                self.int_setting('user_refresh_cooldown_seconds', 300, 0, 86400))
+
+    def atlas_cache_minutes(self):
+        return max(1, self.int_setting('profile_cache_minutes', 10, 0, 1440))
 
     def arena_by_default(self):
         return bool(self.config.get('arena_by_default', False))
@@ -240,7 +268,24 @@ class TarkovPlugin(Star):
         """A command as the user should type it: the style's command, then `words` (cmd('绑定') is the bind command)."""
         return ' '.join([self.style()['command'], *map(str, words)])
 
+    def atlas_help(self):
+        """The Atlas source's rule sentence (help text and help image)."""
+        queries, refreshes, _, _ = self.quota_limits()
+        refresh = f'刷新 {refreshes} 次' if refreshes else '不能刷新'
+        return (f'数据来自 Atlas（{ATLAS_URL}），按需实时查询，不用先在 tarkov.dev 搜索；查过的玩家缓存 '
+                f'{self.atlas_cache_minutes()} 分钟，每人每小时可联网查询 {queries} 次、{refresh}。'
+                'Atlas 暂时不可用或额度用完时改用 tarkov.dev 快照，回复里会注明。')
+
+    def refresh_rule(self):
+        _, refreshes, _, gap = self.quota_limits()
+        if not refreshes:
+            return '管理员已关闭刷新'
+        return f'跳过缓存重新查询；每人每小时 {refreshes} 次，两次至少间隔 {max(1, round(gap/60))} 分钟' if gap >= 60 else \
+            f'跳过缓存重新查询；每人每小时 {refreshes} 次'
+
     def help_text(self):
+        if self.player_source() == 'atlas':
+            return self.atlas_help_text()
         index = f'；另外会查 tarkov.dev 的昵称名单（{every(self.names.refresh_seconds)}更新一次）' if self.index_enabled() else ''
         status = f"服务器状态图片：{self.cmd('status')}\n" if self.status_enabled() else ''
         boss = (f"Boss 全表图片：{self.cmd('boss [模式]')}；最近变化：{self.cmd('boss [模式] 变化')}\n"
@@ -263,6 +308,30 @@ class TarkovPlugin(Star):
                 '如果需要查询最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面。\n'
                 + status + boss + matching + words + self.search_line())
 
+    def help_extras(self):
+        status = f"服务器状态图片：{self.cmd('status')}\n" if self.status_enabled() else ''
+        boss = (f"Boss 全表图片：{self.cmd('boss [模式]')}；最近变化：{self.cmd('boss [模式] 变化')}\n"
+                f"Boss 默认模式：{self.cmd('boss 默认 <模式>')}；支持 pvp、pve、PVP S。\n") if self.boss_enabled() else ''
+        matching = (f"服务器平均匹配时间图片：{self.cmd('匹配')}（数据来自 {ATLAS_NAME}：{ATLAS_URL}）\n"
+                    if self.matching_enabled() else '')
+        words = ('QQ 官方机器人单词命令（后面的参数可以带空格）：tpvp、tpve、tseason、tarena [昵称、账号ID 或网址] [刷新]；'
+                 'tbind <昵称、账号ID 或网址>、tunbind、thelp；tstatus、tboss [模式] [变化]'
+                 + ('、tmatch' if self.matching_enabled() else '') + '\n') if self.qq_words_enabled() else ''
+        return status+boss+matching+words
+
+    def atlas_help_text(self):
+        index = '和 tarkov.dev 昵称名单' if self.index_enabled() else ''
+        return ('塔科夫玩家档案查询（数据来自 Atlas，实时查询）\n'
+                f"{self.style()['help']}\n"
+                f"绑定自己：{self.cmd('绑定 <昵称、账号ID 或玩家页网址>')}　解绑：{self.cmd('解绑')}\n"
+                f"查自己：{self.cmd('[模式]')}\n"
+                f"查别人：{self.cmd('[模式] <昵称、账号ID 或玩家页网址>')}\n"
+                f"要最新数据：在命令最后加“刷新”，例如 {self.cmd('pve', 'Player_One', '刷新')}（{self.refresh_rule()}）\n"
+                f'模式：pvp、pve、赛季（pvp-season）、竞技场（arena）；不写时查 {label_of(self.default_mode())}，每次只查一个模式。\n'
+                f'{self.atlas_help()}\n'
+                f'按昵称查询时先查插件记录{index}，找不到再用 Atlas 搜索（昵称最长 15 个字符，更长的名字请用账号 ID）。\n'
+                + self.help_extras() + self.search_line())
+
     def search_line(self):
         """The search page as a text line. Every help reply ends with it, the image included (maintainer: the link
         is always given as text, whatever the output)."""
@@ -282,6 +351,8 @@ class TarkovPlugin(Star):
             card['matching_enabled'] = True
         if self.qq_words_enabled():
             card['qq_words'] = True
+        if self.player_source() == 'atlas':
+            card.update(source='atlas', refresh_rule=self.refresh_rule(), atlas_rule=self.atlas_help())
         return card
 
     async def help_reply(self, event):
@@ -412,6 +483,9 @@ class TarkovPlugin(Star):
             action, words = 'unbind', []
         elif words and words[0].lower() in BIND_WORDS:
             action, words = 'bind', words[1:]
+        refresh = False
+        if action == 'query' and words and words[-1].lower() in REFRESH_WORDS:
+            refresh, words = True, words[:-1]
         mode = parse_mode(words[0]) if words else None
         if mode:
             words = words[1:]
@@ -444,14 +518,17 @@ class TarkovPlugin(Star):
             return
         self.active.add(owner)
         trace = owner[:8]
-        logger.info('Tarkov [%s] %s mode=%s target=%s', trace, action, mode, target)
+        logger.info('Tarkov [%s] %s mode=%s target=%s refresh=%s', trace, action, mode, target, refresh)
         try:
             if action == 'unbind':
                 yield await self.unbind(event)
+            elif self.player_source() == 'atlas':
+                async for result in self.atlas_player(event, action, mode, target, url, trace, refresh, owner):
+                    yield result
             elif action == 'bind':
                 yield await self.bind(event, mode, target, url, trace)
             else:
-                async for result in self.query(event, mode, explicit, target, url, trace):
+                async for result in self.query(event, mode, explicit, target, url, trace, refresh):
                     yield result
         except asyncio.CancelledError:
             raise
@@ -599,7 +676,7 @@ class TarkovPlugin(Star):
                                   f"也可以写模式，例如 {self.cmd('pve')}、{self.cmd('赛季')}。"
                                   f'由于 {BOT_LIMIT}，档案不会自动更新：要看最新数据，请先在 tarkov.dev 上重新搜索或打开自己的页面。')
 
-    async def query(self, event, mode, explicit, target, url, trace):
+    async def query(self, event, mode, explicit, target, url, trace, refresh=False):
         if target is None:
             bound = await asyncio.to_thread(self.accounts.bound, self.binding_key(event))
             if not bound:
@@ -607,13 +684,13 @@ class TarkovPlugin(Star):
                                          f"查别人：{self.cmd('[模式] <昵称、账号ID 或网址>')}；完整用法：{self.cmd('帮助')}")
                 return
             aid, nickname = bound
-            reply, missing = await self.show(event, aid, mode, explicit, trace, who='自己')
+            reply, missing = await self.show(event, aid, mode, explicit, trace, who='自己', fresh=refresh)
             yield reply or event.plain_result(f'你绑定的账号 {nickname}：'+missing)
             return
         if url or ACCOUNT_ID.fullmatch(target):
             aid = url[1] if url else int(target)
             # A link usually means the user just opened the page (which refreshes the snapshot): skip the cache.
-            reply, missing = await self.show(event, aid, mode, explicit, trace, fresh=bool(url))
+            reply, missing = await self.show(event, aid, mode, explicit, trace, fresh=bool(url) or refresh)
             if reply:
                 yield reply
                 return
@@ -625,6 +702,180 @@ class TarkovPlugin(Star):
             missing = None
         async for result in self.by_name(event, mode, explicit, target, trace, id_missing=missing):
             yield result
+
+    # ---- Atlas player source (docs/atlas-integration-plan.md §3) ----
+
+    async def atlas_player(self, event, action, mode, target, url, trace, refresh, owner):
+        """Query or bind through Atlas: one mode per query (the default one unless written), names resolved by the
+        shared record, then the tarkov.dev name list, then Atlas' search. When Atlas fails (not "no such player"),
+        the tarkov.dev snapshot stands in, labelled as such."""
+        charge = self.quota.ticket(owner, refresh)
+        asked = where = None
+        if target is None:
+            bound = await asyncio.to_thread(self.accounts.bound, self.binding_key(event))
+            if not bound:
+                yield event.plain_result(f"你还没有绑定账号。发送 {self.cmd('绑定 <昵称、账号ID 或玩家页网址>')} 绑定自己。\n"
+                                         f"查别人：{self.cmd('[模式] <昵称、账号ID 或网址>')}；完整用法：{self.cmd('帮助')}")
+                return
+            aid = bound[0]
+        elif url or ACCOUNT_ID.fullmatch(target):
+            aid = url[1] if url else int(target)
+        else:
+            aid = None
+            async for item in self.atlas_resolve(event, mode, target, trace, charge):
+                if isinstance(item, Resolved):
+                    aid, where = item.aid, item.where
+                else:
+                    yield item
+            if aid is None:
+                return
+            asked = target
+        try:
+            summary = await self.atlas_players.profile(mode, aid, refresh=refresh, charge=charge)
+        except AtlasNotFound as exc:
+            yield event.plain_result(self.atlas_missing(exc, action, mode, aid, target))
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if not can_fall_back(exc):
+                raise
+            if action == 'bind':
+                logger.warning('Tarkov [%s] Atlas bind lookup failed, using tarkov.dev: %s', trace, type(exc).__name__)
+                yield await self.bind(event, mode, target, url, trace)
+            else:
+                yield await self.atlas_fallback(event, mode, aid, exc, trace)
+            return
+        notes = []
+        if asked and summary['nickname'].lower() != asked.lower():
+            # The record or the name list may be out of date (renamed players): Atlas' own search decides.
+            if where != 'Atlas 搜索' and ATLAS_NICKNAME.fullmatch(asked):
+                other = await self.atlas_rename_check(mode, asked, aid, trace, charge)
+                if other is not None:
+                    notes.append(f'{where}中的 {asked} 对应账号 ID {aid}（现在叫 {summary["nickname"]}）；'
+                                 f'Atlas 搜索到的 {asked} 是账号 ID {other[0]}，下面是它的档案。')
+                    aid, summary = other
+            if summary['nickname'].lower() != asked.lower():
+                notes.append(f'注意：{where}中的 {asked} 对应账号 ID {aid}，档案里现在的昵称是 {summary["nickname"]}，可能改过名。')
+        if not summary.get('from_cache'):
+            try:
+                await asyncio.to_thread(self.accounts.remember, aid, summary['nickname'])
+            except sqlite3.Error as exc:
+                logger.warning('Tarkov name record not saved: %s', type(exc).__name__)
+        if action == 'bind':
+            await asyncio.to_thread(self.accounts.bind, self.binding_key(event), aid, summary['nickname'])
+            yield event.plain_result(f"已绑定：{summary['nickname']}（账号 ID {aid}）。之后发送 {self.cmd()} 即可查询自己"
+                                     f"（查 {label_of(self.default_mode())}），也可以写模式，例如 {self.cmd('pvp')}、{self.cmd('赛季')}；"
+                                     f"要最新数据，在命令最后加“刷新”。")
+            return
+        age = summary.get('cache_age', 0)
+        if summary.get('from_cache') and age >= CACHE_NOTE_SECONDS:
+            notes.append(f'这是插件 {max(1, round(age/60))} 分钟前从 Atlas 取得的数据（缓存）。')
+        yield await self.reply(event, summary, mode, aid, notes, trace)
+
+    async def atlas_rename_check(self, mode, asked, aid, trace, charge):
+        """(aid, summary) of the account Atlas' search finds under `asked` when it is not `aid`, else None. Failures
+        only lose the check (the profile already found is shown)."""
+        try:
+            found = await self.atlas_players.search(asked, mode, charge=charge)
+            exact = [entry for entry in found if entry[1].lower() == asked.lower() and entry[0] != aid]
+            if len(exact) != 1:
+                return None
+            return exact[0][0], await self.atlas_players.profile(mode, exact[0][0], charge=charge)
+        except asyncio.CancelledError:
+            raise
+        except QueryError as exc:
+            logger.info('Tarkov [%s] Atlas rename check skipped: %s', trace, type(exc).__name__)
+            return None
+
+    def atlas_missing(self, exc, action, mode, aid, target):
+        """The reply when Atlas says there is no such account or no profile in the mode."""
+        other = next(m for m in ('pvp', 'pve', 'season') if m != mode)
+        if str(exc).startswith('Atlas 找不到'):
+            return f'{exc}，请检查账号 ID 或昵称。'
+        if action == 'bind':
+            return f"{exc}。绑定时可以写上有档案的模式，例如 {self.cmd('绑定', self.mode_word(other), target or aid)}。"
+        return f'{exc}。可以换个模式查询，例如 {self.cmd(self.mode_word(other), aid)}。'
+
+    async def atlas_resolve(self, event, mode, target, trace, charge):
+        """Yield chat messages, and a Resolved when the name is settled: the shared record, then (when enabled) the
+        tarkov.dev name list of the mode, then Atlas' nickname search (one request)."""
+        label = label_of(mode)
+        matches, total = await asyncio.to_thread(self.accounts.lookup, target)
+        where = '记录'
+        if not matches and self.index_enabled():
+            where = '名单'
+            if self.names.needs_refresh(path_of(mode)) and not self.names.has_index(path_of(mode)):
+                size = '，约 30 MB' if mode == 'pvp' else ''
+                yield event.plain_result(f'正在下载 {label} 玩家名单（第一次按昵称查询这个模式时需要{size}，可能需要几十秒），请稍候。')
+            try:
+                matches, total = await self.names.lookup(path_of(mode), target)
+            except (QueryError, TimeoutError) as exc:
+                # The list only saves requests; Atlas' search can still find the name.
+                logger.warning('Tarkov [%s] name list unavailable: %s', trace, type(exc).__name__)
+                matches, total = [], 0
+        logger.info('Tarkov [%s] name matches=%s source=%s', trace, total, where)
+        exact = [match for match in matches if match[1] == target]
+        if len(exact) == 1 or len(matches) == 1:
+            yield Resolved((exact or matches)[0][0], where)
+            return
+        if not ATLAS_NICKNAME.fullmatch(target):
+            if matches:
+                yield event.plain_result(self.ambiguous(target, matches, total))
+            else:
+                yield event.plain_result(f'记录和名单里都没有 {target}；Atlas 只能搜索 3～15 个字符的昵称（字母、数字、_ . -），'
+                                         '更长的名字请用账号 ID 或 tarkov.dev 玩家页网址查询。')
+            return
+        try:
+            found = await self.atlas_players.search(target, mode, charge=charge)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if not can_fall_back(exc):
+                raise
+            logger.warning('Tarkov [%s] Atlas search failed: %s', trace, type(exc).__name__)
+            yield event.plain_result(f'{failure_text(exc)}，暂时无法按昵称查找 {target}，请稍后再试，或改用账号 ID / 玩家页网址查询。')
+            return
+        exact = [entry for entry in found if entry[1] == target]
+        folded = [entry for entry in found if entry[1].lower() == target.lower()]
+        pick = exact if len(exact) == 1 else folded if len(folded) == 1 else None
+        if pick:
+            yield Resolved(pick[0][0], 'Atlas 搜索')
+            return
+        if folded or len(matches) > 1:
+            listed = folded or matches
+            yield event.plain_result(self.ambiguous(target, listed, len(listed)))
+            return
+        hint = ''
+        if found:
+            listed = '、'.join(f'{name}（账号 ID {aid}）' for aid, name in found[:SUGGESTIONS])
+            hint = f'Atlas 搜索到的相近名字：{listed}。'
+        else:
+            hint = await self.suggestion(mode, True, target)
+            hint = hint.removesuffix('如果都不是，') if hint else ''
+        yield event.plain_result(f'Atlas 在 {label} 模式下没有找到名为 {target} 的玩家。{hint}'
+                                 '请检查拼写，或改用账号 ID / tarkov.dev 玩家页网址查询。')
+
+    @staticmethod
+    def ambiguous(target, matches, total):
+        listed = '\n'.join(f'{name}（ID {aid}）' for aid, name in matches[:5])
+        more = f'\n等，共 {total} 个' if total > 5 else ''
+        return f'有多个名为 {target} 的玩家（不区分大小写），请用账号 ID 或网址查询：\n{listed}{more}'
+
+    async def atlas_fallback(self, event, mode, aid, exc, trace):
+        """The tarkov.dev snapshot when Atlas failed (maintainer decision), said so in the reply."""
+        reason = failure_text(exc)
+        logger.warning('Tarkov [%s] Atlas %s lookup failed, using tarkov.dev: %s', trace, mode, type(exc).__name__)
+        try:
+            summary = await self.profile(mode, aid)
+        except NotFound:
+            raise QueryError(f'{reason}；tarkov.dev 上也没有账号 ID {aid} 的 {label_of(mode)} 快照，请稍后再试') from None
+        except asyncio.CancelledError:
+            raise
+        except Exception as second:
+            logger.warning('Tarkov [%s] tarkov.dev fallback failed: %s', trace, type(second).__name__)
+            raise QueryError(f'{reason}；改用 tarkov.dev 快照也没有成功，请稍后再试') from None
+        return await self.reply(event, summary, mode, aid, [f'{reason}，下面是 tarkov.dev 的快照（不是实时数据）。'], trace)
 
     async def by_name(self, event, mode, explicit, target, trace, id_missing=None):
         label = label_of(mode)
@@ -698,10 +949,17 @@ class TarkovPlugin(Star):
     async def reply(self, event, summary, game_mode, aid, notes, trace):
         """The profile in the configured output: an image (text if drawing fails), plain text or Markdown.
         Every reply says the data is a snapshot and links the player's page, where it can be refreshed."""
-        refresh = page_url(game_mode, aid)
+        page = page_url(game_mode, aid)
+        if summary.get('source') == 'atlas':
+            links = {'refresh_hint': self.refresh_hint(game_mode, aid), 'page_url': page}
+            link_line = f'数据来源：Atlas {ATLAS_URL}　tarkov.dev 玩家页：{page}'
+        else:
+            # A tarkov.dev snapshot only changes when someone looks the player up there.
+            links = {'refresh_url': page}
+            link_line = f'刷新数据：在 tarkov.dev 打开 {page}'
         if game_mode == 'arena':
-            return await self.arena_reply(event, summary, aid, notes, refresh, trace)
-        card = build_card(summary, label_of(game_mode), self.skill_count(), notes, refresh_url=refresh)
+            return await self.arena_reply(event, summary, aid, notes, links, link_line, trace)
+        card = build_card(summary, label_of(game_mode), self.skill_count(), notes, **links)
         # The account asked for, not the document's own "aid" field, so the id and the link always agree (review R-06).
         if card['aid'] != aid:
             logger.warning('Tarkov [%s] profile %s names account %s', trace, aid, card['aid'])
@@ -711,7 +969,7 @@ class TarkovPlugin(Star):
             try:
                 data = await asyncio.to_thread(render_image, card)
                 # The image cannot carry a clickable link; one text line after it does.
-                return event.chain_result([Image.fromBytes(data), Plain(f'刷新数据：在 tarkov.dev 打开 {refresh}')])
+                return event.chain_result([Image.fromBytes(data), Plain(link_line)])
             except Exception as exc:
                 logger.warning('Tarkov [%s] image rendering failed, sending text: %s', trace, type(exc).__name__)
                 card['notes'].append('（图片生成失败，已改为文字）')
@@ -720,8 +978,16 @@ class TarkovPlugin(Star):
             return event.plain_result(render_markdown(card))
         return event.plain_result(render_text(card))
 
-    async def arena_reply(self, event, summary, aid, notes, refresh, trace):
-        card = build_arena_card(summary, notes, refresh_url=refresh)
+    def refresh_hint(self, mode, aid):
+        """How to get fresh Atlas data, for the profile reply."""
+        _, refreshes, _, _ = self.quota_limits()
+        if not refreshes:
+            return f'插件会缓存 {self.atlas_cache_minutes()} 分钟，之后再查会重新向 Atlas 查询。'
+        return (f"要看最新数据，在命令最后加“刷新”，例如 {self.cmd(self.mode_word(mode), aid, '刷新')}"
+                f'（每人每小时 {refreshes} 次）。')
+
+    async def arena_reply(self, event, summary, aid, notes, links, link_line, trace):
+        card = build_arena_card(summary, notes, **links)
         if card['aid'] != aid:
             logger.warning('Tarkov [%s] arena profile %s names account %s', trace, aid, card['aid'])
             card['aid'] = aid
@@ -729,7 +995,7 @@ class TarkovPlugin(Star):
         if mode == 'image':
             try:
                 data = await asyncio.to_thread(render_arena_image, card)
-                return event.chain_result([Image.fromBytes(data), Plain(f'刷新数据：在 tarkov.dev 打开 {refresh}')])
+                return event.chain_result([Image.fromBytes(data), Plain(link_line)])
             except Exception as exc:
                 logger.warning('Tarkov [%s] arena image failed, sending text: %s', trace, type(exc).__name__)
                 card['notes'].append('（图片生成失败，已改为文字）')
@@ -1151,6 +1417,7 @@ class TarkovPlugin(Star):
     async def terminate(self):
         self._terminated = True
         await self.matching.close()
+        await self.atlas_players.close()
         await self.atlas.close()
         await self.names.close()
         await self.status_poller.close()

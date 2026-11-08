@@ -16,6 +16,8 @@ from tarkov_core.accounts import Accounts
 from tarkov_core.names import spelling_variants
 
 ROOT = Path(__file__).resolve().parents[1]
+# The tarkov.dev snapshot source with the old PVP default, which these tests were written for.
+LEGACY = {'player_source': 'tarkov-dev', 'default_mode': 'pvp'}
 
 
 class Event:
@@ -118,10 +120,17 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.module)
         self.transport = sys.modules['tarkov_test_plugin.tarkov_core.transport']
+        # No test may reach the real Atlas service (the Atlas source has fakes in test_atlas_players).
+        async def no_atlas(*args, **kwargs):
+            raise AssertionError('unexpected Atlas player request')
+        self.atlas_guard = patch.multiple(sys.modules['tarkov_test_plugin.tarkov_core.atlas_client'].AtlasClient,
+                                          lookup=no_atlas, search=no_atlas)
+        self.atlas_guard.start()
         self.fetched = []
         self.profiles = {}
 
     def tearDown(self):
+        self.atlas_guard.stop()
         self.modules.stop()
         for name in [n for n in sys.modules if n.startswith('tarkov_test_plugin')]:
             del sys.modules[name]
@@ -143,6 +152,10 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
             config.setdefault('name_index_enabled', True)
         # The downloaded name index is on by default (maintainer); most tests are about the recorded names only.
         config.setdefault('name_index_enabled', False)
+        # These tests cover the tarkov.dev snapshot source; the Atlas source has its own tests (test_atlas_players).
+        config.setdefault('player_source', 'tarkov-dev')
+        # Written for the old default mode (PVP); the new default (PVE) is checked in test_atlas_players.
+        config.setdefault('default_mode', 'pvp')
         plugin = self.module.TarkovPlugin(types.SimpleNamespace(), config)
         plugin.names = names or FakeNames()
         return plugin
@@ -329,7 +342,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_name_not_found(self):
         # Index switched off: the reply explains how to make the player known.
-        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text', 'name_index_enabled': False})
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text', 'name_index_enabled': False, **LEGACY})
         with patch.object(self.transport, 'fetch_index', side_effect=AssertionError('index must not be used')):
             result = await self.run_command(plugin, Event('/tarkov pve Nobody_Here'))
         self.assertIn('还不知道 Nobody_Here 的账号 ID', result[0])
@@ -554,7 +567,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.fetched, [])
 
     async def test_index_404_and_timeouts_in_chat(self):
-        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'name_index_enabled': True})
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'name_index_enabled': True, **LEGACY})
         async def missing(*a, **k):
             raise self.transport.NotFound('x')
         with patch.object(self.transport, 'fetch_index', missing):
@@ -564,7 +577,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         # Review F-17: only an index timeout suggests the download-timeout setting.
         async def slow_index(*a, **k):
             raise TimeoutError('阶段=读取响应体')
-        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'name_index_enabled': True})
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'name_index_enabled': True, **LEGACY})
         with patch.object(self.transport, 'fetch_index', slow_index):
             result = [r async for r in plugin.tarkov_command(Event('/tarkov season Somebody'))]
         self.assertIn('下载最长等待', result[-1])
@@ -696,7 +709,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
     async def test_names_are_learned_from_queries(self):
         # Index off (the default); a query by id or link teaches the name to everyone.
         self.profiles[('pve', 7654321)] = profile(aid=7654321, info_nickname='Player_One')
-        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text', 'name_index_enabled': False})
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text', 'name_index_enabled': False, **LEGACY})
         with patch.object(self.transport, 'fetch_index', side_effect=AssertionError('index must not be used')):
             self.assertIn('还不知道 player_one', (await self.run_command(plugin, Event('/tarkov pve player_one')))[0])
             await self.run_command(plugin, Event('/tarkov pve 7654321'))
@@ -706,7 +719,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('注意', result[0])
 
     async def test_renamed_player_found_by_old_name(self):
-        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text', 'name_index_enabled': False})
+        plugin = self.module.TarkovPlugin(types.SimpleNamespace(), {'output_mode': 'text', 'name_index_enabled': False, **LEGACY})
         self.profiles[('pve', 5)] = profile(aid=5, info_nickname='OldName')
         await self.run_command(plugin, Event('/tarkov pve 5'))
         plugin.cache.clear()
@@ -941,8 +954,9 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('（PVP、PVE、赛季、竞技场都没有）', result[0])
 
     async def test_arena_is_not_a_default_mode(self):
-        # The schema offers only the game modes; a hand-edited "arena" default falls back to PVP.
-        self.assertEqual(self.plugin({'default_mode': 'arena'}).default_mode(), 'pvp')
+        # The schema offers only the game modes; a hand-edited "arena" default falls back to PVE (the default since
+        # the Atlas source, maintainer decision 2026-11-08).
+        self.assertEqual(self.plugin({'default_mode': 'arena'}).default_mode(), 'pve')
         self.assertEqual(self.plugin({'default_mode': 'pve'}).default_mode(), 'pve')
 
     async def test_arena_links_binding_and_names(self):

@@ -93,3 +93,62 @@ def arena_profile(**changes):
         else:
             data[key] = value
     return data
+
+
+# Atlas documents (shapes from the 2026-11-08 probes, docs/atlas-probe-record.md §7; every value invented and round).
+ATLAS_PROFILE = {
+    'nickname': 'Test_Player', 'side': 'Usec', 'experience': 12000000, 'prestigeLevel': 0,
+    'slots': [{'slot': 'FaceCover', 'tpl': 't', 'en': {'name': 'n', 'short': 's'}, 'ch': {'name': 'n', 'short': 's'},
+               'children': [], 'icon': 'https://assets.tarkov.dev/t-icon.webp', 'render': None, 'armor_class': None}],
+    'favorites': [], 'level': 50, 'levelExp': {'current': 11000000, 'next': 13000000},
+    'memberCategory': 2, 'selectedMemberCategory': 2, 'league': None, 'ending': None, 'endingsReached': [],
+    'prestigeGameMode': 'pve',
+    'stats': {
+        'pmc': {'time': 3600000, 'counters': [
+            [['Sessions', 'Pmc'], 1000], [['ExitStatus', 'Survived', 'Pmc'], 800], [['Kills'], 5000], [['Deaths'], 100],
+            [['KilledPmc'], 900], [['LongestWinStreak', 'Pmc'], 40], [['ExitStatus', 'Killed', 'Pmc'], 120],
+            [['ExitStatus', 'Runner', 'Pmc'], 30], [['ExitStatus', 'Transit', 'Pmc'], 40],
+            [['ExitStatus', 'MissingInAction', 'Pmc'], 10]]},
+        'scav': {'time': 3600000, 'counters': [
+            [['Sessions', 'Scav'], 50], [['ExitStatus', 'Survived', 'Scav'], 30], [['Kills'], 100], [['Deaths'], 10],
+            [['KilledPmc'], 20], [['LongestWinStreak', 'Scav'], 5], [['ExitStatus', 'Killed', 'Scav'], 15],
+            [['ExitStatus', 'Runner', 'Scav'], 5]]},
+    },
+    'achievements': {'count': 2, 'total': 100, 'done': [
+        {'id': 'a1', 'at': 1760000000, 'rarity': 'Common', 'percent': 10, 'en': {'name': 'A'}, 'ch': {'name': 'A'}},
+        {'id': 'a2', 'at': 1790600000, 'rarity': 'Rare', 'percent': 1, 'en': {'name': 'B'}, 'ch': {'name': 'B'}}]},
+    'skills': {'common': [
+        {'id': 'Endurance', 'name': {'en': 'Endurance', 'ch': '耐力'}, 'progress': 5100, 'lastAccess': 1780000000},
+        {'id': 'Strength', 'name': {'en': 'Strength', 'ch': '力量'}, 'progress': 2500, 'lastAccess': 1790500000},
+        {'id': 'BotReload', 'name': {'en': 'x', 'ch': 'x'}, 'progress': 0, 'lastAccess': -2147483648}],
+        'mastering': [{'id': 'AKM', 'progress': 2000, 'kills': 10, 'templates': ['t']}]},
+    'perks': {'common': [], 'personal': []},
+    'battlePass': {'completed': 0, 'total': 50}, 'seasonalRewards': {'completed': 0, 'total': 5},
+    'accountId': '1234567', 'looked_up': '2026-11-01T04:00:00+00:00', 'client_version': '1.0.0.0.10000',
+    'cached': False, 'mode': 'pve',
+}
+
+ATLAS_ARENA = {
+    'nickname': 'Test_Player', 'side': 'Usec', 'experience': 500000, 'prestigeLevel': None, 'slots': [],
+    'favorites': [], 'level': 20, 'levelExp': {'current': 400000, 'next': 600000},
+    'memberCategory': 2, 'selectedMemberCategory': 2,
+    'achievements': {'count': 1, 'total': 80, 'done': [{'id': 'b1', 'at': 1785000000}]},
+    'accountId': '1234567', 'looked_up': '2026-11-01T04:00:00+00:00', 'client_version': '0.1.0.0.10000',
+    'cached': False, 'mode': 'arena', 'registered': 1700000000,
+    'arenaStats': {'time': 360000, 'modes': {
+        'UnrankedOverall': {'GamesCount': 200, 'Kills': 1500, 'Deaths': 600, 'BestArp': 1200, 'MaxKillsWithoutDeaths': 12,
+                            'LongestWinStreak': 7},
+        'UnrankedTeamFight': {'GamesCount': 100, 'ArenaWins': 60, 'ArenaLoses': 40, 'Kills': 800, 'Deaths': 300,
+                              'MatchMvpCount': 10},
+        'UnrankedShootOutDuo': {'GamesCount': 10, 'ArenaWins': 5, 'Kills': 50, 'Deaths': 20},
+    }},
+    'battlePasses': [{'id': 'p1', 'level': 10}, {'id': 'p2', 'level': 20, 'max': 100, 'title': 'Season 1', 'current': True}],
+}
+
+
+def atlas_profile(mode='pve', **changes):
+    """A copy of ATLAS_PROFILE (or ATLAS_ARENA for mode='arena') in `mode`; keyword arguments replace fields."""
+    data = copy.deepcopy(ATLAS_ARENA if mode == 'arena' else ATLAS_PROFILE)
+    data['mode'] = mode
+    data.update(changes)
+    return data

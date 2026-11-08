@@ -12,7 +12,7 @@ from pathlib import Path
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 from . import NAME, NOTICE, REPO, VERSION
-from .card import EXITS, SURVIVED, refresh_note, stale_note
+from .card import EXITS, SURVIVED, image_source_line, is_atlas, tail_notes
 
 FONTS = Path(__file__).with_name('fonts')
 FONT_FILES = {'sc': 'NotoSansSC-Subset.ttf', 'osw': 'Oswald-Variable.ttf', 'mono': 'ShareTechMono-Regular.ttf'}
@@ -93,14 +93,15 @@ def paper(height):
     return img
 
 
-def stamp(img, side):
+def stamp(img, side, live=False):
     mark = Image.new('RGBA', (300, 120), (0, 0, 0, 0))
     md = ImageDraw.Draw(mark)
     md.rectangle([4, 4, 295, 115], outline=RED+(210,), width=5)
     md.rectangle([12, 12, 287, 107], outline=RED+(170,), width=2)
-    # "Snapshot", not "verified": the data is whatever tarkov.dev stored last (review R-13).
-    md.text((30, 22), '存档快照', font=font('sc', 40, 900), fill=RED+(210,))
-    md.text((32, 74), 'SNAPSHOT · '+safe(side, latin=True)[:12], font=font('mono', 20), fill=RED+(210,))
+    # "Snapshot", not "verified": tarkov.dev data is whatever it stored last (review R-13). Atlas asks the game at
+    # query time ("live" lookup), which is all the stamp claims.
+    md.text((30, 22), '实时查询' if live else '存档快照', font=font('sc', 40, 900), fill=RED+(210,))
+    md.text((32, 74), ('LIVE · ' if live else 'SNAPSHOT · ')+safe(side, latin=True)[:12], font=font('mono', 20), fill=RED+(210,))
     mark = mark.rotate(-12, expand=True, resample=Image.BICUBIC)
     img.paste(mark, (W-345, 18), mark)
 
@@ -193,8 +194,7 @@ def exit_bars(d, sides, x, y, width):
 def render_image(card):
     """JPEG bytes of the card."""
     skill_rows = (len(card['skills'])+1)//2
-    notes = (([stale_note(card['stale_days'])] if card['stale_days'] else [])+card['notes']
-             +([refresh_note(card['refresh_url'])] if card['refresh_url'] else []))
+    notes = tail_notes(card)
     height = 1340+skill_rows*34+sum(26*(1+len(note)//34) for note in notes)
     img = paper(height)
     d = ImageDraw.Draw(img)
@@ -207,13 +207,14 @@ def render_image(card):
     d.text((42, 138), 'TARKOV INTELLIGENCE DOSSIER  /  MODE: '+mode_en, font=font('mono', 18), fill=FADED)
     d.line([40, 170, W-40, 170], fill=INK, width=2)
     d.line([40, 175, W-40, 175], fill=INK, width=1)
-    stamp(img, card['side'])
+    stamp(img, card['side'], live=is_atlas(card))
 
     # identity: dog tag on the left, the facts the tag does not show on the right
     dog_tag(img, card, mode_en, 34, 232)
     d = ImageDraw.Draw(img)
     fields = [('模式', card['mode']), ('账号总游戏时长', f"{card['play_hours']} 小时" if card['play_hours'] else '—'),
-              ('成就', f"{card['achievements']} 个"), ('最近活跃', card['last_active'] or '—'), ('档案更新', card['updated'] or '—')]
+              ('成就', f"{card['achievements']} 个"), ('最近活跃', card['last_active'] or '—'),
+              ('查询时间' if is_atlas(card) else '档案更新', card['updated'] or '—')]
     for i, (key, value) in enumerate(fields):
         y = 214+i*42
         d.text((410, y), key, font=font('sc', 16, 600), fill=FADED)
@@ -279,7 +280,7 @@ def render_image(card):
             y += 26
     y += 16
     d.line([40, y, W-40, y], fill=INK)
-    return jpeg(img.crop((0, 0, W, footer(d, y, card['updated'], FADED, FADED))))
+    return jpeg(img.crop((0, 0, W, footer(d, y, card['updated'], FADED, FADED, line=image_source_line(card)))))
 
 
 def footer(d, y, updated, fill, small_fill, line=None):

@@ -2,7 +2,7 @@
 import re
 
 from . import NAME, NOTICE, REPO, VERSION
-from .card import BOT_LIMIT, EXITS, SURVIVED, build_card, refresh_note, stale_note
+from .card import BOT_LIMIT, EXITS, SURVIVED, build_card, refresh_note, source_line, stale_note
 
 
 def side_lines(card_side):
@@ -46,16 +46,25 @@ def render_text(card):
     if rest:
         lines.append(f"其他技能（前 {len(rest)} 项）：{'、'.join(f'{name} {level}' for name, level in rest)}")
     lines.append('')
-    if card['updated']:
-        lines.append(f"数据来自 tarkov.dev，档案更新于 {card['updated']}（北京时间）")
-    else:
-        lines.append('数据来自 tarkov.dev（时间为北京时间）')
+    lines += footer_lines(card)
+    return '\n'.join(lines+source_lines())
+
+
+def footer_lines(card, quote=''):
+    """Data source, stale warning, notes, refresh advice and (Atlas) the player page; Markdown when `quote`."""
+    lines = [source_line(card)]
     if card['stale_days']:
         lines.append(stale_note(card['stale_days']))
-    lines += card['notes']
-    if card['refresh_url']:
-        lines.append(refresh_note(card['refresh_url']))
-    return '\n'.join(lines+source_lines())
+    lines += [md(note) if quote else note for note in card['notes']]
+    if card.get('refresh_url'):
+        lines.append(markdown_refresh(card['refresh_url']) if quote else refresh_note(card['refresh_url']))
+    if card.get('refresh_hint'):
+        lines.append(md(card['refresh_hint']) if quote else card['refresh_hint'])
+    if card.get('page_url'):
+        # Built by the plugin from a mode and a number, so it is not escaped.
+        lines.append(f"tarkov.dev 玩家页：[{card['page_url']}]({card['page_url']})" if quote
+                     else f"tarkov.dev 玩家页：{card['page_url']}")
+    return [quote+line for line in lines]
 
 
 def source_lines():
@@ -122,15 +131,7 @@ def render_markdown(card):
     if rest:
         lines.append(f"**其他技能（前 {len(rest)} 项）**：{'、'.join(f'{name} {level}' for name, level in rest)}")
     lines.append('')
-    if card['updated']:
-        lines.append(f"> 数据来自 tarkov.dev，档案更新于 {card['updated']}（北京时间）")
-    else:
-        lines.append('> 数据来自 tarkov.dev（时间为北京时间）')
-    if card['stale_days']:
-        lines.append('> '+stale_note(card['stale_days']))
-    lines += ['> '+md(note) for note in card['notes']]
-    if card['refresh_url']:
-        lines.append('> '+markdown_refresh(card['refresh_url']))
+    lines += footer_lines(card, '> ')
     return '\n'.join(lines+markdown_source_lines())
 
 
