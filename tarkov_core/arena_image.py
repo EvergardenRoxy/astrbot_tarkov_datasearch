@@ -11,7 +11,7 @@ from functools import lru_cache
 from PIL import Image, ImageChops, ImageDraw
 
 from .arena import best_arp, kd, losses, rank, record, win_rate
-from .card import image_source_line, tail_notes
+from .card import refresh_note, stale_note
 from .image import W, fit, font, footer, jpeg, right, safe, wrap
 
 LEATHER, PAGE, INK, BROWN, GOLD, GOLD_DARK, WAX = (52, 34, 26), (226, 214, 186), (40, 30, 24), (120, 90, 50), (190, 156, 76), (150, 118, 50), (128, 26, 30)
@@ -94,7 +94,8 @@ def win_bar(d, x, y, width, wins, lost):
 
 
 def notes_of(card):
-    return tail_notes(card)
+    return (([stale_note(card['stale_days'])] if card['stale_days'] else [])+card['notes']
+            + ([refresh_note(card['refresh_url'])] if card['refresh_url'] else []))
 
 
 def page_height(card):
@@ -182,5 +183,5 @@ def render_arena_image(card):
     d.rectangle([14, 14, W-14, height-14], outline=GOLD, width=2)
     img.paste(page.crop((0, 0, pw, page_h)), (40, 40))
     wax_seal(d, W-130, page_h, 46)
-    footer(d, 40+page_h+14, card['updated'], (214, 196, 160), (180, 160, 124), line=image_source_line(card))
+    footer(d, 40+page_h+14, card['updated'], (214, 196, 160), (180, 160, 124))
     return jpeg(img)

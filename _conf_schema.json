@@ -374,6 +374,46 @@
                     "max": 200,
                     "step": 1
                 }
+            },
+            "atlas_assets_update": {
+                "type": "bool",
+                "description": "拉取常用图标（执行一次后自动关闭）",
+                "default": false,
+                "hint": "打开并保存后，从 tarkov.dev 下载全部成就图标、等级徽章和转生图标（约 150 张）。物品图片和这里没有的图标在第一次用到时才下载。图片不会过期，只能用下面的开关清除。"
+            },
+            "atlas_assets_clear": {
+                "type": "bool",
+                "description": "清除图标缓存（执行一次后自动关闭）",
+                "default": false,
+                "hint": "打开并保存后，删除本地保存的全部图标和物品图片；之后用到时重新下载。"
+            },
+            "atlas_history_enabled": {
+                "type": "bool",
+                "description": "保存 Atlas 查询记录",
+                "default": true,
+                "hint": "在本机保存每次成功查询的 Atlas 原始数据，为以后的定时拉取、周报和按时间比较预留。只存在插件数据目录，不上传；不保存 tarkov.dev 的快照。关闭后不再保存，并删除已有记录。"
+            },
+            "atlas_history_hours": {
+                "type": "int",
+                "description": "查询记录保留时间（小时）",
+                "default": 180,
+                "hint": "超过这个时间的记录自动删除。",
+                "slider": {
+                    "min": 1,
+                    "max": 8760,
+                    "step": 1
+                }
+            },
+            "atlas_history_max_mb": {
+                "type": "int",
+                "description": "查询记录总大小上限（MB）",
+                "default": 64,
+                "hint": "16～128 MB，超过时先删最早的记录。",
+                "slider": {
+                    "min": 16,
+                    "max": 128,
+                    "step": 1
+                }
             }
         }
     }

@@ -137,6 +137,8 @@ class AtlasPlayers:
         if not isinstance(doc, dict) or doc.get('mode') not in (None, mode):
             raise AtlasProfileError()
         summary = summarize(doc, mode)
+        # The raw document: the Atlas picture reads it, and the history stores it.
+        summary['doc'] = doc
         summary['fetched'] = self.wall_clock()
         self._remember((mode, aid), summary)
         return summary

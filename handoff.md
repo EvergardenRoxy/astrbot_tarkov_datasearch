@@ -616,3 +616,64 @@ being dropped plugin-wide later, profile text/Markdown untouched for now); comma
   access, one query per owner), help-card/QQ-word expectations updated. 358 tests pass. Not verified on a live
   chat platform.
 
+
+
+## Atlas player picture, icon cache and query history (2026-11-08, in progress)
+
+Maintainer decisions this round (redo after reviewing the first draft; draft commit `f9e1104` kept as reference):
+a new picture after the Atlas website's player page (maintainer's reference screenshot), **old tarkov.dev cards
+untouched** (image.py, arena_image.py, card.py, output.py, arena.py, help_image.py restored to `175f8bc`); Atlas data is
+always a picture (text/Markdown are no longer maintained and will be removed later); tarkov.dev snapshot stays the
+fallback. Search, budgets, per-user quotas and the refresh word stay as in `docs/atlas-integration-plan.md` §3.
+
+- **Picture** (`atlas_card.build()` -> `atlas_image.render_atlas_image(card, icons)`, 1600 px dark board): Atlas logo and
+  link at the very top (Atlas author's requirement), header (level badge, level, name, side as text, EXP bar, six
+  small numbers), equipment grid (13 slots; tarkov.dev item picture from Atlas' `image` link = `base-image`, i.e. the
+  weapon without attachments; never Atlas' `render`; English short name as on the Atlas page), faction (text) and
+  prestige (icon), info row (account id, highest league, last active, lookup time), the mode's 12 numbers, rare
+  achievements (9, lowest Atlas `percent` first, icon + name + share), statistics (overview/PMC/Scav, 15 rows), skills
+  drawn like the old card (`skill_count`), the 10 latest achievements (icon, name, description <= 2 lines, rarity,
+  share, time), footer with the Atlas thanks. Not shown (maintainer): favourite weapons/items, endings, edition and
+  profile icon, armour class badges, stat icons, average survival time, account age.
+- **Counter rules** (read off the reference picture, maintainer: the old K/D was wrong): K/D = player kills /
+  (killed + left); K/D (all kills) = all kills / (killed + left); AI kills = all kills - player kills; overview =
+  PMC + Scav, including the longest streaks (as Atlas shows); a counter Atlas omits (e.g. `Left`) is 0. The old cards
+  keep their own (old) formula.
+- **Pictures** (`atlas_assets.py`): only `https://assets.tarkov.dev/<name>.(png|webp|jpg)`; stored as PNG scaled into
+  512 px under `<data>/atlas-assets/`, **no expiry**. One-shot setting `atlas_assets_update` downloads every common icon
+  (all achievement icons of the regular and PVE `tasks` feeds, level badges from `items.playerLevels`, prestige icons;
+  153 files, 12.7 s in the dev environment); anything else (item pictures) on first use (<= 4 at once, <= 48 per
+  picture). Failures draw an empty placeholder box and are not retried for 10 minutes. `atlas_assets_clear` removes
+  everything. The icon catalog (`catalog.json`) is built from the public cache (`public_resource`). Arena
+  achievements are not in tarkov.dev's data (0/67 in the sample).
+- **History** (`atlas_history.py`, `<data>/atlas-history.sqlite3`): raw Atlas document (gzip JSON) per successful
+  lookup, one row per (account, mode, `looked_up`); never tarkov.dev snapshots. Settings: `atlas_history_enabled`
+  (privacy switch; off = no writes and the file is deleted on load), `atlas_history_hours` (default 180, 1-8760),
+  `atlas_history_max_mb` (default 64, 16-128; oldest rows go first). Read interface for later work: `latest`,
+  `history(since, until)`, `compare` (oldest/newest in a range), `accounts(since)`. No scheduler.
+- **Wiring**: `TarkovPlugin.atlas_picture()` / `atlas_icons()`; notes (rename, cache age) and the refresh hint go in the
+  text line after the picture; a drawing failure answers with text and the links. **Arena under the Atlas source uses
+  the tarkov.dev path for now** (its Atlas picture is the next step). `AtlasPlayers` keeps the raw document in
+  `summary['doc']`.
+- **Font**: `tools/build_atlas_chars.py` writes the characters of tarkov.dev's Chinese achievement names/descriptions to
+  `data/atlas-text-chars.txt`, which `build_fonts.py` adds (subset 694 -> 1,071 glyphs, 296 -> 470 KB; package 848 KB of
+  the 1 MiB cap). Including Chinese item names as well would have made the font 813 KB and the package too big.
+- **Dev environment**: personal environment `astrbot_tarkov_datasearch` now also allows `json.tarkov.dev` and
+  `assets.tarkov.dev`.
+
+Invariant change (§8): besides the fixed Boss portrait paths, `assets.tarkov.dev` picture links from Atlas documents
+and tarkov.dev's public data are fetched, validated by the URL pattern above; no other picture host.
+
+Decisions taken without the maintainer (revisit): history switch on by default; size cap default 64 MB; stored
+pictures scaled into 512 px; 10-minute retry wait and 48 downloads per picture; ties among rare achievements by newer
+first; arena temporarily on tarkov.dev; equipment names in English.
+
+Observations for the maintainer: every PVE achievement in Atlas' PVE sample has `percent` 0, so "rare" cannot rank
+there (tarkov.dev's PVE feed has its own completion shares); tarkov.dev's `base-image` of a weapon is the bare weapon
+(small in the slot); the arm band picture is mostly black.
+
+Tests: `test_atlas_picture.py` (card rules, odd fields, rendering, URL validation, sanitising, first-use download,
+failure wait, prefetch/catalog/clear, shared downloads, history rows/pruning/size cap/delete) and the rewritten
+`AtlasPluginTests` (picture whatever the output setting, links line, arena on tarkov.dev, history only for Atlas and only
+when on, one-shot settings consumed once, drawing failure). 413 tests pass. Previews were rendered from the saved
+probe responses in the scratch directory only (real player data, not in the tree). Not verified on a chat platform.

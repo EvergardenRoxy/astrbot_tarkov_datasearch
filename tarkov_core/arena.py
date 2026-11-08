@@ -9,8 +9,8 @@ from the main game's level table).
 import re
 import time
 
-from .card import freshness, when
-from .output import footer_lines, markdown_source_lines, md, source_lines
+from .card import STALE_DAYS, refresh_note, stale_note, when
+from .output import markdown_refresh, markdown_source_lines, md, source_lines
 from .profile import last_active, number
 from .text import clean
 from .transport import QueryError
@@ -141,17 +141,22 @@ def win_rate(stats):
     return f'{wins/games*100:.1f}%' if games and wins is not None else None
 
 
-def build_arena_card(summary, notes=(), now=None, refresh_url=None, refresh_hint=None, page_url=None):
+def build_arena_card(summary, notes=(), now=None, refresh_url=None):
+    now = time.time() if now is None else now
+    updated = when(summary['updated']) if summary['updated'] else None
+    days = (now-summary['updated'])/86400 if updated else 0
     return {
-        **freshness(summary, now, refresh_url, refresh_hint, page_url),
         'arena': True,
         'mode': '竞技场',
         'nickname': summary['nickname'],
         'aid': int(summary['aid']) if summary['aid'] is not None else None,
         'achievements': summary['achievements'],
         'last_active': when(summary['last_active']) if summary['last_active'] else None,
+        'updated': updated,
+        'stale_days': int(days) if days > STALE_DAYS else None,
         'sections': summary['sections'],
         'notes': list(notes),
+        'refresh_url': refresh_url,
     }
 
 
@@ -178,7 +183,17 @@ def mode_text(label, stats):
 
 
 def footer(card, quote=''):
-    return footer_lines(card, quote)
+    lines = []
+    if card['updated']:
+        lines.append(f"数据来自 tarkov.dev，档案更新于 {card['updated']}（北京时间）")
+    else:
+        lines.append('数据来自 tarkov.dev（时间为北京时间）')
+    if card['stale_days']:
+        lines.append(stale_note(card['stale_days']))
+    lines += [md(note) if quote else note for note in card['notes']]
+    if card['refresh_url']:
+        lines.append(markdown_refresh(card['refresh_url']) if quote else refresh_note(card['refresh_url']))
+    return [quote+line for line in lines]
 
 
 def render_arena_text(card):

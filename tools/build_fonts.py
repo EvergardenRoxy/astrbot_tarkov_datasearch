@@ -48,6 +48,10 @@ def characters():
     chars |= set('感染者')
     for path in [ROOT/'main.py', *sorted((ROOT/'tarkov_core').glob('*.py'))]:
         chars |= {char for char in path.read_text(encoding='utf-8') if ord(char) > 126 and char.isprintable()}
+    # Chinese achievement and item names printed by the Atlas player picture (tools/build_atlas_chars.py).
+    extra = ROOT/'tarkov_core'/'data'/'atlas-text-chars.txt'
+    if extra.exists():
+        chars |= {char for char in extra.read_text(encoding='utf-8') if ord(char) > 126 and char.isprintable()}
     static = json.loads((ROOT/'tarkov_core'/'data'/'static.json').read_text(encoding='utf-8'))
     for skill in static['skills'].values():
         chars |= set(skill['zh'])

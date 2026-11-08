@@ -14,18 +14,13 @@ LABEL_X, TAPE_X = 40, 196
 
 def help_rows(card):
     """(what, command, remark) of the command table."""
-    atlas = card.get('source') == 'atlas'
-    arena = '不写名字时查自己' + ('；不写模式的查询也会看竞技场' if card['arena_by_default'] and not atlas else '')
+    arena = '不写名字时查自己' + ('；不写模式的查询也会看竞技场' if card['arena_by_default'] else '')
     command = card['command']
     rows = [
         ('查自己', f'{command} [模式]', '需要先绑定'),
         ('查别人', f'{command} [模式] <昵称、账号ID 或网址>', ''),
         ('竞技场', f'{command} 竞技场 <昵称、账号ID 或网址>', arena),
-    ]
-    if atlas:
-        rows.append(('刷新', f'{command} [模式] [目标] 刷新', card.get('refresh_rule') or ''))
-    rows += [
-        ('绑定', f'{command} 绑定 <{"昵称、账号ID 或网址" if atlas else "玩家页网址或账号ID"}>', ''),
+        ('绑定', f'{command} 绑定 <玩家页网址或账号ID>', ''),
         ('解绑', f'{command} 解绑', ''),
         ('帮助', f'{command} 帮助', ''),
     ]
@@ -88,8 +83,7 @@ def render_help_image(card):
     """JPEG bytes of the help page. card: command (how a command starts, per the command style), note (the line under
     the command table), mode (key of the default mode), label (its name), search (the tarkov.dev
     search page in that mode), example (a player page in that mode), arena_by_default, index (how often the name
-    lists are refreshed, or None without the name lists); with the Atlas source also source='atlas', refresh_rule
-    (the refresh row's remark) and atlas_rule (the first note)."""
+    lists are refreshed, or None without the name lists)."""
     img = paper(2400)
     d = ImageDraw.Draw(img)
 
@@ -126,32 +120,21 @@ def render_help_image(card):
             d.rectangle([x+chip_w-48, y-12, x+chip_w+6, y+14], fill=RED)
             d.text((x+chip_w-21, y+1), '默认', font=font('sc', 16, 800), fill=TAPE_TEXT, anchor='mm')
     y += 104
-    if card.get('source') == 'atlas':
-        rule = f"不写模式时查 {card['label']}，每次只查一个模式；其他模式和竞技场要写明。"
-    else:
-        rule = (f"不写模式时先看 {card['label']}，没有档案就自动换成有档案的模式"
-                + ('，也会看竞技场。' if card['arena_by_default'] else '；竞技场要写明。'))
+    rule = (f"不写模式时先看 {card['label']}，没有档案就自动换成有档案的模式"
+            + ('，也会看竞技场。' if card['arena_by_default'] else '；竞技场要写明。'))
     y = paragraph(d, y, rule)
     y += 14
     d.line([40, y, W-40, y], fill=LINE)
 
-    atlas = card.get('source') == 'atlas'
-    y = heading(d, y+24, '三、怎样查询' if atlas else '三、第一次查询')
+    y = heading(d, y+24, '三、第一次查询')
     remembered = '按 ID 或网址查到过的名字会被记住'
     if card['index']:
         remembered += f"，也会查昵称名单（{card['index']}更新一次）"
-    if atlas:
-        steps = [
-            ('直接发送昵称、账号 ID 或玩家页网址，不用先去网站搜索：', f"{card['command']} pve Player_One"),
-            ('昵称先查插件记录' + ('和 tarkov.dev 昵称名单' if card['index'] else '') + '，找不到再用 Atlas 搜索（昵称最长 15 个字符）。', None),
-            ('要看最新数据，在命令最后加“刷新”：', f"{card['command']} pve Player_One 刷新"),
-        ]
-    else:
-        steps = [
-            ('在 tarkov.dev 选好模式，搜索这名玩家的游戏名：', card['search'].removeprefix('https://')),
-            ('把跳转后的玩家页网址发给我，例如：', f"{card['command']} {card['example']}"),
-            ('之后就能直接用名字查（'+remembered+'）。', None),
-        ]
+    steps = [
+        ('在 tarkov.dev 选好模式，搜索这名玩家的游戏名：', card['search'].removeprefix('https://')),
+        ('把跳转后的玩家页网址发给我，例如：', f"{card['command']} {card['example']}"),
+        ('之后就能直接用名字查（'+remembered+'）。', None),
+    ]
     for i, (text, command) in enumerate(steps, 1):
         d.ellipse([40, y, 76, y+36], outline=INK, width=2)
         d.text((58, y+18), str(i), font=font('osw', 22, 600), fill=INK, anchor='mm')
@@ -162,15 +145,10 @@ def render_help_image(card):
     d.line([40, y, W-40, y], fill=LINE)
 
     y = heading(d, y+24, '四、注意')
-    if atlas:
-        first = card.get('atlas_rule') or ''
-    else:
-        first = ('由于 tarkov.dev 和 Battlestate Games 都不向机器人开放档案查询，机器人无法直接触发更新。'
-                 '要看最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面，几分钟后再查。')
-    for text in (first, '昵称只含字母、数字、下划线 _ 和连字符 -；_ 和 - 容易记混，查不到时插件会提示相近的名字。'):
+    for text in ('由于 tarkov.dev 和 Battlestate Games 都不向机器人开放档案查询，机器人无法直接触发更新。要看最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面，几分钟后再查。',
+                 '昵称只含字母、数字、下划线 _ 和连字符 -；_ 和 - 容易记混，查不到时插件会提示相近的名字。'):
         d.rectangle([44, y+10, 54, y+20], fill=INK)
         y = paragraph(d, y, text, x=70)+10
     y += 10
     d.line([40, y, W-40, y], fill=INK)
-    line = '数据来自 Atlas 实时查询（暂时不可用时改用 tarkov.dev 快照）' if atlas else '数据来自 tarkov.dev 公开快照（非实时）'
-    return jpeg(img.crop((0, 0, W, footer(d, y, None, FADED, FADED, line=line))))
+    return jpeg(img.crop((0, 0, W, footer(d, y, None, FADED, FADED, line='数据来自 tarkov.dev 公开快照（非实时）'))))

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from aiohttp import web
 
-from fixtures import ATLAS_ARENA, ATLAS_PROFILE, atlas_profile, profile
+from fixtures import ATLAS_ARENA, ATLAS_PROFILE, arena_profile, atlas_profile, profile
 from tarkov_core import atlas_client
 from tarkov_core.atlas_client import AtlasClient, AtlasHTTPError, allowed
 from tarkov_core.atlas_cooldown import AtlasBudget, AtlasBudgetError, AtlasCooldown, AtlasCooldownError
@@ -343,17 +343,33 @@ class QuotaTests(unittest.TestCase):
             quota.ticket('a', True)()
 
 
+class FakeAssets:
+    """Stands in for AtlasAssets: a fixed catalog, pictures from a table, no network."""
+    def __init__(self):
+        self.catalog_data = {'achievements': {'a1': 'https://assets.tarkov.dev/achievement-a1-icon.webp'},
+                             'levels': [[1, 'https://assets.tarkov.dev/player-level-group-1.png']], 'prestige': {}}
+        self.asked = []
+
+    async def catalog(self):
+        return self.catalog_data
+
+    async def images(self, urls):
+        self.asked.append([url for url in urls if url])
+        return {}
+
+    async def close(self):
+        pass
+
+
 class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
-    """The plugin with the Atlas source (the default) and a fake Atlas client."""
+    """The plugin with the Atlas source (the default), a fake Atlas client and fake picture cache."""
     setUp = test_plugin.PluginTests.setUp
     tearDown = test_plugin.PluginTests.tearDown
     fake_fetch = test_plugin.PluginTests.fake_fetch
     run_command = test_plugin.PluginTests.run_command
 
-    def plugin(self, config=None, names=None, output='text'):
+    def plugin(self, config=None, names=None, draw=False):
         config = dict(config or {})
-        if output:
-            config.setdefault('output_mode', output)
         config.setdefault('name_index_enabled', names is not None)
         config.setdefault('user_query_cooldown_seconds', 0)
         config.setdefault('user_refresh_cooldown_seconds', 0)
@@ -362,6 +378,15 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         self.atlas = FakeAtlas()
         self.atlas.errors = test_plugin.sys.modules['tarkov_test_plugin.tarkov_core.atlas_client']
         plugin.atlas_players.client = self.atlas
+        plugin.atlas_assets = self.assets = FakeAssets()
+        self.cards = []
+        if not draw:
+            def record(card, icons=None):
+                self.cards.append(card)
+                return b'\xff\xd8picture'
+            patcher = patch.object(self.module, 'render_atlas_image', record)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         return plugin
 
     def error(self, *args):
@@ -371,26 +396,37 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
     async def ask(self, plugin, text, sender='alice'):
         return await self.run_command(plugin, Event(text, sender=sender))
 
-    async def test_defaults_atlas_and_pve(self):
-        plugin = self.plugin()
+    @staticmethod
+    def text(reply):
+        """The text of a reply: a plain string, or the Plain parts after the picture."""
+        return '\n'.join(part.text for part in reply if isinstance(part, PlainStub)) if isinstance(reply, list) else reply
+
+    async def test_defaults_atlas_pve_and_a_picture_whatever_the_output(self):
+        plugin = self.plugin({'output_mode': 'text'})
         self.assertEqual((plugin.player_source(), plugin.default_mode()), ('atlas', 'pve'))
         self.atlas.put(1234567, 'pve')
         [reply] = await self.ask(plugin, '/tarkov 1234567')
         self.assertEqual(self.atlas.calls, [('lookup', 1234567, 'pve')])
         self.assertEqual(self.fetched, [])
-        self.assertIn('【塔科夫 PVE 档案】Test_Player（账号 ID 1234567）', reply)
-        self.assertIn('数据来自 Atlas（https://eftforge.com/atlas）实时查询，查询于 2026-11-01 12:00（北京时间）', reply)
-        self.assertIn('@机器人 tarkov pve 1234567 刷新', reply)
-        self.assertIn('tarkov.dev 玩家页：https://tarkov.dev/players/pve/1234567', reply)
-        self.assertNotIn('tarkov.dev 用该模式搜索', reply)
+        self.assertIsInstance(reply[0], ImageStub)
+        text = self.text(reply)
+        self.assertIn('数据来源：Atlas https://eftforge.com/atlas　tarkov.dev 玩家页：https://tarkov.dev/players/pve/1234567', text)
+        self.assertIn('@机器人 tarkov pve 1234567 刷新', text)
+        [card] = self.cards
+        self.assertEqual((card['nickname'], card['mode_label'], card['aid']), ('Test_Player', 'PVE', '1234567'))
+        # The icons asked for: item pictures, the known achievement icon and the level badge.
+        self.assertIn('https://assets.tarkov.dev/player-level-group-1.png', self.assets.asked[0])
 
-    async def test_one_mode_per_query_and_the_written_mode(self):
+    async def test_one_mode_per_query_and_arena_stays_on_tarkov_dev(self):
         plugin = self.plugin({'arena_by_default': True})
         self.atlas.put(1, 'season')
-        self.atlas.put(1, 'arena')
-        self.assertIn('PVP 赛季 档案', (await self.ask(plugin, '/tarkov 赛季 1'))[0])
-        self.assertIn('竞技场档案', (await self.ask(plugin, '/tarkov 竞技场 1'))[0])
-        self.assertEqual(self.atlas.calls, [('lookup', 1, 'season'), ('lookup', 1, 'arena')])
+        self.profiles[('arena', 1)] = arena_profile(aid=1)
+        await self.ask(plugin, '/tarkov 赛季 1')
+        self.assertEqual(self.cards[0]['mode_label'], 'PVP 赛季')
+        reply = (await self.ask(plugin, '/tarkov 竞技场 1'))[0]
+        self.assertIn('https://tarkov.dev/players/arena/1', self.text(reply))
+        self.assertEqual(self.atlas.calls, [('lookup', 1, 'season')])
+        self.assertEqual(self.fetched, [('arena', 1)])
 
     async def test_names_use_the_record_then_the_list_then_atlas_search(self):
         names = FakeNames({'pve': [(2, 'Listed_One')]})
@@ -401,12 +437,11 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         self.atlas.searches['Searched_One'] = [(3, 'Searched_One')]
         for name in ('Known_One', 'Listed_One', 'searched_one'):
             reply = (await self.ask(plugin, f'/tarkov pve {name}'))[-1]
-            self.assertIn('档案】', reply)
-            self.assertNotIn('注意', reply)
+            self.assertIsInstance(reply[0], ImageStub)
+            self.assertNotIn('注意', self.text(reply))
         self.assertEqual(self.atlas.calls, [('lookup', 1, 'pve'), ('lookup', 2, 'pve'), ('search', 'searched_one', 'pve'),
                                             ('lookup', 3, 'pve')])
         self.assertEqual(names.lookups, [('pve', 'Listed_One'), ('pve', 'searched_one')])
-        # Learned: the next query by that name needs no search.
         self.atlas.calls.clear()
         await self.ask(plugin, '/tarkov pve Searched_One')
         self.assertEqual(self.atlas.calls, [])
@@ -418,21 +453,19 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         self.atlas.put(6, 'pve', nickname='Old_Name')
         self.atlas.searches['Old_Name'] = [(6, 'Old_Name')]
         [reply] = await self.ask(plugin, '/tarkov pve Old_Name')
-        self.assertIn('Old_Name（账号 ID 6）', reply)
-        self.assertIn('Atlas 搜索到的 Old_Name 是账号 ID 6', reply)
-        # Renamed and nobody else has the name: the old record is kept, with a note.
+        self.assertIn('Atlas 搜索到的 Old_Name 是账号 ID 6', self.text(reply))
+        self.assertEqual(self.cards[-1]['aid'], '6')
         await asyncio.to_thread(plugin.accounts.remember, 7, 'Gone_Name')
         self.atlas.put(7, 'pve', nickname='Now_Other')
         [reply] = await self.ask(plugin, '/tarkov pve Gone_Name')
-        self.assertIn('档案里现在的昵称是 Now_Other', reply)
+        self.assertIn('档案里现在的昵称是 Now_Other', self.text(reply))
 
     async def test_unknown_and_ambiguous_names(self):
         plugin = self.plugin()
         self.atlas.searches['Two_Of_Us'] = [(1, 'two_of_us'), (2, 'Two_of_Us')]
         self.assertIn('有多个名为 Two_Of_Us 的玩家', (await self.ask(plugin, '/tarkov pve Two_Of_Us'))[0])
         self.assertIn('Atlas 在 PVE 模式下没有找到名为 Nobody_Here 的玩家', (await self.ask(plugin, '/tarkov Nobody_Here'))[0])
-        reply = (await self.ask(plugin, '/tarkov TarkovCitizen1234567'))[0]
-        self.assertIn('3～15 个字符', reply)
+        self.assertIn('3～15 个字符', (await self.ask(plugin, '/tarkov TarkovCitizen1234567'))[0])
         self.assertEqual([call[0] for call in self.atlas.calls], ['search', 'search'])
 
     async def test_refresh_word_quota_and_cache(self):
@@ -442,13 +475,11 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         await self.ask(plugin, '/tarkov pve 1')
         self.assertEqual(len(self.atlas.calls), 1)
         self.atlas.put(1, 'pve', cached=True)
-        reply = (await self.ask(plugin, '/tarkov pve 1 刷新'))[0]
+        await self.ask(plugin, '/tarkov pve 1 刷新')
         self.assertEqual(len(self.atlas.calls), 2)
-        self.assertIn('Atlas 60 秒内的缓存', reply)
-        reply = (await self.ask(plugin, '/tarkov pve 1 refresh'))[0]
-        self.assertIn('刷新次数（1 次）已用完', reply)
+        self.assertTrue(self.cards[-1]['cached'])
+        self.assertIn('刷新次数（1 次）已用完', (await self.ask(plugin, '/tarkov pve 1 refresh'))[0])
         self.assertEqual(len(self.atlas.calls), 2)
-        # Someone else has their own quota.
         await self.ask(plugin, '/tarkov pve 1 刷新', sender='bob')
         self.assertEqual(len(self.atlas.calls), 3)
 
@@ -457,17 +488,18 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         self.atlas.put(1, 'pve')
         self.atlas.put(2, 'pve')
         await self.ask(plugin, '/tarkov 1')
-        self.assertIn('档案】', (await self.ask(plugin, '/tarkov 1'))[0])
+        self.assertIsInstance((await self.ask(plugin, '/tarkov 1'))[0][0], ImageStub)
         self.assertIn('查询太快了', (await self.ask(plugin, '/tarkov 2'))[0])
         self.assertEqual(len(self.atlas.calls), 1)
 
-    async def test_atlas_failure_falls_back_to_the_snapshot(self):
-        plugin = self.plugin()
+    async def test_atlas_failure_falls_back_to_the_old_snapshot_picture(self):
+        plugin = self.plugin({'output_mode': 'text'})
         self.profiles[('pve', 1)] = profile(aid=1)
         self.atlas.docs[(1, 'pve')] = [self.error(429, 'busy', 5), self.error(429, 'busy', 5)]
         [reply] = await self.ask(plugin, '/tarkov 1')
         self.assertIn('Atlas 正忙（网站同时查询的人太多），下面是 tarkov.dev 的快照（不是实时数据）', reply)
         self.assertIn('数据来自 tarkov.dev，档案更新于', reply)
+        self.assertEqual(self.cards, [])
         self.assertEqual(self.fetched, [('pve', 1)])
         self.atlas.docs[(2, 'pve')] = test_plugin.sys.modules['tarkov_test_plugin.tarkov_core.atlas_cooldown'].AtlasBudgetError(120)
         reply = (await self.ask(plugin, '/tarkov 2'))[0]
@@ -479,7 +511,6 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         self.atlas.docs[(1, 'pvp')] = self.error(404, 'no_profile')
         reply = (await self.ask(plugin, '/tarkov pvp 1'))[0]
         self.assertIn('账号 ID 1 在 PVP 模式下没有档案（Atlas）', reply)
-        self.assertIn('@机器人 tarkov pve 1', reply)
         self.assertIn('Atlas 找不到账号 ID 9', (await self.ask(plugin, '/tarkov 9'))[0])
         self.assertEqual(self.fetched, [])
 
@@ -487,47 +518,69 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         plugin = self.plugin()
         self.atlas.put(1, 'pve')
         self.atlas.searches['Test_Player'] = [(1, 'Test_Player')]
-        reply = (await self.ask(plugin, '/tarkov 绑定 Test_Player'))[0]
-        self.assertIn('已绑定：Test_Player（账号 ID 1）', reply)
-        self.assertIn('【塔科夫 PVE 档案】Test_Player', (await self.ask(plugin, '/tarkov'))[0])
+        self.assertIn('已绑定：Test_Player（账号 ID 1）', (await self.ask(plugin, '/tarkov 绑定 Test_Player'))[0])
+        self.assertIsInstance((await self.ask(plugin, '/tarkov'))[0][0], ImageStub)
         self.atlas.put(1, 'pvp')
         await self.ask(plugin, '/tarkov pvp 刷新')
         self.assertEqual(self.atlas.calls[-1], ('lookup', 1, 'pvp'))
         self.assertIn('还没有绑定账号', (await self.ask(plugin, '/tarkov', sender='bob'))[0])
 
-    async def test_image_reply_links_atlas_and_the_player_page(self):
-        plugin = self.plugin(output='image')
+    async def test_a_picture_failure_is_reported_with_the_links(self):
+        plugin = self.plugin(draw=True)
         self.atlas.put(1, 'pve')
-        self.atlas.put(1, 'arena')
-        for command, page in (('/tarkov 1', 'pve/1'), ('/tarkov 竞技场 1', 'arena/1')):
-            reply = (await self.ask(plugin, command))[0]
-            self.assertIsInstance(reply[0], ImageStub)
-            self.assertTrue(reply[0].data.startswith(b'\xff\xd8'))
-            self.assertEqual(reply[1].text, f'数据来源：Atlas https://eftforge.com/atlas　tarkov.dev 玩家页：https://tarkov.dev/players/{page}')
+        with patch.object(self.module, 'render_atlas_image', side_effect=OSError('font')):
+            reply = (await self.ask(plugin, '/tarkov 1'))[0]
+        self.assertIn('档案图片生成失败（OSError）', reply)
+        self.assertIn('tarkov.dev 玩家页：https://tarkov.dev/players/pve/1', reply)
 
-    async def test_markdown_and_arena_text(self):
-        plugin = self.plugin({'output_mode': 'markdown'}, output=None)
-        self.atlas.put(1, 'arena')
-        reply = (await self.ask(plugin, '/tarkov 竞技场 1'))[0]
-        self.assertIn('> 数据来自 Atlas', reply)
-        self.assertIn('[https://tarkov.dev/players/arena/1](https://tarkov.dev/players/arena/1)', reply)
+    async def test_the_real_picture_is_drawn(self):
+        plugin = self.plugin(draw=True)
+        self.atlas.put(1, 'pve')
+        reply = (await self.ask(plugin, '/tarkov 1'))[0]
+        self.assertTrue(reply[0].data.startswith(b'\xff\xd8'))
+        self.assertGreater(len(reply[0].data), 50000)
 
-    async def test_help_describes_the_atlas_source(self):
+    async def test_history_records_atlas_documents_only_when_switched_on(self):
         plugin = self.plugin()
-        text = plugin.help_text()
-        self.assertIn('数据来自 Atlas', text)
-        self.assertIn('@机器人 tarkov pve Player_One 刷新', text)
-        self.assertNotIn('第一次查某个玩家前', text)
-        self.assertEqual(text.splitlines()[-1], 'tarkov.dev 玩家搜索：https://tarkov.dev/players?gameMode=pve')
-        card = plugin.help_card()
-        self.assertEqual(card['source'], 'atlas')
-        image = self.module.render_help_image(card)
-        self.assertTrue(image.startswith(b'\xff\xd8'))
+        self.atlas.put(1, 'pve')
+        await self.ask(plugin, '/tarkov 1')
+        await self.ask(plugin, '/tarkov 1')
+        entry = await asyncio.to_thread(plugin.atlas_history.latest, 1, 'pve')
+        self.assertEqual(entry['document']['nickname'], 'Test_Player')
+        self.assertEqual(len(await asyncio.to_thread(plugin.atlas_history.history, 1, 'pve')), 1)
+        # A tarkov.dev fallback is never stored.
+        self.profiles[('pve', 2)] = profile(aid=2)
+        self.atlas.docs[(2, 'pve')] = test_plugin.sys.modules['tarkov_test_plugin.tarkov_core.atlas_cooldown'].AtlasBudgetError(60)
+        await self.ask(plugin, '/tarkov 2')
+        self.assertIsNone(await asyncio.to_thread(plugin.atlas_history.latest, 2, 'pve'))
+        off = self.plugin({'atlas_history_enabled': False})
+        self.assertTrue(off.atlas_history.path.exists())
+        await off.initialize()
+        self.assertFalse(off.atlas_history.path.exists())
+        self.atlas.put(3, 'pve')
+        await self.ask(off, '/tarkov 3')
+        self.assertFalse(off.atlas_history.path.exists())
+
+    async def test_one_shot_picture_settings_are_consumed(self):
+        config = {'atlas_assets_update': True, 'atlas_assets_clear': True}
+        plugin = self.plugin(config)
+        calls = []
+        async def prefetch():
+            calls.append('prefetch'); return 3, 3
+        async def clear():
+            calls.append('clear'); return 0
+        self.assets.prefetch, self.assets.clear = prefetch, clear
+        await plugin.initialize()
+        self.assertEqual(calls, ['clear', 'prefetch'])
+        self.assertIs(plugin.config.get('atlas_assets_update'), False)
+        self.assertIs(plugin.config.get('atlas_assets_clear'), False)
+        await plugin.initialize()
+        self.assertEqual(calls, ['clear', 'prefetch'])
 
     async def test_the_snapshot_source_never_calls_atlas(self):
-        plugin = self.plugin({'player_source': 'tarkov-dev'})
+        plugin = self.plugin({'player_source': 'tarkov-dev', 'output_mode': 'text'})
         self.profiles[('pve', 1)] = profile(aid=1)
         reply = (await self.ask(plugin, '/tarkov pve 1 刷新'))[0]
         self.assertIn('数据来自 tarkov.dev', reply)
         self.assertEqual(self.atlas.calls, [])
-        self.assertEqual(self.fetched[0], ('pve', 1))
+        self.assertEqual(self.cards, [])

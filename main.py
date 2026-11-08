@@ -14,6 +14,10 @@ from .tarkov_core import COMMAND_STYLES, transport
 from .tarkov_core.atlas_client import NICKNAME as ATLAS_NICKNAME, AtlasClient
 from .tarkov_core.atlas_cooldown import AtlasBudget, AtlasCooldown
 from .tarkov_core.atlas_players import AtlasNotFound, AtlasPlayers, UserQuota, can_fall_back, failure_text
+from .tarkov_core.atlas_assets import AtlasAssets, level_badge
+from .tarkov_core.atlas_card import build as build_atlas_card
+from .tarkov_core.atlas_history import AtlasHistory
+from .tarkov_core.atlas_image import render_atlas_image
 from .tarkov_core.matching import MatchingService
 from .tarkov_core.matching_image import ATLAS_NAME, ATLAS_URL, render_matching_image
 from .tarkov_core.accounts import Accounts, load_secret, owner_key
@@ -116,6 +120,11 @@ class TarkovPlugin(Star):
         self.atlas_players = AtlasPlayers(self.atlas,
             cache_seconds=lambda: self.int_setting('profile_cache_minutes', 10, 0, 1440)*60)
         self.quota = UserQuota(self.quota_limits)
+        self.atlas_assets = AtlasAssets(self.root/'atlas-assets', self.public_feed, proxy=self.proxy, client=self.http)
+        self.atlas_history = AtlasHistory(self.root/'atlas-history.sqlite3',
+            hours=lambda: self.int_setting('atlas_history_hours', 180, 1, 8760),
+            max_bytes=lambda: self.int_setting('atlas_history_max_mb', 64, 16, 128)*1024*1024)
+        self.atlas_image_slots = asyncio.Semaphore(2)
         self.matching = MatchingService(self.atlas, enabled=self.matching_enabled)
         self.fetches = asyncio.Semaphore(FETCHES_AT_ONCE)
         self.active = set()
@@ -141,6 +150,7 @@ class TarkovPlugin(Star):
                                       self.boss_interval, self.boss_monitor_error)
 
     async def initialize(self):
+        await self.atlas_settings_actions()
         if self.config.get('boss_portraits_update', False) is True:
             # Consume the administrator's one-shot action before any network work, preventing reload loops.
             self.config['boss_portraits_update'] = False
@@ -172,6 +182,61 @@ class TarkovPlugin(Star):
                 await self.boss_store.thread(self.boss_store.retire)
             if self.boss_enabled() and self.config.get('boss_broadcast_enabled', False) is True:
                 logger.info('Tarkov Boss broadcasts idle: no eligible configured modes/targets; check settings and platform capability')
+
+    async def atlas_settings_actions(self):
+        """The one-shot picture actions and the history switch. Each one-shot setting is switched off and saved
+        before any network work, so a reload never repeats it (as the Boss portraits do)."""
+        wanted = {'atlas_assets_clear': self.config.get('atlas_assets_clear', False),
+                  'atlas_assets_update': self.config.get('atlas_assets_update', False)}
+        actions = [key for key, value in wanted.items() if value is True]
+        for key in actions:
+            self.config[key] = False
+        if actions:
+            save = getattr(self.config, 'save_config', None)
+            try:
+                if callable(save):
+                    await asyncio.to_thread(save)
+            except Exception as exc:
+                logger.warning('Tarkov settings not saved: %s', type(exc).__name__)
+        if 'atlas_assets_clear' in actions:
+            try:
+                logger.info('Tarkov Atlas pictures cleared: %s files', await self.atlas_assets.clear())
+            except Exception as exc:
+                logger.warning('Tarkov Atlas picture clear failed: %s', type(exc).__name__)
+        if 'atlas_assets_update' in actions:
+            try:
+                done, total = await self.atlas_assets.prefetch()
+                logger.info('Tarkov Atlas common icons downloaded: %s/%s', done, total)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning('Tarkov Atlas icon download failed: %s', type(exc).__name__)
+        try:
+            if self.history_enabled():
+                await asyncio.to_thread(self.atlas_history.prune)
+            else:
+                # Privacy switch off: nothing is recorded and earlier records are deleted.
+                await asyncio.to_thread(self.atlas_history.delete_all)
+        except (OSError, sqlite3.Error) as exc:
+            logger.warning('Tarkov Atlas history maintenance failed: %s', type(exc).__name__)
+
+    def history_enabled(self):
+        return self.config.get('atlas_history_enabled', True) is True
+
+    async def public_feed(self, resource, mode):
+        """The parsed `data` of a tarkov.dev public resource (the icon catalog of the Atlas picture)."""
+        snapshot = await self.public_resource(resource, mode=mode, allow_stale=True)
+        document = await snapshot.json()
+        return document['data']
+
+    async def record_history(self, aid, mode, summary, trace):
+        """Keep Atlas' raw document in the local history (privacy switch on; never tarkov.dev snapshots)."""
+        if not self.history_enabled() or summary.get('from_cache') or 'doc' not in summary:
+            return
+        try:
+            await asyncio.to_thread(self.atlas_history.record, aid, mode, summary['doc'], summary.get('fetched'))
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            logger.warning('Tarkov [%s] Atlas history not saved: %s', trace, type(exc).__name__)
 
     def int_setting(self, key, default, low, high):
         try:
@@ -522,7 +587,8 @@ class TarkovPlugin(Star):
         try:
             if action == 'unbind':
                 yield await self.unbind(event)
-            elif self.player_source() == 'atlas':
+            elif self.player_source() == 'atlas' and mode != 'arena':
+                # Arena keeps the tarkov.dev snapshot until its Atlas picture is made (maintainer: done separately).
                 async for result in self.atlas_player(event, action, mode, target, url, trace, refresh, owner):
                     yield result
             elif action == 'bind':
@@ -758,6 +824,7 @@ class TarkovPlugin(Star):
             if summary['nickname'].lower() != asked.lower():
                 notes.append(f'注意：{where}中的 {asked} 对应账号 ID {aid}，档案里现在的昵称是 {summary["nickname"]}，可能改过名。')
         if not summary.get('from_cache'):
+            await self.record_history(aid, mode, summary, trace)
             try:
                 await asyncio.to_thread(self.accounts.remember, aid, summary['nickname'])
             except sqlite3.Error as exc:
@@ -949,17 +1016,12 @@ class TarkovPlugin(Star):
     async def reply(self, event, summary, game_mode, aid, notes, trace):
         """The profile in the configured output: an image (text if drawing fails), plain text or Markdown.
         Every reply says the data is a snapshot and links the player's page, where it can be refreshed."""
-        page = page_url(game_mode, aid)
-        if summary.get('source') == 'atlas':
-            links = {'refresh_hint': self.refresh_hint(game_mode, aid), 'page_url': page}
-            link_line = f'数据来源：Atlas {ATLAS_URL}　tarkov.dev 玩家页：{page}'
-        else:
-            # A tarkov.dev snapshot only changes when someone looks the player up there.
-            links = {'refresh_url': page}
-            link_line = f'刷新数据：在 tarkov.dev 打开 {page}'
+        if summary.get('source') == 'atlas' and game_mode != 'arena':
+            return await self.atlas_picture(event, summary, game_mode, aid, notes, trace)
+        refresh = page_url(game_mode, aid)
         if game_mode == 'arena':
-            return await self.arena_reply(event, summary, aid, notes, links, link_line, trace)
-        card = build_card(summary, label_of(game_mode), self.skill_count(), notes, **links)
+            return await self.arena_reply(event, summary, aid, notes, refresh, trace)
+        card = build_card(summary, label_of(game_mode), self.skill_count(), notes, refresh_url=refresh)
         # The account asked for, not the document's own "aid" field, so the id and the link always agree (review R-06).
         if card['aid'] != aid:
             logger.warning('Tarkov [%s] profile %s names account %s', trace, aid, card['aid'])
@@ -969,7 +1031,7 @@ class TarkovPlugin(Star):
             try:
                 data = await asyncio.to_thread(render_image, card)
                 # The image cannot carry a clickable link; one text line after it does.
-                return event.chain_result([Image.fromBytes(data), Plain(link_line)])
+                return event.chain_result([Image.fromBytes(data), Plain(f'刷新数据：在 tarkov.dev 打开 {refresh}')])
             except Exception as exc:
                 logger.warning('Tarkov [%s] image rendering failed, sending text: %s', trace, type(exc).__name__)
                 card['notes'].append('（图片生成失败，已改为文字）')
@@ -977,6 +1039,23 @@ class TarkovPlugin(Star):
         if mode == 'markdown':
             return event.plain_result(render_markdown(card))
         return event.plain_result(render_text(card))
+
+    async def arena_reply(self, event, summary, aid, notes, refresh, trace):
+        card = build_arena_card(summary, notes, refresh_url=refresh)
+        if card['aid'] != aid:
+            logger.warning('Tarkov [%s] arena profile %s names account %s', trace, aid, card['aid'])
+            card['aid'] = aid
+        mode = self.output_mode()
+        if mode == 'image':
+            try:
+                data = await asyncio.to_thread(render_arena_image, card)
+                return event.chain_result([Image.fromBytes(data), Plain(f'刷新数据：在 tarkov.dev 打开 {refresh}')])
+            except Exception as exc:
+                logger.warning('Tarkov [%s] arena image failed, sending text: %s', trace, type(exc).__name__)
+                card['notes'].append('（图片生成失败，已改为文字）')
+        if mode == 'markdown':
+            return event.plain_result(render_arena_markdown(card))
+        return event.plain_result(render_arena_text(card))
 
     def refresh_hint(self, mode, aid):
         """How to get fresh Atlas data, for the profile reply."""
@@ -986,22 +1065,42 @@ class TarkovPlugin(Star):
         return (f"要看最新数据，在命令最后加“刷新”，例如 {self.cmd(self.mode_word(mode), aid, '刷新')}"
                 f'（每人每小时 {refreshes} 次）。')
 
-    async def arena_reply(self, event, summary, aid, notes, links, link_line, trace):
-        card = build_arena_card(summary, notes, **links)
-        if card['aid'] != aid:
-            logger.warning('Tarkov [%s] arena profile %s names account %s', trace, aid, card['aid'])
-            card['aid'] = aid
-        mode = self.output_mode()
-        if mode == 'image':
-            try:
-                data = await asyncio.to_thread(render_arena_image, card)
-                return event.chain_result([Image.fromBytes(data), Plain(link_line)])
-            except Exception as exc:
-                logger.warning('Tarkov [%s] arena image failed, sending text: %s', trace, type(exc).__name__)
-                card['notes'].append('（图片生成失败，已改为文字）')
-        if mode == 'markdown':
-            return event.plain_result(render_arena_markdown(card))
-        return event.plain_result(render_arena_text(card))
+    async def atlas_picture(self, event, summary, mode, aid, notes, trace):
+        """The Atlas player picture (always an image: text and Markdown are no longer maintained, maintainer
+        2026-11-08), then one text line with the links and the reply's notes."""
+        page = page_url(mode, aid)
+        lines = [f'数据来源：Atlas {ATLAS_URL}　tarkov.dev 玩家页：{page}', *notes, self.refresh_hint(mode, aid)]
+        try:
+            card = await asyncio.to_thread(build_atlas_card, summary['doc'], mode, skill_limit=self.skill_count())
+            icons = await self.atlas_icons(card, trace)
+            async with self.atlas_image_slots:
+                data = await asyncio.to_thread(render_atlas_image, card, icons)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning('Tarkov [%s] Atlas picture failed: %s', trace, type(exc).__name__)
+            return event.plain_result('\n'.join([f"{summary['nickname']}（账号 ID {aid}）的 {label_of(mode)} 档案图片生成失败"
+                                                 f'（{type(exc).__name__}），请稍后再试。', *lines]))
+        return event.chain_result([Image.fromBytes(data), Plain('\n'.join(lines))])
+
+    async def atlas_icons(self, card, trace):
+        """The pictures the card needs from the local cache, downloading missing ones (failures draw placeholders)."""
+        try:
+            catalog = await self.atlas_assets.catalog()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Without tarkov.dev's public data only the item pictures (linked in Atlas' document) are known.
+            logger.warning('Tarkov [%s] icon catalog unavailable: %s', trace, type(exc).__name__)
+            catalog = {}
+        achievements = {key: catalog.get('achievements', {}).get(key) for key in card['achievement_ids']}
+        badge = level_badge(catalog, card['level'])
+        prestige = catalog.get('prestige', {}).get(str(card['prestige'])) if card['prestige'] else None
+        # (`filter` is AstrBot's event filter in this module, not the builtin.)
+        links = [*card['assets'], *achievements.values(), badge, prestige]
+        found = await self.atlas_assets.images([link for link in links if link])
+        return {'level_badge': found.get(badge), 'prestige': found.get(prestige), 'items': found,
+                'achievements': {key: found.get(url) for key, url in achievements.items() if url}}
 
     def skill_count(self):
         return self.int_setting('skill_count', 10, 0, 49)
@@ -1418,6 +1517,7 @@ class TarkovPlugin(Star):
         self._terminated = True
         await self.matching.close()
         await self.atlas_players.close()
+        await self.atlas_assets.close()
         await self.atlas.close()
         await self.names.close()
         await self.status_poller.close()
