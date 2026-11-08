@@ -30,7 +30,7 @@ earlier). From now on new work is appended as new sections.
 | Release target | 0.4.8 (query stability and performance, pending PR review; last release 0.4.7 on 2026-11-04; 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
 | Work branch | `main` was overwritten with the `1024` history on 2026-10-24 (§16); the item query was archived (§11). |
 | Tests | 326 (`python -m unittest discover -s tests`, needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13. |
-| AstrBot evidence | 4.16.0 wheel read and its registration/wake/filter/parser bodies replayed by `tools/verify_qq_routes.py` (146 cases after the hotfix; SDK and network boundaries doubled). Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. The maintainer ran a small closed test of 0.3.0. **No live AstrBot run of the 1024 features; QQ image delivery and proactive push are unverified.** |
+| AstrBot evidence | 4.16.0 wheel read and its registration/wake/filter/parser bodies replayed by `tools/verify_qq_routes.py` (146 cases at 0.4.6; SDK and network boundaries doubled). Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. The maintainer ran a small closed test of 0.3.0. **No live AstrBot run of the 1024 features; QQ image delivery and proactive push are unverified.** |
 
 ## 2. Data sources and evidence
 
@@ -442,17 +442,13 @@ interval default 30, range 10–90 minutes.
 - Mutation checks: back-off cap, groups-only recording, recording at all, the empty-list fallback each fail a test.
   Docs updated (README general settings, both detail documents, CHANGELOG 0.4.5, checklist). Installs of the previously delivered 0.4.5 zip lose their saved settings.
 
-## 19. Release 0.4.5hotfix (2026-10-24, maintainer: "v0.4.5hotfix 推送到main 交付发行版")
+## 19. Release 0.4.6, first built as `0.4.5hotfix` (2026-10-24, maintainer: "v0.4.5hotfix 推送到main 交付发行版")
 
-- Version string `0.4.5hotfix` everywhere (`VERSION`, `metadata.yaml` `version: v0.4.5hotfix`, `@register`, CHANGELOG heading
-  `## 0.4.5hotfix`, README and test literals, pictures); package `astrbot_tarkov_datasearch-v0.4.5hotfix.zip`. The changelog
-  keeps `## 0.4.5` as it was delivered and puts the §18 changes under the hotfix section.
-- **AstrBot compares plugin versions with a semver-like regex** (`VersionComparator`): `0.4.5hotfix` has no `-`/`+` separator
-  and does not match, so AstrBot reads it as an empty version (a missing number is treated as 0). The plugin works (the version is
-  only displayed), but an update check by version may mis-order it against `0.4.5` or `0.4.6`. A comparable spelling would be
-  `0.4.5-hotfix` (semver pre-release, which sorts *below* 0.4.5) or `0.4.6`. The maintainer chose `0.4.5hotfix` literally.
-- `main` fast-forwarded to the release commit (no force). The example pictures were rebuilt so their footers read v0.4.5hotfix
-  (player pictures from invented data; status and Boss pictures from live data with portraits, as in §17).
+- The §18 changes were delivered as a hotfix build named `0.4.5hotfix` and **released as 0.4.6** (CHANGELOG `## 0.4.6`; the
+  changelog keeps `## 0.4.5` as it was delivered first). The `0.4.5hotfix` spelling did not match AstrBot's semver-like
+  `VersionComparator`, which is why the release carries a comparable version number.
+- `main` fast-forwarded to the release commit (no force). The example pictures were rebuilt for that release (player pictures
+  from invented data; status and Boss pictures from live data with portraits, as in §17).
 
 ## 20. Boss Halloween robustness, mode queries and personal defaults — v0.4.7 (2026-11-04)
 
