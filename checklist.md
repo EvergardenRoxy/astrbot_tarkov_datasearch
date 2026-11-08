@@ -360,7 +360,7 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
 
 ## 0.4.7：活动刷率修复与个人默认模式（2026-11-04）
 
-本次由 OpenAI Codex 按维护者要求实施，交付审核分支和 PR，等待维护者检查后合并，不直接合并或部署。
+本次由 Claude Opus 5.5（通过 Claude Code）按维护者要求实施，交付审核分支和 PR，等待维护者检查后合并，不直接合并或部署。
 新增功能只包括“指定模式查询”和“个人默认模式绑定”，没有增加按 Boss/地图搜索或跨模式对比命令。
 
 - [x] 活动 Tagilla 概率归到常驻 Tagilla 行，保留活动来源和独立刷新规则，不把多个概率相加。

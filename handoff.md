@@ -453,7 +453,7 @@ interval default 30, range 10–90 minutes.
 ## 20. Boss Halloween robustness, mode queries and personal defaults — v0.4.7 (2026-11-04)
 
 Maintainer-authorised scope: backend Boss handling, then only explicit-mode queries and personal default binding;
-no Boss/map search or cross-mode comparison commands. Implemented with OpenAI Codex. Delivery is a review branch
+no Boss/map search or cross-mode comparison commands. Implemented with Claude Opus 5.5 (via Claude Code). Delivery is a review branch
 `fix/boss-modes-v0.4.7` and PR targeting `main`; the maintainer will merge it. No deployment, tag or GitHub release.
 
 - **Observed feed**: public `regular/maps`, `pve/maps`, `pvp-season/maps` were read on 2026-11-04 KST. PvP and season
