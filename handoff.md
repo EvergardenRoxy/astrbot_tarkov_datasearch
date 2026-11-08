@@ -631,7 +631,7 @@ fallback. Search, budgets, per-user quotas and the refresh word stay as in `docs
   small numbers), equipment grid (13 slots; tarkov.dev item picture from Atlas' `image` link = `base-image`, i.e. the
   weapon without attachments; never Atlas' `render`; English short name as on the Atlas page), faction (text) and
   prestige (icon), info row (account id, highest league, last active, lookup time), the mode's 12 numbers, rare
-  achievements (9, lowest Atlas `percent` first, icon + name + share), statistics (overview/PMC/Scav, 15 rows), skills
+  achievements (9, by rarity legendary > seasonal > rare > common, then newest first; icon + name + share), statistics (overview/PMC/Scav, 15 rows), skills
   drawn like the old card (`skill_count`), the 10 latest achievements (icon, name, description <= 2 lines, rarity,
   share, time), footer with the Atlas thanks. Not shown (maintainer): favourite weapons/items, endings, edition and
   profile icon, armour class badges, stat icons, average survival time, account age.
@@ -665,8 +665,7 @@ Invariant change (§8): besides the fixed Boss portrait paths, `assets.tarkov.de
 and tarkov.dev's public data are fetched, validated by the URL pattern above; no other picture host.
 
 Decisions taken without the maintainer (revisit): history switch on by default; size cap default 64 MB; stored
-pictures scaled into 512 px; 10-minute retry wait and 48 downloads per picture; ties among rare achievements by newer
-first; arena temporarily on tarkov.dev; equipment names in English.
+pictures scaled into 512 px; 10-minute retry wait and 48 downloads per picture; the place of "seasonal" in the rarity order; arena temporarily on tarkov.dev; equipment names in English.
 
 Observations for the maintainer: every PVE achievement in Atlas' PVE sample has `percent` 0, so "rare" cannot rank
 there (tarkov.dev's PVE feed has its own completion shares); tarkov.dev's `base-image` of a weapon is the bare weapon
@@ -677,3 +676,15 @@ failure wait, prefetch/catalog/clear, shared downloads, history rows/pruning/siz
 `AtlasPluginTests` (picture whatever the output setting, links line, arena on tarkov.dev, history only for Atlas and only
 when on, one-shot settings consumed once, drawing failure). 413 tests pass. Previews were rendered from the saved
 probe responses in the scratch directory only (real player data, not in the tree). Not verified on a chat platform.
+
+Follow-up (maintainer, 2026-11-08):
+- **Rare achievements**: every mode now ranks by rarity, then completion time (newest first); Atlas' `percent` is only
+  displayed. Reason: every PVE achievement has `percent` 0 in Atlas' data.
+- **Known problem, recorded, not solved — the main weapon picture**: the slot shows tarkov.dev's picture of the weapon
+  item alone (`base-image`), so a modded weapon appears bare: no scope, stock, magazine or other attachments, and it
+  is drawn small in the slot. Showing the real build needs the attachments composed onto the weapon ("拼图"); Atlas'
+  own composed render (`render`, `/atlas/api/lookup-art/...`) is excluded by the maintainer. Atlas' document has what a
+  composition would need: each attachment in `slots[].children` (recursive) with its tarkov.dev picture link, slot
+  name/id, and the weapon's `build` payload. Not started; to be designed with the maintainer.
+- Font question (deleting the bundled font) answered in chat: without it Chinese cannot be drawn on servers without
+  a Chinese system font; options A-D listed there, no change made.

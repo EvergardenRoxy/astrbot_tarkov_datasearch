@@ -71,11 +71,16 @@ class CardTests(unittest.TestCase):
         done.append({'id': 'x', 'at': 1600000000, 'rarity': 'Odd', 'percent': None, 'en': {'name': 'No share'}})
         card = build(atlas_profile('pve', achievements={'count': 13, 'total': 100, 'done': done}), 'pve')
         data = card['achievements']
-        self.assertEqual([a['id'] for a in data['rare']], ['a11', 'a10', 'a9', 'a8', 'a7', 'a6', 'a5', 'a4', 'a3'])
+        # Rarity first (legendary, seasonal, rare, common, others), newest first within a rarity; the share does not
+        # rank (every PVE share is 0 in Atlas' data).
+        self.assertEqual([a['id'] for a in data['rare']], ['a10', 'a6', 'a2', 'a11', 'a7', 'a3', 'a9', 'a5', 'a1'])
         self.assertEqual([a['id'] for a in data['latest']][:3], ['a11', 'a10', 'a9'])
         self.assertEqual(len(data['latest']), 10)
-        self.assertEqual((data['rare'][0]['rarity'], data['rare'][0]['tone']), ('赛季', 'seasonal'))
-        self.assertEqual((data['rare'][1]['rarity'], data['rare'][1]['tone']), ('传奇', 'legendary'))
+        self.assertEqual((data['rare'][0]['rarity'], data['rare'][0]['tone']), ('传奇', 'legendary'))
+        self.assertEqual((data['rare'][3]['rarity'], data['rare'][3]['tone']), ('赛季', 'seasonal'))
+        zero = [dict(entry, percent=0) for entry in done]
+        ranked = build(atlas_profile('pve', achievements={'count': 13, 'total': 100, 'done': zero}), 'pve')
+        self.assertEqual([a['id'] for a in ranked['achievements']['rare']], [a['id'] for a in data['rare']])
         self.assertEqual((data['count'], data['total']), (13, 100))
 
     def test_skills_like_the_old_card(self):

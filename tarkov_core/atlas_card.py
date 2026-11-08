@@ -2,7 +2,7 @@
 
 Layout and wording follow the Atlas website's player page (maintainer's reference picture, 2026-11-08) with the
 maintainer's changes: no favourite weapons/items, no endings, no edition fields, skills drawn the old way, rare
-achievements with names and global completion share, the ten latest achievements, item pictures from tarkov.dev.
+achievements (by rarity, then newest; with names and global completion share), the ten latest achievements, item pictures from tarkov.dev.
 
 Counter rules read off the reference picture: K/D = player kills / (killed + left the raid); K/D (all kills) =
 all kills / (killed + left); AI kills = all kills - player kills; the overview column adds PMC and Scav (also the
@@ -31,6 +31,9 @@ SLOT_ROWS = (
 # Atlas rarity -> (label, colour key used by the picture).
 RARITIES = {'common': ('普通', 'common'), 'rare': ('罕见', 'rare'), 'legendary': ('传奇', 'legendary'),
             'seasonal': ('赛季', 'seasonal')}
+# Rare achievements are ranked by rarity, then newest first (maintainer, 2026-11-08: Atlas' completion share is 0 for
+# every PVE achievement, so it cannot rank). The place of "seasonal" in this order is a choice to confirm.
+RARITY_ORDER = {'legendary': 0, 'seasonal': 1, 'rare': 2, 'common': 3}
 ASSET_PREFIX = 'https://assets.tarkov.dev/'
 
 
@@ -141,7 +144,7 @@ def achievement_list(doc):
         rarity = entry.get('rarity').lower() if isinstance(entry.get('rarity'), str) else ''
         label, tone = RARITIES.get(rarity, (clean(entry.get('rarity') or '', 12) or '—', 'common'))
         share = number(entry.get('percent'))
-        found.append({'id': clean(entry['id'], 40), 'name': text_of(entry) or '—',
+        found.append({'id': clean(entry['id'], 40), 'name': text_of(entry) or '—', 'rank': RARITY_ORDER.get(rarity, len(RARITY_ORDER)),
                       'description': text_of(entry, 'description'), 'rarity': label, 'tone': tone,
                       'percent': share if share is not None and share >= 0 else None,
                       'at': number(entry.get('at'))})
@@ -180,7 +183,7 @@ def build(doc, mode, *, skill_limit=10, now=None):
     block = doc.get('achievements') if isinstance(doc.get('achievements'), dict) else {}
     available = number(block.get('total'))
     done = achievement_list(doc)
-    rare = sorted((a for a in done if a['percent'] is not None), key=lambda a: (a['percent'], -(a['at'] or 0)))[:RARE_COUNT]
+    rare = sorted(done, key=lambda a: (a['rank'], -(a['at'] or 0)))[:RARE_COUNT]
     latest = sorted(done, key=lambda a: -(a['at'] or 0))[:LATEST_COUNT]
     skills = profile.skills({'Common': common_skills(doc)})
     shown = skills if skill_limit > 0 else []
