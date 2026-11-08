@@ -34,41 +34,11 @@ Atlas 竞技场采用选手名册图片：排位／非排位汇总表、各模�
 
 ## 开始使用
 
-在群里先 @机器人，再发送命令，命令前面不加 `/`，例如 `@机器人 tarkov 帮助`（腾讯限制未经验证的 QQ 机器人只能这样被调用）。支持 `/` 唤醒的平台可以直接发 `/tarkov 帮助`，两种写法插件都能识别。
+请到对应文档查看命令与用法：
 
-**查玩家档案**：默认通过 Atlas 查询，可用昵称、账号 ID 或 tarkov.dev 玩家页网址，也可先绑定自己。QQ 官方机器人的命令不能有空格，可以改用 `@机器人 tpve 昵称` 这样的单词命令（见“通用设置”）。
-
-```text
-@机器人 tarkov 绑定 https://tarkov.dev/players/regular/1234567   绑定自己的账号
-@机器人 tarkov                                                   查自己
-@机器人 tarkov pve Player_One                                    查别人（模式、昵称或账号 ID）
-@机器人 tarkov 竞技场 7654321                                    查竞技场档案
-@机器人 tarkov 帮助                                              显示用法
-```
-
-模式、绑定、昵称规则、竞技场段位等见 [塔科夫玩家数据查询](docs/player-query.md)。
-
-**查服务器状态和 Boss 刷率**：管理员先在配置页打开“服务器状态图片查询”或“Boss 刷率功能总开关”。
-
-```text
-@机器人 tarkov status        服务器状态
-@机器人 tarkov boss          各地图日常 Boss 与活动 Boss 的刷率全表
-@机器人 tarkov boss pve      指定 PVE；也支持 pvp、PVP S、赛季
-@机器人 tarkov boss 默认 pve 绑定个人 Boss 默认模式，之后直接查 boss
-@机器人 tarkov boss 变化     最近一次刷率变化
-```
-
-变化推送、活动 Boss 规则、头像和设置见 [服务器状态与 Boss 刷率](docs/status-and-boss.md)。
-
-Boss 显式指定模式优先于个人默认模式；未绑定默认模式时保留原来的多模式查询。绑定仅影响自己的 Boss 查询，不修改监控配置或玩家档案默认模式。
-
-**查服务器匹配时间**：默认开启，不带参数。
-
-```text
-@机器人 tarkov 匹配          各数据中心平均匹配时间（也可写 tarkov matching；QQ 单词命令 tmatch）
-```
-
-读图方法、缓存规则和设置见 [服务器匹配时间](docs/matching.md)。
+- [玩家档案查询（绑定账号、PVP／PVE／赛季／竞技场）](docs/player-query.md#atlas-玩家查询默认)
+- [服务器状态与 Boss 刷率](docs/status-and-boss.md)
+- [服务器匹配时间](docs/matching.md)
 
 ## 回复方式
 
