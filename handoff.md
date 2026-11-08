@@ -27,7 +27,7 @@ earlier). From now on new work is appended as new sections.
 |---|---|
 | Task | AstrBot plugin to look up Escape from Tarkov player profiles in chat (maintainer request, 2026-10-13); since 2026-10-24 also public game data: server status, Boss spawn rates, items. |
 | License / AI statement | GPL-3.0-or-later. README and CHANGELOG state the plugin was written by Claude Opus 5.5 (via Claude Code) and reviewed by the maintainer. |
-| Release target | 0.4.7 (2026-11-04, pending PR review; last release 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
+| Release target | 0.4.8 (query stability and performance, pending PR review; last release 0.4.7 on 2026-11-04; 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
 | Work branch | `main` was overwritten with the `1024` history on 2026-10-24 (§16); the item query was archived (§11). |
 | Tests | 326 (`python -m unittest discover -s tests`, needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13. |
 | AstrBot evidence | 4.16.0 wheel read and its registration/wake/filter/parser bodies replayed by `tools/verify_qq_routes.py` (146 cases after the hotfix; SDK and network boundaries doubled). Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. The maintainer ran a small closed test of 0.3.0. **No live AstrBot run of the 1024 features; QQ image delivery and proactive push are unverified.** |
@@ -518,7 +518,7 @@ CI now prints individual test names and limits the test step to five minutes,
 so future hangs identify the active test and terminate rather than waiting indefinitely.
 
 
-## Query stability and performance follow-up (2026-11-04)
+## Query stability and performance follow-up — v0.4.8 (2026-11-04)
 
 - Nickname parsing validates the entire object grammar, string encoding and EOF
   before publishing the staged SQLite database. Malformed documents leave the old
