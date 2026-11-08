@@ -28,7 +28,12 @@ def demo(mode='pve'):
     levels = [('Endurance', 51), ('Strength', 38), ('Metabolism', 31), ('Search', 26), ('Perception', 22),
               ('HideoutManagement', 20), ('Charisma', 18), ('Attention', 15), ('Assault', 12), ('MagDrills', 9)]
     skills = {'common': [{'id': key, 'progress': level*100, 'lastAccess': 1794000000} for key, level in levels]}
-    doc = atlas_profile(mode, nickname='Example_Player', slots=[], stats=stats, skills=skills,
+    # Invented item names without picture links: the grid draws "图片暂缺" and leaves two slots empty.
+    # Atlas' English short names are shown, as on its page.
+    worn = (('Earpiece', 'HEADSET'), ('Headwear', 'HELMET'), ('FaceCover', 'MASK'), ('TacticalVest', 'RIG'),
+            ('ArmorVest', 'ARMOR'), ('Backpack', 'BACKPACK'))
+    slots = [{'slot': slot, 'en': {'short': name}} for slot, name in worn]
+    doc = atlas_profile(mode, nickname='Example_Player', slots=slots, stats=stats, skills=skills,
                         looked_up='2026-11-08T09:00:00+00:00', achievements={'count': len(done), 'total': 106, 'done': done})
     return build(doc, mode)
 
