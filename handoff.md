@@ -27,9 +27,9 @@ earlier). From now on new work is appended as new sections.
 |---|---|
 | Task | AstrBot plugin to look up Escape from Tarkov player profiles in chat (maintainer request, 2026-10-13); since 2026-10-24 also public game data: server status, Boss spawn rates, items. |
 | License / AI statement | GPL-3.0-or-later. README and the top of CHANGELOG carry the same AI statement: participating AI listed by name only (Claude Opus 5.5 via Claude Code; the Boss background by GPT-Image-2.5-sunburst), no per-task description. Per-version AI notes were removed from CHANGELOG (maintainer, 2026-11-08). |
-| Release target | 0.5.0 (Atlas matching time, pending PR review; last release 0.4.8 on 2026-11-04; 0.4.7 on 2026-11-04; 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
+| Release target | 0.5.1 on `main` (PR #14 merged 2026-11-08); review fixes after it are unreleased (last section, CHANGELOG "未发布"). Before: 0.5.0 on 2026-11-08; 0.4.8 on 2026-11-04; 0.4.7 on 2026-11-04; 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
 | Work branch | `main` was overwritten with the `1024` history on 2026-10-24 (§16); the item query was archived (§11). |
-| Tests | 358 (`python -m unittest discover -s tests`, needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13. |
+| Tests | 450 (`python tools/download_font.py` once, then `python -m unittest discover -s tests`; needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13 on pull requests and on `main`. |
 | AstrBot evidence | 4.16.0 wheel read and its registration/wake/filter/parser bodies replayed by `tools/verify_qq_routes.py` (146 cases at 0.4.6; SDK and network boundaries doubled). Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. The maintainer ran a small closed test of 0.3.0. **No live AstrBot run of the 1024 features; QQ image delivery and proactive push are unverified.** |
 
 ## 2. Data sources and evidence
@@ -934,3 +934,69 @@ Reviewed, left as is (noted for the maintainer):
 - Pre-0.5 unused imports in `boss_table_image.py` are out of scope.
 
 Validation: 441 tests pass (Python 3.13); pyflakes clean for the reviewed modules apart from intentional re-exports.
+
+## Post-0.5.1 review fixes (2026-11-10)
+
+Repository check requested by the maintainer (Claude Code), with the focus on `v0.4.8..HEAD`. Eleven findings were
+reported; the maintainer authorised fixing 1, 4, 8, 9, 10 and 11, asked for 6 to be recorded for later planning, and
+left the rest open. No version bump (still 0.5.1); CHANGELOG has a "未发布" section.
+
+Fixed:
+- **Shared interval above 20 s broke nickname queries** (finding 1). The setting allows 10–300 s but a player request
+  waited at most `PLAYER_WAIT_SECONDS` = 20 s, and a nickname query is a search plus a lookup one interval later: at
+  21 s or more every such query slept 20 s, was refused and fell back to the snapshot. `AtlasClient.player_wait()` is
+  now `max(20, interval + PLAYER_WAIT_MARGIN)` (margin 10 s) and is the default `max_wait` of `lookup`/`search`;
+  `AtlasCooldown.claim_within` refuses at once when `max(next_start, paused_until)` is past its deadline instead of
+  sleeping until it. Consequence to know: with a long interval a nickname query really takes that long (300 s setting =
+  up to 310 s wait, during which the sender's other commands answer "上一次查询还没完成").
+- **Quota refund after a sent request** (same finding). `charge.refund()` used to give the whole query back when the
+  lookup was refused although the nickname search had been sent (and the other way round for the rename check), so a
+  refused query could be repeated at the cost of the shared budget. `UserQuota.ticket` has `charge.keep()`;
+  `AtlasPlayers.search`/`profile` call it once a request of the query reached Atlas (answered or failed, anything but
+  `NOT_SENT`). A query with nothing sent is still refunded. A `busy` first attempt followed by a refused retry still
+  refunds (Atlas does not count `busy`).
+- **Icon catalog without back-off** (finding 4). With the public data unreachable and no saved catalog, every Atlas
+  picture asked for the three feeds again and waited for the timeout. `AtlasAssets.catalog()` now remembers a failed
+  build for `FAILURE_SECONDS` (10 min) and raises `CatalogUnavailable` meanwhile (`main.atlas_icons` already draws
+  placeholders on any catalog error). `rebuild=True` (manual prefetch, unknown achievement) always tries; `clear()`
+  resets this wait and `rebuild_after`.
+- **Atlas bind fallback** (finding 8). `atlas_player` passes the account it already resolved to `bind(..., aid=, note=)`;
+  before, `bind()` asked only the local record again and answered "不能确定 … 是哪个账号" when the name had come from the
+  name list or Atlas' search. The reply starts with why the snapshot was used.
+- **Unhashable slot key** (finding 9). `atlas_card.slots()` requires a string before the set lookup. Found by replacing
+  every field of the fixture documents with 17 odd values (the only crash site in the main-game and Arena cards).
+- **Texts** (finding 10). Bind usage under the Atlas source names nicknames; the nickname-rule texts no longer offer a
+  dot (the input rule `names.NAME` never accepted one; the client's `NICKNAME` pattern is unchanged); `metadata.yaml`
+  `desc` and the `@register` description say Atlas is the default source (the `@register` call stays on one line:
+  `test_version_is_consistent` reads it with a single-line pattern). CHANGELOG 0.5.0 gained the missing entry for the
+  Atlas player source itself, marked as added later, including that query history is on by default.
+- **Tests and CI** (finding 11). The download-concurrency test waits for both slots instead of a fixed 20 ms (it had
+  failed once under tracemalloc with `1 != 2`); test code closes its SQLite connections (`closing(...)`: `with
+  connection` only commits); unused imports removed, intentional ones marked `noqa: F401` (font fixture imports,
+  `image.FONTS` re-export, the preview tool's stub import). CI caches `.cache/fonts` keyed by
+  `tarkov_core/font_download.py` and runs on `pull_request`, pushes to `main` and manually (`workflow_dispatch`);
+  **a branch without a pull request no longer runs CI on push**.
+
+Recorded, not changed (maintainer, 2026-11-10: upstream relaxed its API rate limits; plan the change later):
+- `docs/atlas-integration-plan.md` §2.3 carries a "to update" note (the new numbers are not recorded yet) and §5
+  "待定" item 6 lists what the later plan must cover: the shared interval, minute/hour budgets, per-user counts and
+  intervals, and **the per-user quota key** — the texts say "每人" but `owner()` hashes session + sender, so one person
+  has one allowance per chat (finding 6). The global budget still bounds the total.
+
+Open findings (no decision yet):
+- **Font cache memory** (2): `fonts._load` caches up to 256 faces of the 17.7 MB font and `fitted()` creates one per
+  pixel size. Linux: each face maps the file (64 faces showed +1.1 GB RSS, shared file pages; about 0.4 MB private
+  each). Windows with a non-ASCII data path: Pillow reads the file into memory per face (`load_from_bytes`); the same
+  code path measured +169 MB private for 10 faces here. Not tested on Windows.
+- **First font download blocks every picture silently** (3): up to 300 s per mirror, five mirrors in turn, no notice.
+- **Items feed parsed for the level badges** (5): 17.3 MB JSON, about 0.55 s and +90 MB peak on the first Atlas query
+  and on each catalog rebuild.
+- **Rename check costs a search every time** (7): searches are not cached; when another account holds the old name the
+  first account's fresh document is neither recorded nor its new name remembered. Explained to the maintainer; low
+  priority, more so with relaxed upstream limits.
+
+Validation: tests first, each shown failing on the old code; 450 tests pass (Python 3.13), also with
+`-W error::ResourceWarning` for the resource-cache suite. Mutation check in a scratch copy: thirteen guards reverted one
+at a time (gate fail-fast, interval-following wait, the four `keep()` sites, catalog wait and its reset, slot type,
+bind account and note, Atlas bind usage, the download bound of the rewritten test), every one caught. Not run: Python
+3.12 locally, the changed workflow on GitHub, any chat platform.
