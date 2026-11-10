@@ -138,3 +138,4 @@ QQ 官方机器人的命令里不能有空格，因此除了 `@机器人 tarkov 
 
 - 回复方式（图片、文字、Markdown 文字）和示例图见 [README 的“回复方式”](../README.md#回复方式)。
 - 服务器状态与 Boss 刷率见 [status-and-boss.md](status-and-boss.md)。
+- 名单内玩家的近 7 天周报与排行见 [weekly-report.md](weekly-report.md)。

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import test_plugin
 from test_atlas_players import AtlasPluginTests
 from test_plugin import Event, ImageStub
-from test_weekly_report import DAY, LAST, iso, week
+from test_weekly_report import LAST, iso, week
 
 ON = {'weekly_enabled': True, 'weekly_pve_players': ['1234567', 'Player_Two']}
 
@@ -186,6 +186,27 @@ class WeeklyPluginTests(unittest.IsolatedAsyncioTestCase):
         # Wired into the sampler with the maintainer's pacing.
         self.assertEqual(plugin.weekly_sampler.entries(), [('pve', '1234567'), ('pve', 'Player_Two')])
         self.assertEqual(plugin.weekly_sampler.gap.__func__(types.SimpleNamespace(rand=lambda low, high: high)), 180)
+
+    async def test_two_nights_of_sampling_make_a_report(self):
+        plugin = self.plugin(dict(ON, weekly_pve_players=['1234567', 'Found_One']))
+        self.atlas.searches = {'Found_One': [(3, 'Found_One')]}
+        moment = [LAST-86400+60]
+        plugin.weekly_sampler.clock = plugin.weekly_store.clock = plugin.weekly_clock = lambda: moment[0]
+        raids = lambda count: {'pmc': {'time': 0, 'counters': [[['Sessions'], count]]}, 'scav': {'counters': []}}
+        for night, count in enumerate((100, 112)):
+            moment[0] = LAST-86400+60+night*86400
+            for aid in (1234567, 3):
+                self.atlas.put(aid, 'pve', looked_up=iso(moment[0]), stats=raids(count+aid % 2),
+                               nickname='Found_One' if aid == 3 else 'Test_Player')
+            steps = [await plugin.weekly_sampler.step() for _ in range(4)]
+            self.assertEqual(steps, ['pulled', 'resolved', 'pulled', None] if night == 0 else ['pulled', 'pulled', None, None])
+        # One search on the first night, then one lookup per player and night.
+        self.assertEqual([call[0] for call in self.atlas.calls], ['lookup', 'search', 'lookup', 'lookup', 'lookup'])
+        await self.ask(plugin, '/tarkov 周报 Found_One')
+        self.assertEqual((self.cards[-1]['nickname'], self.cards[-1]['tiles'][0][1], self.cards[-1]['notes']),
+                         ('Found_One', '12', ['样本只覆盖 1 天']))
+        await self.ask(plugin, '/tarkov 周报 排行')
+        self.assertEqual([row['nickname'] for row in self.cards[-1]['rows']], ['Found_One', 'Test_Player'])
 
     async def test_broadcast_targets_must_be_listed(self):
         group = 'bot:GroupMessage:g1'

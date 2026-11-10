@@ -29,7 +29,7 @@ earlier). From now on new work is appended as new sections.
 | License / AI statement | GPL-3.0-or-later. README and the top of CHANGELOG carry the same AI statement: participating AI listed by name only (Claude Opus 5.5 via Claude Code; the Boss background by GPT-Image-2.5-sunburst), no per-task description. Per-version AI notes were removed from CHANGELOG (maintainer, 2026-11-08). |
 | Release target | 0.5.1 on `main` (PR #14 merged 2026-11-08); review fixes after it are unreleased (last section, CHANGELOG "未发布"). Before: 0.5.0 on 2026-11-08; 0.4.8 on 2026-11-04; 0.4.7 on 2026-11-04; 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
 | Work branch | `main` was overwritten with the `1024` history on 2026-10-24 (§16); the item query was archived (§11). |
-| Tests | 450 (`python tools/download_font.py` once, then `python -m unittest discover -s tests`; needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13 on pull requests and on `main`. |
+| Tests | 519 (`python tools/download_font.py` once, then `python -m unittest discover -s tests`; needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13 on pull requests and on `main`. |
 | AstrBot evidence | 4.16.0 wheel read and its registration/wake/filter/parser bodies replayed by `tools/verify_qq_routes.py` (146 cases at 0.4.6; SDK and network boundaries doubled). Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. The maintainer ran a small closed test of 0.3.0. **No live AstrBot run of the 1024 features; QQ image delivery and proactive push are unverified.** |
 
 ## 2. Data sources and evidence
@@ -162,6 +162,8 @@ records, two exact-100% records per mode). Previews were inspected visually.
 
 ## 6. Not verified
 
+- (2026-11-10: the maintainer reports having tested proactive push on a deployed bot; recorded as the maintainer's
+  statement, the versions and scenes tested are not recorded here. Nothing was run from this repository's side.)
 - No live AstrBot run of the 1024 features and no chat platform. **QQ image delivery (passive reply), proactive
   group push and platform permission/rejection behaviour need bot-side acceptance.** Proactive support differs between
   AstrBot/adapter versions (newer docs support configured proactive group messages; older Tencent docs and a Context
@@ -206,6 +208,10 @@ records, two exact-100% records per mode). Previews were inspected visually.
 - Every help and profile reply carries its link as text, whatever the output (`test_links_are_always_given_as_text`).
 - Boss portraits download only on the explicit one-shot setting; no data feature may start a hidden poller (each
   polling feature has its own 10–90 minute setting).
+- Atlas is requested only for a user's command, with one exception since 2026-11-10 (maintainer: upstream relaxed its
+  terms): the weekly report's nightly sampler. Its rules are the maintainer's and must be kept: start at 03:00 UTC+8,
+  stop at 09:00, one listed player per request, 120 s plus a random 20–60 s between requests, no daytime catch-up
+  (`weekly_tasks.py`; tests pin each number). No other feature may poll, prefetch or batch Atlas.
 - Disabled features must not download data, start tasks, or leave old continuation pages reachable.
 - When upstream game data changes (levels, skills) re-run `tools/build_static.py` and commit the diff.
 
@@ -1000,3 +1006,67 @@ Validation: tests first, each shown failing on the old code; 450 tests pass (Pyt
 at a time (gate fail-fast, interval-following wait, the four `keep()` sites, catalog wait and its reset, slot type,
 bind account and note, Atlas bind usage, the download bound of the rewritten test), every one caught. Not run: Python
 3.12 locally, the changed workflow on GitHub, any chat platform.
+
+## Weekly report: nightly samples, rolling seven days, ranking broadcast (2026-11-10)
+
+Requested by the maintainer; implemented with Claude Code after a design discussion (decisions in
+`docs/weekly-report-plan.md` §3, user documentation `docs/weekly-report.md`). Based on branch `ccr-9dd865fa-km4sh9`
+(the post-0.5.1 review fixes) at the maintainer's request; pushed as `feat/player-mobile-statistics`. No version bump
+(still 0.5.1; CHANGELOG "未发布" has the entry); README untouched (edited with the maintainer at release).
+
+Maintainer decisions that shape the code:
+- **Background Atlas requests are allowed for this feature** (upstream relaxed its terms): start 03:00 Beijing time,
+  one listed player per request, 120 s + random 20–60 s apart, no hourly cap. Chosen in the discussion: only inside
+  03:00–09:00, a missed night is not caught up. §8 has the new invariant.
+- **The roster is a setting, not chat subscriptions**: one list per mode of account ids or nicknames
+  (`weekly_pvp_players`, `weekly_pve_players`, `weekly_season_players`). Four modes are wanted; **Arena is planned only**
+  (plan §5), the command answers "竞技场周报还没有实现".
+- Rolling seven days; no detailed interval on the picture; entertainment use, boundary errors accepted.
+- Any allowed user may query any listed player; without a target the caller's bound account when listed, else the ranking.
+- Weekly broadcast: one ranking picture per mode at the configured weekday and HH:MM (UTC+8); **targets must be listed**
+  (an empty list sends nothing, unlike status/Boss); no extra QQ switch (the maintainer verified proactive push).
+- Data expires by age; removing a player from the roster or unbinding deletes nothing.
+
+Code:
+- `weekly_report.py` (pure): `extract_sample(doc, mode)` → compact numbers (both sides' ten counters from
+  `atlas_card.counts`, level, experience, play time, skill progress, achievements of the last 21 days with names);
+  `window()` anchors on the newest sample and starts at the sample nearest to seven days before it (±48 h, else the
+  oldest inside the week); `increase()` sums steps and treats a drop as a restart from zero; a step is put on the date
+  twelve hours before its later sample, so a 03:00 sample closes the day before. No report when the newest sample is
+  older than 3 days or the span is under 20 hours. `build_card`, `build_ranking` (most raids first; best survival rate
+  needs 5 raids; at most 20 rows).
+- `weekly_store.py`: `weekly.sqlite3` with `players` (roster entry → account, newest nickname), `pulls` (per entry and
+  day: attempts, done; one retry), `samples` (JSON, unique per account/mode/`looked_up`, pruned by `weekly_keep_days`),
+  `pushes` (slot/target/mode state, 60 days). Reads never create the file.
+- `weekly_tasks.py`: `WeeklySampler.step()` does at most one Atlas request (a nickname search is its own step, the
+  lookup follows after the pause); refusals by the plugin's own budget or gate (`NOT_SENT`) are not attempts;
+  `AtlasNotFound` ends the entry for the day. `WeeklyBroadcast.tick()` sends what a slot still owes when the slot is
+  less than 6 hours old; three attempts per picture and target, `None` from the platform is terminal "unknown",
+  permission errors are terminal "blocked". Both loops look at the clock at least every 10 minutes and are cancelled in
+  `terminate()` before the Atlas client closes.
+- `weekly_image.py`: personal picture and ranking on the Atlas board, Atlas logo and link in the header (author's
+  requirement), thanks in the footer. `atlas_image.statistics()`/`exit_bars()` gained optional `title`/`note`
+  keywords (defaults reproduce the player picture byte for byte; its tests are unchanged).
+- `main.py`: `weekly_*` methods; `WEEKLY_LISTS` (three modes), at most 40 entries per mode (3 × 40 pulls × ~160 s fits
+  the window); `weekly_resolve` uses the shared name record, then one Atlas search (exact, then a single
+  case-insensitive match; otherwise logged and skipped — an id is the safe entry); `weekly_fetch` skips the local
+  cache and takes no user quota but goes through the shared gate and budget, and feeds history and the name record;
+  `weekly_feed` stores a user's fresh lookup of a listed player as one more sample. Command words `周报`/`weekly`,
+  ranking words `排行`/`rank`/`ranking`, QQ word `tweekly`. The feature needs `player_source` = atlas.
+- Settings group `weekly` (nine keys, all in `_conf_schema.json` and `settings.GROUPS`); help text, help image and the
+  QQ word list name the command only when the feature is on.
+
+Decisions taken without the maintainer (revisit): 40 players per mode; sample retention default 30 days (14–180);
+one same-night retry after a failed pull; 6-hour lateness limit and 3 attempts for the broadcast; the 12-hour day
+shift; 3-day staleness and 20-hour minimum span; ranking sorted by raids with four highlights; the query command
+never asks Atlas (even for "today"); nickname resolution does not use the downloaded tarkov.dev name list (it would
+start a large download in the background).
+
+Validation: 519 tests pass (Python 3.13), 55 of them new (`test_weekly_report`, `test_weekly_store`,
+`test_weekly_tasks`, `test_weekly_plugin`); clocks, sleeps and the random source are injected, nothing waits or reaches
+Atlas. Mutation check in scratch copies: 26 guards reverted one at a time (the 120 s gap, the 20–60 s range, both
+window hours, one request per step, refusals not counted, the retry count and its per-day reset, pruning, staleness,
+minimum span, day shift, restart handling, listed-targets-only, feed only listed players, refresh on pull, roster cap,
+send guard, Atlas-source requirement and more), every one caught. `tools/build_weekly_preview.py` renders
+`docs/weekly_report_preview.jpg` and `docs/weekly_ranking_preview.jpg` from invented data; both were inspected.
+Not run: a real night of sampling against Atlas, the command and the broadcast on a chat platform, Python 3.12.
