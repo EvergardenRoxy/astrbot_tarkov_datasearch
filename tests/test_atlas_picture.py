@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw
 
 from fixtures import atlas_profile
 from tarkov_core import atlas_assets
+from tarkov_core.transport import ConnectionFailure
 from tarkov_core.atlas_assets import AtlasAssets, build_catalog, icon_urls, level_badge, sanitize, valid
 from tarkov_core.atlas_card import build
 from tarkov_core.atlas_history import AtlasHistory
@@ -159,6 +160,16 @@ class CardTests(unittest.TestCase):
         with self.assertRaises(AtlasProfileError):
             build({'nickname': None}, 'pve')
 
+    def test_an_unhashable_slot_key_is_skipped(self):
+        """A list or dict where the slot name belongs must not fail the whole picture (set membership raised)."""
+        good = {'slot': 'Headwear', 'en': {'short': 'Helmet'}, 'image': 'https://assets.tarkov.dev/helmet-base-image.webp'}
+        for odd in ([], {}, ['Headwear'], {'slot': 'Headwear'}, 5, None):
+            with self.subTest(odd=odd):
+                card = build(atlas_profile('pve', slots=[{'slot': odd, 'en': {'short': 'Odd'}}, good]), 'pve')
+                shown = {key: item for row in card['equipment'] for key, _, _, item in row if item}
+                self.assertEqual(list(shown), ['Headwear'])
+                self.assertEqual(shown['Headwear']['name'], 'Helmet')
+
 
 class RenderTests(unittest.TestCase):
     def test_horizontal_statistics_and_larger_two_column_skills(self):
@@ -278,6 +289,7 @@ class AssetCacheTests(unittest.IsolatedAsyncioTestCase):
         self.downloads = []
         self.broken = set()
         self.feeds = []
+        self.feed_error = None
         async def download(url):
             self.downloads.append(url)
             if url in self.broken:
@@ -285,6 +297,8 @@ class AssetCacheTests(unittest.IsolatedAsyncioTestCase):
             return png()
         async def feed(resource, mode):
             self.feeds.append((resource, mode))
+            if self.feed_error:
+                raise self.feed_error
             if resource == 'tasks':
                 return {'achievements': [{'id': 'a1', 'imageLink': 'https://assets.tarkov.dev/achievement-a1-icon.webp'}],
                         'prestige': [{'prestigeLevel': 1, 'iconLink': 'https://assets.tarkov.dev/prestige-1-icon.webp'}]}
@@ -335,6 +349,46 @@ class AssetCacheTests(unittest.IsolatedAsyncioTestCase):
         self.clock.advance(atlas_assets.REBUILD_SECONDS)
         await self.assets.catalog_for(['new'])
         self.assertEqual(len(self.feeds), 9)
+
+    async def test_a_failed_catalog_build_waits_before_the_next_try(self):
+        """With the public data unreachable and no saved catalog, every picture asked for the feeds again and waited
+        for the same failing download."""
+        self.feed_error = ConnectionFailure('down')
+        with self.assertRaises(ConnectionFailure):
+            await self.assets.catalog_for(['a1'])
+        for _ in range(3):
+            with self.assertRaises(atlas_assets.CatalogUnavailable):
+                await self.assets.catalog_for(['a1'])
+        self.assertEqual(len(self.feeds), 1)
+        self.clock.advance(atlas_assets.FAILURE_SECONDS-1)
+        with self.assertRaises(atlas_assets.CatalogUnavailable):
+            await self.assets.catalog()
+        self.clock.advance(1)
+        self.feed_error = None
+        self.assertIn('a1', (await self.assets.catalog_for(['a1']))['achievements'])
+        self.assertEqual(len(self.feeds), 4)
+
+    async def test_the_manual_update_and_clear_are_not_held_back_by_a_failed_build(self):
+        self.feed_error = ConnectionFailure('down')
+        with self.assertRaises(ConnectionFailure):
+            await self.assets.catalog()
+        self.feed_error = None
+        self.assertEqual(await self.assets.prefetch(), (3, 3))  # The administrator's one-shot update tries at once.
+        self.feed_error = ConnectionFailure('down')
+        await self.assets.clear()
+        with self.assertRaises(ConnectionFailure):
+            await self.assets.catalog()
+        await self.assets.clear()
+        self.feed_error = None
+        self.assertIn('a1', (await self.assets.catalog())['achievements'])  # Clearing forgets the wait as well.
+
+    async def test_a_failed_rebuild_keeps_the_saved_catalog_readable(self):
+        await self.assets.catalog()
+        self.feed_error = ConnectionFailure('down')
+        self.assertIn('a1', (await self.assets.catalog_for(['new']))['achievements'])
+        self.assertIn('a1', (await self.assets.catalog())['achievements'])
+        reloaded = AtlasAssets(self.root, None, clock=self.clock)
+        self.assertIn('a1', (await reloaded.catalog())['achievements'])
 
     async def test_concurrent_requests_share_one_download(self):
         url = 'https://assets.tarkov.dev/shared.png'

@@ -35,6 +35,14 @@ def refund(charge):
         undo()
 
 
+def keep(charge):
+    """A request of this query reached Atlas: a later refusal (the lookup after a nickname search, the rename check
+    after a lookup) no longer gives the query back."""
+    mark = getattr(charge, 'keep', None)
+    if mark is not None:
+        mark()
+
+
 class AtlasNotFound(NotFound):
     """Atlas answered: no such account, or no profile in this mode. Never used for a failed request."""
 
@@ -136,11 +144,20 @@ class AtlasPlayers:
                                                  done.cancelled() or done.exception()))
         try:
             # Shielded: one user giving up must not cancel the request others wait for.
-            return dict(await asyncio.shield(task))
+            summary = dict(await asyncio.shield(task))
         except NOT_SENT:
             if charged:
                 refund(charge)
             raise
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if charged:
+                keep(charge)
+            raise
+        if charged:
+            keep(charge)
+        return summary
 
     async def _fetch(self, mode, aid):
         try:
@@ -163,17 +180,21 @@ class AtlasPlayers:
     async def search(self, nickname, mode, *, charge=lambda: None):
         """[(aid, nickname)] from Atlas' nickname search (one request; not cached)."""
         if not NICKNAME.fullmatch(nickname):
-            raise QueryError('Atlas 只能搜索 3～15 个字符的昵称（字母、数字、_ . -），更长的名字请用账号 ID 或玩家页网址查询')
+            raise QueryError('Atlas 只能搜索 3～15 个字符的昵称（字母、数字、_ -），更长的名字请用账号 ID 或玩家页网址查询')
         charge()
         try:
             doc = await self._busy_retry(lambda: self.client.search(nickname, mode))
         except NOT_SENT:
             refund(charge)
             raise
-        except AtlasHTTPError as exc:
-            if exc.code in ('not_found', 'no_profile'):
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            keep(charge)
+            if isinstance(exc, AtlasHTTPError) and exc.code in ('not_found', 'no_profile'):
                 return []
             raise
+        keep(charge)
         return search_results(doc)
 
     @staticmethod
@@ -252,15 +273,19 @@ class UserQuota:
 
     def ticket(self, owner, refresh):
         """A callable for AtlasPlayers' `charge`: checks and records once, the first time a request is needed.
-        `charge.refund()` gives the query back when no request was sent (the plugin's budget or the shared gate)."""
-        state = {'entry': None}
+        `charge.refund()` gives the query back when no request was sent (the plugin's budget or the shared gate);
+        after `charge.keep()` (a request of the query reached Atlas) it no longer does."""
+        state = {'entry': None, 'kept': False}
         def charge():
             if state['entry'] is None:
                 self.check(owner, refresh)
                 state['entry'] = self.record(owner, refresh)
         def give_back():
-            if state['entry'] is not None:
+            if state['entry'] is not None and not state['kept']:
                 self.forget(owner, state['entry'])
                 state['entry'] = None
-        charge.refund = give_back
+        def keep_it():
+            if state['entry'] is not None:
+                state['kept'] = True
+        charge.refund, charge.keep = give_back, keep_it
         return charge

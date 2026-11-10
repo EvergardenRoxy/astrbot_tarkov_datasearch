@@ -96,7 +96,7 @@ def every(seconds):
     return f'每 {hours} 小时'
 
 
-@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.5.1')
+@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '查询塔科夫玩家档案（默认来自 Atlas，可改用 tarkov.dev 快照）、服务器状态、Boss 刷率和匹配时间', '0.5.1')
 class TarkovPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -571,7 +571,9 @@ class TarkovPlugin(Star):
             return
         target = words[0] if words else None
         if action == 'bind' and target is None:
-            yield event.plain_result(f"用法：{self.cmd('绑定 <tarkov.dev 玩家页网址或账号ID>')}，"
+            # Atlas resolves nicknames itself; the snapshot source needs the website link or the id.
+            what = '<昵称、账号ID 或玩家页网址>' if self.player_source() == 'atlas' else '<tarkov.dev 玩家页网址或账号ID>'
+            yield event.plain_result(f"用法：{self.cmd('绑定 '+what)}，"
                                      f"例如 {self.cmd('绑定', page_url('pve', 1234567))}")
             return
         url = parse_player_url(target) if target else None
@@ -724,8 +726,13 @@ class TarkovPlugin(Star):
             return event.plain_result('你还没有绑定账号。')
         return event.plain_result(f'已解除绑定：{removed[1]}（账号 ID {removed[0]}）。')
 
-    async def bind(self, event, mode, target, url, trace):
-        if url or ACCOUNT_ID.fullmatch(target):
+    async def bind(self, event, mode, target, url, trace, aid=None, note=''):
+        """Bind through the tarkov.dev snapshots. `aid`: the account when the caller already settled it (the Atlas
+        flow resolved the name by the name list or Atlas' search, which the local record does not know); `note`: a
+        sentence put before the reply (why the snapshot was used)."""
+        if aid is not None:
+            pass
+        elif url or ACCOUNT_ID.fullmatch(target):
             aid = url[1] if url else int(target)
         else:
             rows, _ = await asyncio.to_thread(self.accounts.lookup, target)
@@ -740,14 +747,14 @@ class TarkovPlugin(Star):
         if not found and failed:
             raise next(iter(failed.values()))
         if not found:
-            return event.plain_result(self.none_found(aid, mode)
+            return event.plain_result(note+self.none_found(aid, mode)
                                       + self.first_time(mode, '自己', self.cmd('绑定'), explicit=mode == 'arena'))
         nickname = (found.get(mode) or next(iter(found.values())))['nickname']
         await asyncio.to_thread(self.accounts.bind, self.binding_key(event), aid, nickname)
         missing = [m for m in self.looked_at(mode) if m not in found and m not in failed]
         later = (f'{self.modes_text(missing)} 模式的档案要在 tarkov.dev 用该模式搜索一次自己才会出现。' if missing else '')
         unknown = f'{self.failure_text(failed)}。' if failed else ''
-        return event.plain_result(f'已绑定：{nickname}（账号 ID {aid}），目前在 {self.modes_text(found)} 模式下有档案。'
+        return event.plain_result(f'{note}已绑定：{nickname}（账号 ID {aid}），目前在 {self.modes_text(found)} 模式下有档案。'
                                   f'{unknown}{later}'
                                   f'之后发送 {self.cmd()} 即可查询自己（先看 {label_of(self.default_mode())}，没有时自动换成有档案的模式），'
                                   f"也可以写模式，例如 {self.cmd('pve')}、{self.cmd('赛季')}。"
@@ -819,7 +826,9 @@ class TarkovPlugin(Star):
                 raise
             if action == 'bind':
                 logger.warning('Tarkov [%s] Atlas bind lookup failed, using tarkov.dev: %s', trace, type(exc).__name__)
-                yield await self.bind(event, mode, target, url, trace)
+                # The account is already settled (perhaps by Atlas' search): bind() must not resolve the name again.
+                yield await self.bind(event, mode, target, url, trace, aid=aid,
+                                      note=f'{failure_text(exc)}，已改用 tarkov.dev 快照确认账号。')
             else:
                 yield await self.atlas_fallback(event, mode, aid, exc, trace)
             return
@@ -901,7 +910,7 @@ class TarkovPlugin(Star):
             if matches:
                 yield event.plain_result(self.ambiguous(target, matches, total))
             else:
-                yield event.plain_result(f'记录和名单里都没有 {target}；Atlas 只能搜索 3～15 个字符的昵称（字母、数字、_ . -），'
+                yield event.plain_result(f'记录和名单里都没有 {target}；Atlas 只能搜索 3～15 个字符的昵称（字母、数字、_ -），'
                                          '更长的名字请用账号 ID 或 tarkov.dev 玩家页网址查询。')
             return
         try:

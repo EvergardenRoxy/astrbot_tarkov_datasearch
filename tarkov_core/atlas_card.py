@@ -136,7 +136,8 @@ def slots(doc):
     """{slot key: {'name', 'image'}} of the equipped items in the shown slots; tarkov.dev's plain item picture."""
     found = {}
     for entry in doc.get('slots') if isinstance(doc.get('slots'), list) else []:
-        if isinstance(entry, dict) and entry.get('slot') in SHOWN_SLOTS:
+        # A string only: a list or dict here would raise on the set lookup and fail the whole picture.
+        if isinstance(entry, dict) and isinstance(entry.get('slot'), str) and entry['slot'] in SHOWN_SLOTS:
             found[entry['slot']] = {'name': short_name(entry), 'image': asset(entry.get('image')) or asset(entry.get('icon'))}
     return found
 
