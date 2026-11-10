@@ -18,6 +18,7 @@ import time
 from .atlas_players import NOT_SENT, AtlasNotFound
 from .notifications import PermanentDeliveryError
 from .weekly_report import TZ
+from .weekly_store import SampleResult
 
 START_HOUR, END_HOUR = 3, 9
 GAP_SECONDS = 120
@@ -88,12 +89,21 @@ class Loop:
 
 class WeeklySampler(Loop):
     def __init__(self, store, entries, resolve, fetch, save, enabled, on_error, *, clock=time.time,
-                 sleep=asyncio.sleep, rand=random.uniform):
-        # entries() -> [(mode, entry)]; resolve(mode, entry) -> (account id or None, nickname, whether Atlas was asked);
-        # fetch(mode, account id) -> summary; save(account id, mode, summary).
+                 sleep=asyncio.sleep, rand=random.uniform, monotonic=time.monotonic):
+        # resolve/fetch accept a monotonic `deadline`; each may issue at most one HTTP request.
+        # resolve -> (account id or None, nickname, whether Atlas was asked); fetch -> summary.
+        # save(..., day=day) -> SampleResult, atomically committing the sample and nightly completion.
         self.store, self.entries, self.resolve, self.fetch, self.save = store, entries, resolve, fetch, save
         self.enabled, self.on_error = enabled, on_error
         self.clock, self.sleep, self.rand = clock, sleep, rand
+        self.monotonic = monotonic
+        self.unrecorded = None
+
+    async def flush_progress(self):
+        """If even the failure record could not be written, repair it before sending more HTTP requests."""
+        if self.unrecorded is not None:
+            await asyncio.to_thread(self.store.attempted, *self.unrecorded)
+            self.unrecorded = None
 
     def gap(self):
         return GAP_SECONDS+self.rand(*RANDOM_SECONDS)
@@ -103,13 +113,18 @@ class WeeklySampler(Loop):
         now = self.clock()
         if not self.enabled() or not in_window(now):
             return None
+        # Convert this night's wall-clock cutoff to the HTTP gate's monotonic clock once, before any awaits.
+        end = local(now).replace(hour=END_HOUR, minute=0, second=0, microsecond=0).timestamp()
+        deadline = self.monotonic()+(end-now)
         day = day_id(now)
+        await self.flush_progress()
         pending = await asyncio.to_thread(self.store.pending, self.entries(), day)
         if not pending:
             return None
         mode, entry = pending[0]
         async def mark(done, error=None):
-            await asyncio.to_thread(self.store.attempted, mode, entry, day, done, error)
+            self.unrecorded = (mode, entry, day, done, error)
+            await self.flush_progress()
         account_id = int(entry) if ACCOUNT.fullmatch(entry) else None
         if account_id is None:
             known = await asyncio.to_thread(self.store.resolved, mode, entry)
@@ -117,7 +132,7 @@ class WeeklySampler(Loop):
                 account_id = known[0]
             else:
                 try:
-                    account_id, name, asked = await self.resolve(mode, entry)
+                    account_id, name, asked = await self.resolve(mode, entry, deadline=deadline)
                 except NOT_SENT:
                     # The plugin's own budget or gate refused: nothing was sent, the entry stays for the next step.
                     return 'deferred'
@@ -130,11 +145,19 @@ class WeeklySampler(Loop):
                 if account_id is None:
                     await mark(True, 'unresolved')
                     return 'unresolved'
-                await asyncio.to_thread(self.store.resolve, mode, entry, account_id, name)
+                try:
+                    await asyncio.to_thread(self.store.resolve, mode, entry, account_id, name)
+                except Exception as exc:
+                    await mark(False, type(exc).__name__)
+                    self.on_error(exc)
+                    return 'failed'
                 if asked:
                     return 'resolved'
+        # Resolving a new alias may reveal an account already completed (or exhausted) under another entry.
+        if not await asyncio.to_thread(self.store.pending, [(mode, entry)], day):
+            return 'skipped'
         try:
-            summary = await self.fetch(mode, account_id)
+            summary = await self.fetch(mode, account_id, deadline=deadline)
         except NOT_SENT:
             return 'deferred'
         except AtlasNotFound:
@@ -146,10 +169,21 @@ class WeeklySampler(Loop):
             await mark(False, type(exc).__name__)
             self.on_error(exc)
             return 'failed'
-        await self.save(account_id, mode, summary)
+        try:
+            result = await self.save(account_id, mode, summary, day=day)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await mark(False, type(exc).__name__)
+            self.on_error(exc)
+            return 'failed'
+        if result not in (SampleResult.ADDED, SampleResult.DUPLICATE):
+            await mark(False, 'invalid_sample')
+            return 'failed'
+        # save() committed the sample and canonical account completion together. A nickname-write failure
+        # after that commit cannot cause another HTTP lookup of the same account tonight.
         if isinstance(summary.get('nickname'), str):
             await asyncio.to_thread(self.store.resolve, mode, entry, account_id, summary['nickname'])
-        await mark(True)
         return 'pulled'
 
     async def run(self):

@@ -3,8 +3,10 @@ import pathlib
 import tempfile
 import unittest
 
-from tarkov_core.weekly_store import WeeklyStore
+from tarkov_core.weekly_store import SampleResult, WeeklyStore
 from test_weekly_report import DAY, LAST, sample
+from unittest.mock import patch
+import sqlite3
 
 
 class StoreTests(unittest.TestCase):
@@ -62,24 +64,24 @@ class StoreTests(unittest.TestCase):
     def test_samples_are_stored_once_and_expire(self):
         store = self.store
         newest, older = sample(LAST, 1037, 825, 42, 129, 31, 5180, 950), sample(LAST-DAY, 1030, 820, 42, 127, 31, 5150, 940)
-        self.assertTrue(store.add_sample(1, 'pve', newest))
-        self.assertFalse(store.add_sample(1, 'pve', newest))
-        self.assertTrue(store.add_sample(1, 'pve', older))
-        self.assertTrue(store.add_sample(1, 'pvp', newest))
+        self.assertEqual(store.add_sample(1, 'pve', newest), SampleResult.ADDED)
+        self.assertEqual(store.add_sample(1, 'pve', newest), SampleResult.DUPLICATE)
+        self.assertEqual(store.add_sample(1, 'pve', older), SampleResult.ADDED)
+        self.assertEqual(store.add_sample(1, 'pvp', newest), SampleResult.ADDED)
         self.assertEqual([entry['looked_up'] for entry in store.samples(1, 'pve', 0)], [LAST-DAY, LAST])
         self.assertEqual([entry['looked_up'] for entry in store.samples(1, 'pve', LAST)], [LAST])
         self.assertEqual(store.samples(1, 'pve', 0)[1], newest)
         self.assertEqual(store.counts(), (2, 3))
         for bad in (None, {}, {'looked_up': 'x'}, {'looked_up': True}, dict(newest, big='x'*70000)):
-            self.assertFalse(store.add_sample(1, 'pve', bad))
+            self.assertEqual(store.add_sample(1, 'pve', bad), SampleResult.INVALID)
         for mode, account in (('arena', 1), ('pve', '1'), ('pve', 1.0)):
-            self.assertFalse(store.add_sample(account, mode, newest))
+            self.assertEqual(store.add_sample(account, mode, newest), SampleResult.INVALID)
         # Nothing is deleted when a player leaves the roster; samples go when they are older than the setting.
         self.now = LAST-DAY+30*DAY+1
         store.prune()
         self.assertEqual([entry['looked_up'] for entry in store.samples(1, 'pve', 0)], [LAST])
         self.days = 14
-        self.assertTrue(store.add_sample(2, 'pve', dict(newest, looked_up=self.now)))
+        self.assertEqual(store.add_sample(2, 'pve', dict(newest, looked_up=self.now)), SampleResult.ADDED)
         self.assertEqual(store.samples(1, 'pve', 0), [])
 
     def test_broadcast_records(self):
@@ -93,6 +95,60 @@ class StoreTests(unittest.TestCase):
         self.now += 61*DAY
         store.prune()
         self.assertIsNone(store.push_state(slot, target, 'pve'))
+
+    def test_aliases_share_progress_and_retry_budget_across_restarts(self):
+        store, day = self.store, '2026-11-09'
+        entries = [('pve', '11'), ('pve', 'Named'), ('pvp', '11')]
+        store.resolve('pve', 'Named', 11, 'Named')
+        self.assertEqual(store.pending(entries, day), [('pve', '11'), ('pvp', '11')])
+        store.attempted('pve', 'Named', day, False, 'timeout')
+        self.assertEqual(store.pending(entries, day), [('pvp', '11'), ('pve', '11')])
+        store.attempted('pve', '11', day, False, 'timeout')
+        reopened = WeeklyStore(store.path)
+        self.assertEqual(reopened.pending(entries, day), [('pvp', '11')])
+        self.assertEqual(reopened.pending(entries, '2026-11-10'), [('pve', '11'), ('pvp', '11')])
+
+    def test_resolving_an_alias_merges_earlier_failures(self):
+        store, day = self.store, '2026-11-09'
+        store.attempted('pve', 'Named', day, False)
+        store.attempted('pve', '11', day, False)
+        store.resolve('pve', 'Named', 11, 'Named')
+        self.assertEqual(store.pending([('pve', 'Named'), ('pve', '11')], day), [])
+
+    def test_legacy_progress_migration_preserves_done_and_is_idempotent(self):
+        store, day = self.store, '2026-11-09'
+        def legacy(connection):
+            connection.execute('INSERT INTO players VALUES (?, ?, ?, ?, ?)', ('pve', 'named', 11, 'Named', LAST))
+            connection.executemany('INSERT INTO pulls VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [('pve', '11', day, 1, 1, None, LAST), ('pve', 'named', day, 1, 0, 'timeout', LAST)])
+        store._run(legacy)
+        entries = [('pve', 'Named'), ('pve', '11')]
+        for _ in range(2):
+            reopened = WeeklyStore(store.path)
+            self.assertEqual(reopened.pending(entries, day), [])
+            self.assertEqual(reopened._run(lambda c: c.execute('SELECT entry, attempts, done FROM pulls').fetchall()),
+                             [('id:11', 2, 1)])
+
+    def test_sample_and_completion_commit_or_rollback_together(self):
+        store, day = self.store, '2026-11-09'
+        value = sample(LAST, 100, 50, 0, 20, 0, 200, 10)
+        with patch.object(store, '_attempted', side_effect=sqlite3.OperationalError('write failed')):
+            with self.assertRaises(sqlite3.OperationalError):
+                store.add_sample(11, 'pve', value, day=day)
+        self.assertEqual(store.samples(11, 'pve', 0), [])
+        self.assertEqual(store.pending([('pve', '11')], day), [('pve', '11')])
+        self.assertEqual(store.add_sample(11, 'pve', value, day=day), SampleResult.ADDED)
+        self.assertEqual(store.pending([('pve', '11')], day), [])
+        self.assertEqual(store.add_sample(11, 'pve', value, day=day), SampleResult.DUPLICATE)
+        self.assertEqual(store._run(lambda c: c.execute('SELECT attempts FROM pulls').fetchone()), (1,))
+
+    def test_an_existing_user_sample_can_complete_the_nightly_pull(self):
+        store, day = self.store, '2026-11-09'
+        value = sample(LAST, 100, 50, 0, 20, 0, 200, 10)
+        store.add_sample(11, 'pve', value)
+        self.assertEqual(store.pending([('pve', '11')], day), [('pve', '11')])
+        self.assertEqual(store.add_sample(11, 'pve', value, day=day), SampleResult.DUPLICATE)
+        self.assertEqual(store.pending([('pve', '11')], day), [])
 
 
 if __name__ == '__main__':

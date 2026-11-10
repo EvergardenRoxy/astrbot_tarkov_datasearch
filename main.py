@@ -47,7 +47,7 @@ from .tarkov_core.status_image import render_status_image
 from .tarkov_core.transport import NotFound, QueryError
 from .tarkov_core.weekly_image import render_weekly_image
 from .tarkov_core.weekly_report import SLACK as WEEKLY_SLACK, WEEK, build_card as build_weekly_card, build_ranking, build_report, extract_sample
-from .tarkov_core.weekly_store import WeeklyStore
+from .tarkov_core.weekly_store import SampleResult, WeeklyStore
 from .tarkov_core.weekly_tasks import WeeklyBroadcast, WeeklySampler, parse_schedule
 
 COMMAND = re.compile(r'^/?(?:tarkov|塔科夫)(?:\s+|$)', re.I)
@@ -106,7 +106,7 @@ def every(seconds):
     return f'每 {hours} 小时'
 
 
-@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '查询塔科夫玩家档案（默认来自 Atlas，可改用 tarkov.dev 快照）、服务器状态、Boss 刷率和匹配时间', '0.6.0')
+@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '查询塔科夫玩家档案（默认来自 Atlas，可改用 tarkov.dev 快照）、服务器状态、Boss 刷率和匹配时间', '0.6.1')
 class TarkovPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -1651,7 +1651,7 @@ class TarkovPlugin(Star):
         if self.weekly_enabled() and self.config.get('weekly_push_enabled', False) is True and not self.weekly_broadcast_active():
             logger.info('Tarkov weekly broadcast idle: it needs listed players and listed targets')
 
-    async def weekly_resolve(self, mode, entry):
+    async def weekly_resolve(self, mode, entry, *, deadline=None):
         """(account id, nickname, whether Atlas was asked) of a listed nickname: the shared name record first, then
         Atlas' search (one request). (None, None, asked) when it cannot be settled; an account id is the safe entry."""
         rows, _ = await asyncio.to_thread(self.accounts.lookup, entry)
@@ -1662,7 +1662,7 @@ class TarkovPlugin(Star):
         if not ATLAS_NICKNAME.fullmatch(entry):
             logger.warning('Tarkov weekly roster: %s (%s) cannot be searched on Atlas; list the account ID instead', entry, mode)
             return None, None, False
-        found = await self.atlas_players.search(entry, mode)
+        found = await self.atlas_players.search_once(entry, mode, deadline=deadline)
         exact = [item for item in found if item[1] == entry]
         folded = [item for item in found if item[1].lower() == entry.lower()]
         pick = exact if len(exact) == 1 else folded if len(folded) == 1 else None
@@ -1671,9 +1671,9 @@ class TarkovPlugin(Star):
             return None, None, True
         return pick[0][0], pick[0][1], True
 
-    async def weekly_fetch(self, mode, aid):
+    async def weekly_fetch(self, mode, aid, *, deadline=None):
         """One fresh Atlas document for the nightly sample (no user quota: the sampler paces itself)."""
-        summary = await self.atlas_players.profile(mode, aid, refresh=True)
+        summary = await self.atlas_players.profile_once(mode, aid, deadline=deadline)
         await self.record_history(aid, mode, summary, 'weekly')
         try:
             await asyncio.to_thread(self.accounts.remember, aid, summary['nickname'])
@@ -1681,13 +1681,11 @@ class TarkovPlugin(Star):
             logger.warning('Tarkov name record not saved: %s', type(exc).__name__)
         return summary
 
-    async def weekly_save(self, aid, mode, summary):
-        try:
-            sample = await asyncio.to_thread(extract_sample, summary.get('doc'), mode)
-            return bool(sample) and await asyncio.to_thread(self.weekly_store.add_sample, aid, mode, sample, summary.get('fetched'))
-        except (OSError, sqlite3.Error, ValueError) as exc:
-            logger.warning('Tarkov weekly sample not saved: %s', type(exc).__name__)
-            return False
+    async def weekly_save(self, aid, mode, summary, *, day=None):
+        sample = await asyncio.to_thread(extract_sample, summary.get('doc'), mode)
+        if sample is None:
+            return SampleResult.INVALID
+        return await asyncio.to_thread(self.weekly_store.add_sample, aid, mode, sample, summary.get('fetched'), day=day)
 
     async def weekly_players(self, mode):
         """[(entry, account id or None, nickname or None)] of a mode's roster; an id entry is its own account."""
@@ -1711,8 +1709,13 @@ class TarkovPlugin(Star):
 
     async def weekly_ranking(self, mode):
         """The ranking card of a mode, or None when no listed player has a report yet."""
-        entries = []
+        entries, seen = [], set()
         for entry, aid, name in await self.weekly_players(mode):
+            # Keep every alias available to personal queries, but rank each resolved account only once.
+            if aid is not None:
+                if aid in seen:
+                    continue
+                seen.add(aid)
             entries.append((name or entry, await self.weekly_report(aid, mode) if aid is not None else None))
         return build_ranking(entries, mode)
 

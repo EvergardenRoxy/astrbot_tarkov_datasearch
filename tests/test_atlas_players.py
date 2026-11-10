@@ -414,6 +414,34 @@ class PlayerServiceTests(unittest.IsolatedAsyncioTestCase):
             await self.players.profile('pvp', 2)
         self.assertEqual(len(self.atlas.calls), 4)
 
+    async def test_background_cancellation_does_not_join_or_cancel_a_foreground_task(self):
+        self.atlas.put(1, 'pve')
+        entered, release = asyncio.Queue(), asyncio.Event()
+        async def lookup(aid, mode, **kwargs):
+            await entered.put(kwargs)
+            await release.wait()
+            return atlas_profile(mode, accountId=str(aid))
+        self.atlas.lookup = lookup
+        foreground = asyncio.create_task(self.players.profile('pve', 1))
+        background = None
+        try:
+            self.assertEqual(await asyncio.wait_for(entered.get(), 2), {})
+            background = asyncio.create_task(self.players.profile_once('pve', 1, deadline=12345))
+            self.assertEqual(await asyncio.wait_for(entered.get(), 2), {'deadline': 12345})
+            background.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await background
+            self.assertFalse(foreground.done())
+            release.set()
+            self.assertEqual((await foreground)['nickname'], 'Test_Player')
+            self.assertTrue(self.players.cached('pve', 1)['from_cache'])
+        finally:
+            release.set()
+            for task in (foreground, background):
+                if task is not None:
+                    task.cancel()
+            await asyncio.gather(*(task for task in (foreground, background) if task), return_exceptions=True)
+
     async def test_no_profile_is_not_found_and_remembered_briefly(self):
         self.atlas.docs[(1, 'season')] = AtlasHTTPError(404, 'no_profile')
         for _ in range(2):

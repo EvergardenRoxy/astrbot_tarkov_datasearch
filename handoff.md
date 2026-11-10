@@ -1074,3 +1074,43 @@ minimum span, day shift, restart handling, listed-targets-only, feed only listed
 send guard, Atlas-source requirement and more), every one caught. `tools/build_weekly_preview.py` renders
 `docs/weekly_report_preview.jpg` and `docs/weekly_ranking_preview.jpg` from invented data; both were inspected.
 Not run: a real night of sampling against Atlas, the command and the broadcast on a chat platform, Python 3.12.
+
+## Weekly backend review fixes (2026-11-10)
+
+The maintainer approved the five-finding review plan for main `0e523fd` (v0.6.0). Implemented on
+`fix/weekly-backend-reliability`; this is an unreleased change, with no version or configuration change.
+
+- Background `profile_once` / `search_once` use one HTTP attempt and no shielded foreground task. They still share
+  Atlas admission, budgets, document mapping and the resulting cache. Ordinary chat queries keep their busy retry.
+  Only the sampler schedules background retries, with its 120 + random(20, 60) second gap and the upstream pause.
+- The sampler converts the nightly UTC+8 cutoff to a monotonic deadline before awaiting anything. The client limits
+  gate waiting, checks the deadline again before consuming a budget slot, and cancels an in-flight background request
+  when the window ends. A deadline refusal before sending is `NOT_SENT`; an actually sent request is not refunded.
+- `extract_sample` rejects missing/malformed PMC or Scav counters, including non-finite/negative values. Sparse lists
+  and empty Scav lists are valid. New samples are version 2; existing version 1 samples remain readable. No speculative
+  rewrite/deletion of historical zeros: repairing those requires a matching raw history document, which may have expired.
+- `SampleResult` distinguishes ADDED / DUPLICATE / INVALID; I/O errors propagate to the sampler. With `day=...`, sample
+  insertion and account completion share one SQLite transaction. Invalid samples and save failures retain the bounded
+  retry; user-fed save failures still leave the user's player reply intact. If a failure record itself cannot be saved,
+  the running sampler flushes that record before allowing any more HTTP, rather than losing the attempt repeatedly.
+- `pulls.entry` uses `id:<account id>` for resolved accounts; unresolved names retain their lower-case entry key.
+  Existing rows migrate lazily and transactionally on progress access or name resolution. For each account the newest
+  day wins, attempts on that day are summed and any terminal state wins; repeated migration does not double-count.
+  A newly resolved alias is checked against the account's progress before a lookup. Rankings deduplicate account IDs,
+  but all configured aliases remain usable in personal queries. Modes remain independent.
+
+Regression coverage includes real local HTTP busy responses for search and lookup, long Retry-After, gate oversleep,
+exact cutoff, in-flight cancellation and budget accounting, background/foreground cancellation isolation, malformed
+statistics and sparse counters, write failure/rollback/recovery, alias resolution, restart and legacy progress merging.
+All documents and accounts in these tests are invented; there was no live Atlas or chat-platform validation.
+
+Validation: all 540 tests passed on Python 3.12 and Python 3.13 (21 regression cases added to the 519-test baseline),
+using `python -m unittest discover -s tests -v`. Both runs include package checks and image tests with the pinned font.
+`git diff --check` passed. Existing CI already covers both Python versions; no remote workflow was triggered.
+
+## 0.6.1 release preparation (2026-11-10)
+
+The maintainer requested version 0.6.1, a branch push and a pull request, with no new preview images.
+Version literals in metadata, registration, the core package, README's output example and output/image assertions
+are aligned to 0.6.1. The weekly backend fixes are recorded under 0.6.1 in CHANGELOG. Existing preview assets are
+kept as supplied; no preview-generation scripts are run for this release.

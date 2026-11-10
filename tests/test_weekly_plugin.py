@@ -178,9 +178,9 @@ class WeeklyPluginTests(unittest.IsolatedAsyncioTestCase):
         await plugin.weekly_fetch('pve', 1234567)
         self.assertEqual(self.atlas.calls, [('lookup', 1234567, 'pve')]*2)
         self.assertEqual(plugin.quota.history, {})
-        self.assertTrue(await plugin.weekly_save(1234567, 'pve', summary))
-        self.assertFalse(await plugin.weekly_save(1234567, 'pve', summary))
-        self.assertFalse(await plugin.weekly_save(1234567, 'pve', {'doc': None}))
+        self.assertEqual(await plugin.weekly_save(1234567, 'pve', summary), self.module.SampleResult.ADDED)
+        self.assertEqual(await plugin.weekly_save(1234567, 'pve', summary), self.module.SampleResult.DUPLICATE)
+        self.assertEqual(await plugin.weekly_save(1234567, 'pve', {'doc': None}), self.module.SampleResult.INVALID)
         self.assertEqual((await asyncio.to_thread(plugin.atlas_history.latest, 1234567, 'pve'))['nickname'], 'Test_Player')
         self.assertEqual((await asyncio.to_thread(plugin.accounts.lookup, 'Test_Player'))[0], [(1234567, 'Test_Player')])
         # Wired into the sampler with the maintainer's pacing.
@@ -207,6 +207,32 @@ class WeeklyPluginTests(unittest.IsolatedAsyncioTestCase):
                          ('Found_One', '12', ['样本只覆盖 1 天']))
         await self.ask(plugin, '/tarkov 周报 排行')
         self.assertEqual([row['nickname'] for row in self.cards[-1]['rows']], ['Found_One', 'Test_Player'])
+
+    async def test_id_and_nickname_share_a_rank_and_nightly_pull_but_both_remain_queryable(self):
+        plugin = self.plugin(dict(ON, weekly_pve_players=['1234567', 'Test_Player']))
+        await self.fill(plugin, entry='Test_Player', nickname='Test_Player')
+        self.assertEqual(len((await plugin.weekly_ranking('pve'))['rows']), 1)
+        for target in ('1234567', 'Test_Player'):
+            await self.ask(plugin, '/tarkov 周报 pve '+target)
+            self.assertEqual(self.cards[-1]['nickname'], 'Test_Player')
+        plugin.weekly_sampler.clock = lambda: LAST+60
+        self.atlas.put(1234567, 'pve', looked_up=iso(LAST+60))
+        self.assertEqual(await plugin.weekly_sampler.step(), 'pulled')
+        self.assertIsNone(await plugin.weekly_sampler.step())
+        self.assertEqual(self.atlas.calls, [('lookup', 1234567, 'pve')])
+
+    async def test_failed_nightly_save_keeps_retry_and_user_reply_survives(self):
+        plugin = self.plugin(dict(ON, weekly_pve_players=['1234567']))
+        plugin.weekly_sampler.clock = lambda: LAST+60
+        self.atlas.put(1234567, 'pve', looked_up=iso(LAST+60))
+        with patch.object(plugin.weekly_store, 'add_sample', side_effect=OSError('temporary write failure')):
+            self.assertEqual(await plugin.weekly_sampler.step(), 'failed')
+            reply = await self.ask(plugin, '/tarkov pve 1234567 刷新')
+            self.assertIsInstance(reply[0], ImageStub)
+        self.assertEqual(plugin.weekly_store.samples(1234567, 'pve', 0), [])
+        self.assertEqual(await plugin.weekly_sampler.step(), 'pulled')
+        self.assertEqual(len(plugin.weekly_store.samples(1234567, 'pve', 0)), 1)
+        self.assertIsNone(await plugin.weekly_sampler.step())
 
     async def test_broadcast_targets_must_be_listed(self):
         group = 'bot:GroupMessage:g1'
