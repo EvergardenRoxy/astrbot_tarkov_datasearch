@@ -400,5 +400,79 @@
                 "hint": "所有图片首次生成前下载完整 Noto Sans SC 字体（约 17 MB），之后复用本地缓存。下载失败会提示，不使用裁剪字库。默认依次试 jsDelivr、GitHub；可填 https 镜像地址优先尝试，文件大小与校验值须匹配固定版本。"
             }
         }
+    },
+    "weekly": {
+        "type": "object",
+        "description": "玩家周报",
+        "items": {
+            "weekly_enabled": {
+                "type": "bool",
+                "description": "玩家周报功能",
+                "default": false,
+                "hint": "开启后，每天北京时间 03:00 起逐个向 Atlas 查询下面名单里的玩家（每次只查一名，间隔 120 秒加随机 20～60 秒，09:00 前结束），并开放命令 tarkov 周报 [模式] [昵称、账号ID 或 排行]。需要“玩家数据来源”为 Atlas。"
+            },
+            "weekly_pvp_players": {
+                "type": "list",
+                "description": "PVP 周报玩家名单",
+                "default": [],
+                "hint": "每行一名玩家：账号 ID（推荐）或昵称，最多 40 名。只有名单内的玩家会被采样和出现在 PVP 周报里。昵称第一次需要向 Atlas 搜索一次，重名、改名或超过 15 个字符时请填账号 ID。"
+            },
+            "weekly_pve_players": {
+                "type": "list",
+                "description": "PVE 周报玩家名单",
+                "default": [],
+                "hint": "每行一名玩家：账号 ID（推荐）或昵称，最多 40 名。只有名单内的玩家会被采样和出现在 PVE 周报里。昵称第一次需要向 Atlas 搜索一次，重名、改名或超过 15 个字符时请填账号 ID。"
+            },
+            "weekly_season_players": {
+                "type": "list",
+                "description": "PVP 赛季 周报玩家名单",
+                "default": [],
+                "hint": "每行一名玩家：账号 ID（推荐）或昵称，最多 40 名。只有名单内的玩家会被采样和出现在 PVP 赛季 周报里。昵称第一次需要向 Atlas 搜索一次，重名、改名或超过 15 个字符时请填账号 ID。"
+            },
+            "weekly_keep_days": {
+                "type": "int",
+                "description": "周报样本保留天数",
+                "default": 30,
+                "hint": "超过这个天数的采样记录自动删除；从名单里去掉的玩家也按此到期删除。周报只用到最近 9 天。",
+                "slider": {
+                    "min": 14,
+                    "max": 180,
+                    "step": 1
+                }
+            },
+            "weekly_push_enabled": {
+                "type": "bool",
+                "description": "每周自动播报排行",
+                "default": false,
+                "hint": "到下面设定的时间，向播报目标发送每个模式一张近 7 天排行图。需要先开启“玩家周报功能”、填写名单和播报目标。"
+            },
+            "weekly_push_weekday": {
+                "type": "string",
+                "description": "播报日（每周）",
+                "default": "周一",
+                "options": [
+                    "周一",
+                    "周二",
+                    "周三",
+                    "周四",
+                    "周五",
+                    "周六",
+                    "周日"
+                ],
+                "hint": "每周哪一天播报，按北京时间。"
+            },
+            "weekly_push_time": {
+                "type": "string",
+                "description": "播报时间（时:分）",
+                "default": "10:00",
+                "hint": "24 小时制，北京时间，例如 10:00、21:30。采样在 03:00～09:00 进行，建议填 09:00 之后；填写有误时按周一 10:00。错过超过 6 小时不补发。"
+            },
+            "weekly_notify_targets": {
+                "type": "list",
+                "description": "周报播报目标",
+                "default": [],
+                "hint": "必须填写才会播报：完整会话标识（聊天里发 /sid 查看），最多 50 个。留空不播报，不会自动发给用过插件的群。仍受“限定聊天”限制。"
+            }
+        }
     }
 }

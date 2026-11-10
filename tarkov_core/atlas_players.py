@@ -2,7 +2,9 @@
 
 Every HTTP request goes through the plugin's single AtlasClient, so the shared start interval, the upstream
 Retry-After pause and the minute/hour budget (atlas_cooldown.py) apply to all of them. Nothing here polls, prefetches
-or retries in the background (Atlas author, 2026-11-08); requests happen only for a user's command.
+or retries in the background; requests happen for a user's command. The one background caller is the weekly
+report's nightly sampler (weekly_tasks.py), which paces itself by the rules the maintainer set after Atlas relaxed
+its terms (2026-11-10) and goes through this same client.
 """
 import asyncio
 import collections
