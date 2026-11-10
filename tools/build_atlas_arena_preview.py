@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT/'tools')]
 # Reuse the preview tool's minimal AstrBot logger stub and test fixture imports.
-import build_preview  # noqa: E402
+import build_preview  # noqa: E402, F401  (imported for its effect)
 from fixtures import atlas_profile  # noqa: E402
 from tarkov_core.atlas_card import build  # noqa: E402
 from tarkov_core.atlas_image import render_atlas_image  # noqa: E402

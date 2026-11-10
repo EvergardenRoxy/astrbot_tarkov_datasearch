@@ -1,7 +1,7 @@
 name: astrbot_tarkov_datasearch
 display_name: 塔科夫数据查询
-desc: 查询塔科夫玩家档案（等级、阵营、K/D、存活率、技能，数据来自 tarkov.dev 公开快照）、服务器状态、Boss 刷率，以及各服务器平均匹配时间（数据来自 Atlas），生成图片回复（玩家档案也可用文字/Markdown）。
-version: v0.5.1
+desc: 查询塔科夫玩家档案（等级、阵营、K/D、幸存率、技能、成就；默认来自 Atlas 实时查询，可改用 tarkov.dev 公开快照）、服务器状态、Boss 刷率，以及各服务器平均匹配时间（数据来自 Atlas），生成图片回复（tarkov.dev 快照也可用文字/Markdown）。
+version: v0.6.0
 author: Evergarden_Roxy
 astrbot_version: '>=4.16.0'
 repo: https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch

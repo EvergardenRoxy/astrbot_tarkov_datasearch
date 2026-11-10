@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 import unittest
 
 from tarkov_core.atlas_client import retry_after

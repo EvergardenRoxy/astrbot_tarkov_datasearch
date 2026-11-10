@@ -45,6 +45,10 @@ from .tarkov_core.resource_cache import ResourceCache
 from .tarkov_core.server_status import normalize_status
 from .tarkov_core.status_image import render_status_image
 from .tarkov_core.transport import NotFound, QueryError
+from .tarkov_core.weekly_image import render_weekly_image
+from .tarkov_core.weekly_report import SLACK as WEEKLY_SLACK, WEEK, build_card as build_weekly_card, build_ranking, build_report, extract_sample
+from .tarkov_core.weekly_store import WeeklyStore
+from .tarkov_core.weekly_tasks import WeeklyBroadcast, WeeklySampler, parse_schedule
 
 COMMAND = re.compile(r'^/?(?:tarkov|塔科夫)(?:\s+|$)', re.I)
 # ASCII digits only: \d would also accept full-width and other Unicode digits.
@@ -67,6 +71,12 @@ UNBIND_WORDS = ('unbind', '解绑')
 STATUS_WORDS = ('status', '状态')
 BOSS_WORDS = ('boss', '刷率')
 MATCHING_WORDS = ('matching', '匹配')
+WEEKLY_WORDS = ('weekly', '周报')
+RANK_WORDS = ('rank', 'ranking', '排行')
+# The weekly report's roster settings, one list of account ids or nicknames per mode (Arena is planned, not built).
+WEEKLY_LISTS = {'pvp': 'weekly_pvp_players', 'pve': 'weekly_pve_players', 'season': 'weekly_season_players'}
+# Listed players sampled per mode at most: 3 x 40 pulls of about 160 seconds fit the 03:00-09:00 window.
+WEEKLY_MAX_PLAYERS = 40
 # The last word of a player query: skip the local cache and ask Atlas again (maintainer: refresh is part of the query).
 REFRESH_WORDS = ('refresh', '刷新')
 PLAYER_SOURCES = ('atlas', 'tarkov-dev')
@@ -96,7 +106,7 @@ def every(seconds):
     return f'每 {hours} 小时'
 
 
-@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '绑定并查询塔科夫玩家档案（数据来自 tarkov.dev）', '0.5.1')
+@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '查询塔科夫玩家档案（默认来自 Atlas，可改用 tarkov.dev 快照）、服务器状态、Boss 刷率和匹配时间', '0.6.0')
 class TarkovPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -152,6 +162,16 @@ class TarkovPlugin(Star):
             self.boss_modes, self.boss_targets, self.boss_broadcast_active, self.boss_monitor_error)
         self.boss_poller = PollingTask(self.boss_notifications.cycle, self.boss_broadcast_active,
                                       self.boss_interval, self.boss_monitor_error)
+        self.weekly_clock = time.time
+        self.weekly_store = WeeklyStore(self.root/'weekly.sqlite3',
+                                        keep_days=lambda: self.int_setting('weekly_keep_days', 30, 14, 180))
+        self.weekly_image_slots = asyncio.Semaphore(2)
+        self.weekly_sampler = WeeklySampler(self.weekly_store, self.weekly_entries, self.weekly_resolve,
+                                            self.weekly_fetch, self.weekly_save, self.weekly_sampling_active,
+                                            self.weekly_error)
+        self.weekly_broadcast = WeeklyBroadcast(self.weekly_store, self.weekly_schedule, self.weekly_targets,
+                                                self.weekly_modes, self.weekly_ranking_image, self.send_weekly,
+                                                self.weekly_broadcast_active, self.weekly_error)
 
     async def initialize(self):
         await self.atlas_settings_actions()
@@ -186,6 +206,7 @@ class TarkovPlugin(Star):
                 await self.boss_store.thread(self.boss_store.retire)
             if self.boss_enabled() and self.config.get('boss_broadcast_enabled', False) is True:
                 logger.info('Tarkov Boss broadcasts idle: no eligible configured modes/targets; check settings and platform capability')
+        await self.weekly_start()
 
     async def atlas_settings_actions(self):
         """The one-shot picture actions and the history switch. Each one-shot setting is switched off and saved
@@ -388,10 +409,13 @@ class TarkovPlugin(Star):
                 f"Boss 默认模式：{self.cmd('boss 默认 <模式>')}；支持 pvp、pve、PVP S。\n") if self.boss_enabled() else ''
         matching = (f"服务器平均匹配时间图片：{self.cmd('匹配')}（数据来自 {ATLAS_NAME}：{ATLAS_URL}）\n"
                     if self.matching_enabled() else '')
+        weekly = (f"玩家周报图片：{self.cmd('周报 [模式] [昵称、账号ID 或 排行]')}（名单内玩家近 7 天的变化，每天凌晨采样）\n"
+                  if self.weekly_enabled() else '')
         words = ('QQ 官方机器人单词命令（后面的参数可以带空格）：tpvp、tpve、tseason、tarena [昵称、账号ID 或网址] [刷新]；'
                  'tbind <昵称、账号ID 或网址>、tunbind、thelp；tstatus、tboss [模式] [变化]'
-                 + ('、tmatch' if self.matching_enabled() else '') + '\n') if self.qq_words_enabled() else ''
-        return status+boss+matching+words
+                 + ('、tmatch' if self.matching_enabled() else '')
+                 + ('、tweekly [模式] [昵称]' if self.weekly_enabled() else '') + '\n') if self.qq_words_enabled() else ''
+        return status+boss+matching+weekly+words
 
     def atlas_help_text(self):
         index = '和 tarkov.dev 昵称名单' if self.index_enabled() else ''
@@ -423,6 +447,8 @@ class TarkovPlugin(Star):
             card['boss_enabled'] = True
         if self.matching_enabled():
             card['matching_enabled'] = True
+        if self.weekly_enabled():
+            card['weekly_enabled'] = True
         if self.qq_words_enabled():
             card['qq_words'] = True
         if self.player_source() == 'atlas':
@@ -536,6 +562,11 @@ class TarkovPlugin(Star):
     async def qq_tmatch(self, event: AstrMessageEvent):
         async for result in self.qq_word(event, 'matching'): yield result
 
+    @filter.command('tweekly', alias={'/tweekly'})
+    @filter.custom_filter(QQOfficialFilter)
+    async def qq_tweekly(self, event: AstrMessageEvent):
+        async for result in self.qq_word(event, 'weekly'): yield result
+
     @staticmethod
     def status_arguments(event):
         words = event.message_str.strip().split(maxsplit=1)
@@ -551,6 +582,9 @@ class TarkovPlugin(Star):
             return
         if words and words[0].lower() in MATCHING_WORDS:
             yield await self.matching_query(event, ' '.join(words[1:]))
+            return
+        if words and words[0].lower() in WEEKLY_WORDS:
+            yield await self.weekly_query(event, ' '.join(words[1:]))
             return
         action = 'query'
         if words and words[0].lower() in HELP_WORDS:
@@ -571,7 +605,9 @@ class TarkovPlugin(Star):
             return
         target = words[0] if words else None
         if action == 'bind' and target is None:
-            yield event.plain_result(f"用法：{self.cmd('绑定 <tarkov.dev 玩家页网址或账号ID>')}，"
+            # Atlas resolves nicknames itself; the snapshot source needs the website link or the id.
+            what = '<昵称、账号ID 或玩家页网址>' if self.player_source() == 'atlas' else '<tarkov.dev 玩家页网址或账号ID>'
+            yield event.plain_result(f"用法：{self.cmd('绑定 '+what)}，"
                                      f"例如 {self.cmd('绑定', page_url('pve', 1234567))}")
             return
         url = parse_player_url(target) if target else None
@@ -724,8 +760,13 @@ class TarkovPlugin(Star):
             return event.plain_result('你还没有绑定账号。')
         return event.plain_result(f'已解除绑定：{removed[1]}（账号 ID {removed[0]}）。')
 
-    async def bind(self, event, mode, target, url, trace):
-        if url or ACCOUNT_ID.fullmatch(target):
+    async def bind(self, event, mode, target, url, trace, aid=None, note=''):
+        """Bind through the tarkov.dev snapshots. `aid`: the account when the caller already settled it (the Atlas
+        flow resolved the name by the name list or Atlas' search, which the local record does not know); `note`: a
+        sentence put before the reply (why the snapshot was used)."""
+        if aid is not None:
+            pass
+        elif url or ACCOUNT_ID.fullmatch(target):
             aid = url[1] if url else int(target)
         else:
             rows, _ = await asyncio.to_thread(self.accounts.lookup, target)
@@ -740,14 +781,14 @@ class TarkovPlugin(Star):
         if not found and failed:
             raise next(iter(failed.values()))
         if not found:
-            return event.plain_result(self.none_found(aid, mode)
+            return event.plain_result(note+self.none_found(aid, mode)
                                       + self.first_time(mode, '自己', self.cmd('绑定'), explicit=mode == 'arena'))
         nickname = (found.get(mode) or next(iter(found.values())))['nickname']
         await asyncio.to_thread(self.accounts.bind, self.binding_key(event), aid, nickname)
         missing = [m for m in self.looked_at(mode) if m not in found and m not in failed]
         later = (f'{self.modes_text(missing)} 模式的档案要在 tarkov.dev 用该模式搜索一次自己才会出现。' if missing else '')
         unknown = f'{self.failure_text(failed)}。' if failed else ''
-        return event.plain_result(f'已绑定：{nickname}（账号 ID {aid}），目前在 {self.modes_text(found)} 模式下有档案。'
+        return event.plain_result(f'{note}已绑定：{nickname}（账号 ID {aid}），目前在 {self.modes_text(found)} 模式下有档案。'
                                   f'{unknown}{later}'
                                   f'之后发送 {self.cmd()} 即可查询自己（先看 {label_of(self.default_mode())}，没有时自动换成有档案的模式），'
                                   f"也可以写模式，例如 {self.cmd('pve')}、{self.cmd('赛季')}。"
@@ -819,7 +860,9 @@ class TarkovPlugin(Star):
                 raise
             if action == 'bind':
                 logger.warning('Tarkov [%s] Atlas bind lookup failed, using tarkov.dev: %s', trace, type(exc).__name__)
-                yield await self.bind(event, mode, target, url, trace)
+                # The account is already settled (perhaps by Atlas' search): bind() must not resolve the name again.
+                yield await self.bind(event, mode, target, url, trace, aid=aid,
+                                      note=f'{failure_text(exc)}，已改用 tarkov.dev 快照确认账号。')
             else:
                 yield await self.atlas_fallback(event, mode, aid, exc, trace)
             return
@@ -836,6 +879,7 @@ class TarkovPlugin(Star):
                 notes.append(f'注意：{where}中的 {asked} 对应账号 ID {aid}，档案里现在的昵称是 {summary["nickname"]}，可能改过名。')
         if not summary.get('from_cache'):
             await self.record_history(aid, mode, summary, trace)
+            await self.weekly_feed(aid, mode, summary)
             try:
                 await asyncio.to_thread(self.accounts.remember, aid, summary['nickname'])
             except sqlite3.Error as exc:
@@ -901,7 +945,7 @@ class TarkovPlugin(Star):
             if matches:
                 yield event.plain_result(self.ambiguous(target, matches, total))
             else:
-                yield event.plain_result(f'记录和名单里都没有 {target}；Atlas 只能搜索 3～15 个字符的昵称（字母、数字、_ . -），'
+                yield event.plain_result(f'记录和名单里都没有 {target}；Atlas 只能搜索 3～15 个字符的昵称（字母、数字、_ -），'
                                          '更长的名字请用账号 ID 或 tarkov.dev 玩家页网址查询。')
             return
         try:
@@ -1544,8 +1588,215 @@ class TarkovPlugin(Star):
         finally:
             self.active.discard(owner)
 
+    # ---- Weekly report (docs/weekly-report.md): nightly samples of the listed players, a rolling seven days ----
+
+    def weekly_enabled(self):
+        return self.config.get('weekly_enabled', False) is True and self.player_source() == 'atlas'
+
+    def weekly_roster(self, mode):
+        """The listed players of a mode as written in the settings: account ids or nicknames, without repeats."""
+        seen, found = set(), []
+        for text in self.config_list(WEEKLY_LISTS[mode]) or []:
+            usable = (ACCOUNT_ID.fullmatch(text) and int(text) > 0) or NAME.fullmatch(text) or ATLAS_NICKNAME.fullmatch(text)
+            if usable and text.lower() not in seen:
+                seen.add(text.lower())
+                found.append(text)
+        return found[:WEEKLY_MAX_PLAYERS]
+
+    def weekly_entries(self):
+        return [(mode, entry) for mode in WEEKLY_LISTS for entry in self.weekly_roster(mode)]
+
+    def weekly_modes(self):
+        return [mode for mode in WEEKLY_LISTS if self.weekly_roster(mode)]
+
+    def weekly_sampling_active(self):
+        return not self._terminated and self.weekly_enabled() and bool(self.weekly_entries())
+
+    def weekly_schedule(self):
+        """(weekday 0-6, hour, minute) of the broadcast, UTC+8; Monday 10:00 when the settings are unusable."""
+        return parse_schedule(self.config.get('weekly_push_weekday', '周一'), self.config.get('weekly_push_time', '10:00')) or (0, 10, 0)
+
+    def weekly_targets(self):
+        """Broadcast targets must be listed (maintainer): an empty list sends nothing, unlike status and Boss.
+        QQ official targets need no extra switch (the maintainer verified proactive push on a deployed bot)."""
+        targets = self.config.get('weekly_notify_targets', [])
+        if not isinstance(targets, list) or not targets:
+            return []
+        return self.notification_targets('weekly_notify_targets', True)
+
+    def weekly_broadcast_active(self):
+        return (not self._terminated and self.weekly_enabled() and self.config.get('weekly_push_enabled', False) is True
+                and bool(self.weekly_modes()) and bool(self.weekly_targets()))
+
+    @staticmethod
+    def weekly_error(exc):
+        if isinstance(exc, (PermanentDeliveryError, PermissionError)):
+            logger.warning('Tarkov weekly broadcast target refused; check the target and platform permissions')
+            return
+        logger.warning('Tarkov weekly task failed: %s', type(exc).__name__)
+
+    async def weekly_start(self):
+        """Start (or stop) the nightly sampler and the weekly broadcast according to the settings."""
+        try:
+            await asyncio.to_thread(self.weekly_store.prune)
+        except (OSError, sqlite3.Error) as exc:
+            logger.warning('Tarkov weekly data maintenance failed: %s', type(exc).__name__)
+        if self.config.get('weekly_enabled', False) is True and self.player_source() != 'atlas':
+            logger.info('Tarkov weekly report idle: it needs the Atlas player source')
+        for task, active in ((self.weekly_sampler, self.weekly_sampling_active()), (self.weekly_broadcast, self.weekly_broadcast_active())):
+            if active:
+                task.start()
+            else:
+                await task.close()
+        if self.weekly_enabled() and self.config.get('weekly_push_enabled', False) is True and not self.weekly_broadcast_active():
+            logger.info('Tarkov weekly broadcast idle: it needs listed players and listed targets')
+
+    async def weekly_resolve(self, mode, entry):
+        """(account id, nickname, whether Atlas was asked) of a listed nickname: the shared name record first, then
+        Atlas' search (one request). (None, None, asked) when it cannot be settled; an account id is the safe entry."""
+        rows, _ = await asyncio.to_thread(self.accounts.lookup, entry)
+        exact = [row for row in rows if row[1] == entry]
+        if len(exact) == 1 or len(rows) == 1:
+            aid, name = (exact or rows)[0]
+            return int(aid), name, False
+        if not ATLAS_NICKNAME.fullmatch(entry):
+            logger.warning('Tarkov weekly roster: %s (%s) cannot be searched on Atlas; list the account ID instead', entry, mode)
+            return None, None, False
+        found = await self.atlas_players.search(entry, mode)
+        exact = [item for item in found if item[1] == entry]
+        folded = [item for item in found if item[1].lower() == entry.lower()]
+        pick = exact if len(exact) == 1 else folded if len(folded) == 1 else None
+        if not pick:
+            logger.warning('Tarkov weekly roster: %s (%s) not found or ambiguous on Atlas; list the account ID instead', entry, mode)
+            return None, None, True
+        return pick[0][0], pick[0][1], True
+
+    async def weekly_fetch(self, mode, aid):
+        """One fresh Atlas document for the nightly sample (no user quota: the sampler paces itself)."""
+        summary = await self.atlas_players.profile(mode, aid, refresh=True)
+        await self.record_history(aid, mode, summary, 'weekly')
+        try:
+            await asyncio.to_thread(self.accounts.remember, aid, summary['nickname'])
+        except sqlite3.Error as exc:
+            logger.warning('Tarkov name record not saved: %s', type(exc).__name__)
+        return summary
+
+    async def weekly_save(self, aid, mode, summary):
+        try:
+            sample = await asyncio.to_thread(extract_sample, summary.get('doc'), mode)
+            return bool(sample) and await asyncio.to_thread(self.weekly_store.add_sample, aid, mode, sample, summary.get('fetched'))
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            logger.warning('Tarkov weekly sample not saved: %s', type(exc).__name__)
+            return False
+
+    async def weekly_players(self, mode):
+        """[(entry, account id or None, nickname or None)] of a mode's roster; an id entry is its own account."""
+        rows = await asyncio.to_thread(self.weekly_store.roster, mode, self.weekly_roster(mode))
+        return [(entry, int(entry) if aid is None and ACCOUNT_ID.fullmatch(entry) else aid, name) for entry, aid, name in rows]
+
+    async def weekly_feed(self, aid, mode, summary):
+        """A user's fresh Atlas lookup of a listed player is one more sample, at no cost."""
+        if not self.weekly_enabled() or mode not in WEEKLY_LISTS or not self.weekly_roster(mode):
+            return
+        try:
+            if aid in {known for _, known, _ in await self.weekly_players(mode)}:
+                await self.weekly_save(aid, mode, summary)
+        except (OSError, sqlite3.Error) as exc:
+            logger.warning('Tarkov weekly sample not saved: %s', type(exc).__name__)
+
+    async def weekly_report(self, aid, mode):
+        now = self.weekly_clock()
+        samples = await asyncio.to_thread(self.weekly_store.samples, aid, mode, now-WEEK-WEEKLY_SLACK-86400)
+        return build_report(samples, mode, now)
+
+    async def weekly_ranking(self, mode):
+        """The ranking card of a mode, or None when no listed player has a report yet."""
+        entries = []
+        for entry, aid, name in await self.weekly_players(mode):
+            entries.append((name or entry, await self.weekly_report(aid, mode) if aid is not None else None))
+        return build_ranking(entries, mode)
+
+    async def weekly_picture(self, card):
+        await self.prepare_font()
+        async with self.weekly_image_slots:
+            return await asyncio.to_thread(render_weekly_image, card)
+
+    async def weekly_ranking_image(self, mode):
+        card = await self.weekly_ranking(mode)
+        return await self.weekly_picture(card) if card else None
+
+    async def send_weekly(self, target, image_data):
+        if not self.weekly_broadcast_active() or target not in self.weekly_targets():
+            raise PermanentDeliveryError('目标不再允许周报播报')
+        return await self.context.send_message(target, MessageChain(chain=[
+            Image.fromBytes(image_data), Plain(f'数据来源：{ATLAS_NAME} {ATLAS_URL}')]))
+
+    async def weekly_query(self, event, arguments=''):
+        """`周报 [模式] [昵称、账号ID 或 排行]`: a listed player's last seven days, or the mode's ranking. Read from the
+        nightly samples only; the command never asks Atlas. Image only (Atlas data); errors are one text line."""
+        if not self.allowed(event):
+            return event.plain_result('此会话或用户没有塔科夫查询权限。')
+        if self.config.get('weekly_enabled', False) is not True:
+            return event.plain_result('玩家周报尚未开启，请联系管理员在设置中启用。')
+        if self.player_source() != 'atlas':
+            return event.plain_result('玩家周报需要 Atlas 数据来源，当前设置的是 tarkov.dev 快照。')
+        words = arguments.split()
+        mode = parse_mode(words[0]) if words else None
+        if mode:
+            words = words[1:]
+        if mode == 'arena':
+            return event.plain_result('竞技场周报还没有实现，目前支持 pvp、pve、赛季。')
+        if len(words) > 1:
+            return event.plain_result(f"用法：{self.cmd('周报 [模式] [昵称、账号ID 或 排行]')}")
+        target = words[0] if words else None
+        mode = mode or self.default_mode()
+        label = label_of(mode)
+        owner = self.owner(event)
+        if owner in self.active:
+            return event.plain_result('你的上一次查询还没完成，请稍候。')
+        self.active.add(owner)
+        try:
+            players = await self.weekly_players(mode)
+            if not players:
+                return event.plain_result(f'{label} 周报名单是空的，请管理员在插件设置的“玩家周报”里填写玩家。')
+            chosen = None
+            if target and target.lower() not in RANK_WORDS:
+                wanted = target.lower()
+                chosen = next((player for player in players if wanted in (player[0].lower(), str(player[1]), (player[2] or '').lower())), None)
+                if chosen is None:
+                    return event.plain_result(f"{target} 不在 {label} 周报名单内（名单由管理员在插件设置里维护）。"
+                                              f"看排行：{self.cmd('周报', self.mode_word(mode), '排行')}")
+            elif target is None:
+                bound = await asyncio.to_thread(self.accounts.bound, self.binding_key(event))
+                chosen = next((player for player in players if bound and player[1] == bound[0]), None)
+            if chosen is not None:
+                name = chosen[2] or chosen[0]
+                report = await self.weekly_report(chosen[1], mode) if chosen[1] is not None else None
+                if report is None:
+                    return event.plain_result(f'{name} 的 {label} 周报样本还不够：插件每天凌晨采样一次，至少要有隔天的两次样本。')
+                card = build_weekly_card(report)
+            else:
+                card = await self.weekly_ranking(mode)
+                if card is None:
+                    return event.plain_result(f'{label} 周报名单里的玩家样本还不够：插件每天凌晨采样一次，至少要有隔天的两次样本。')
+            try:
+                data = await self.weekly_picture(card)
+            except Exception as exc:
+                logger.warning('Tarkov weekly image failed: %s', type(exc).__name__)
+                if isinstance(exc, FontDownloadError):
+                    return event.plain_result(str(exc))
+                return event.plain_result('周报图片生成失败，请稍后再试。')
+            return event.chain_result([Image.fromBytes(data), Plain(f'数据来源：{ATLAS_NAME} {ATLAS_URL}')])
+        except (OSError, sqlite3.Error) as exc:
+            logger.warning('Tarkov weekly query failed: %s', type(exc).__name__)
+            return event.plain_result('周报数据读取失败，请稍后再试。')
+        finally:
+            self.active.discard(owner)
+
     async def terminate(self):
         self._terminated = True
+        await self.weekly_sampler.close()
+        await self.weekly_broadcast.close()
         await self.matching.close()
         await self.atlas_players.close()
         await self.atlas_assets.close()

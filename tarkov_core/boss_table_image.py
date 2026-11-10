@@ -1,5 +1,4 @@
 """Dark Boss-by-map probability matrix, with immutable column pagination."""
-import email.utils
 import io
 import re
 from collections import OrderedDict
@@ -10,7 +9,6 @@ from decimal import Decimal
 from PIL import Image, ImageDraw, ImageOps
 
 from .boss_monitor import percent
-from .card import when
 from .image import fit, font, jpeg, wrap
 from .modes import label_of
 

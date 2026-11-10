@@ -1,6 +1,6 @@
 """Synthetic profiles shaped like players.tarkov.dev's (fields as of 2026-10-13). Every value is invented: the numbers
 are round on purpose, so they cannot be mistaken for (or come from) a real profile."""
-from font_support import TEST_FONT  # Complete font fixture; no network access.
+from font_support import TEST_FONT  # noqa: F401  (imported for its effect: the complete font fixture; no network access)
 
 import copy
 

@@ -2,13 +2,12 @@
 plugin's query/bind flow. Every document is invented (fixtures.atlas_profile); no test reaches the real service."""
 import asyncio
 import copy
-import json
 import unittest
 from unittest.mock import patch
 
 from aiohttp import web
 
-from fixtures import ATLAS_ARENA, ATLAS_PROFILE, arena_profile, atlas_profile, profile
+from fixtures import ATLAS_ARENA, arena_profile, atlas_profile, profile
 from tarkov_core import atlas_client
 from tarkov_core.atlas_client import AtlasClient, AtlasHTTPError, allowed
 from tarkov_core.atlas_cooldown import AtlasBudget, AtlasBudgetError, AtlasCooldown, AtlasCooldownError
@@ -146,6 +145,26 @@ class BudgetAndGateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.retry_after_seconds, 60)
 
 
+    async def test_claim_within_refuses_at_once_when_the_next_start_is_past_the_limit(self):
+        clock = Clock()
+        gate = AtlasCooldown(30, clock=clock)
+        async def sleep(seconds):
+            self.fail('must not wait for a start that comes after the limit')
+        async with gate.claim():
+            pass
+        with self.assertRaises(AtlasCooldownError) as caught:
+            async with gate.claim_within(20, sleep=sleep):
+                self.fail('admitted before the shared interval passed')
+        self.assertEqual(caught.exception.retry_after_seconds, 30)
+        # The same start is reachable with a limit that covers it.
+        slept = []
+        async def wait(seconds):
+            slept.append(seconds)
+            clock.advance(seconds)
+        async with gate.claim_within(40, sleep=wait):
+            pass
+        self.assertEqual(slept, [30])
+
 class ClientTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.clock = Clock()
@@ -203,6 +222,25 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AtlasBudgetError):
             await self.client.lookup(1234567, 'pve')
         self.assertEqual(len(self.seen), 1)
+
+    async def test_player_wait_covers_a_longer_shared_interval(self):
+        """A nickname query is a search followed by a lookup one interval later: the wait must reach that start."""
+        self.assertEqual(self.client.player_wait(), 20)
+        waits = []
+        from contextlib import asynccontextmanager
+        @asynccontextmanager
+        async def gate(max_wait):
+            waits.append(max_wait)
+            yield
+        for interval, expected in ((10, 20), (20, 30), (30, 40), (300, 310)):
+            self.client.cooldown.interval = interval
+            with patch.object(self.client.cooldown, 'claim_within', gate):
+                await self.client.search('Test_Player', 'pve')
+                await self.client.lookup(1, 'pve')
+            self.assertEqual(waits[-2:], [expected, expected])
+        with patch.object(self.client.cooldown, 'claim_within', gate):
+            await self.client.lookup(1, 'pve', max_wait=1)
+        self.assertEqual(waits[-1], 1)
 
     async def test_a_refused_gate_gives_the_budget_back(self):
         self.client.cooldown.pause(600)
@@ -312,6 +350,46 @@ class PlayerServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AtlasHTTPError):
             await self.players.profile('pve', 1, charge=quota.ticket('a', False))
         self.assertEqual(len(quota.history['a']), 1)
+
+    async def test_a_sent_search_still_counts_when_the_lookup_is_refused(self):
+        """Only a query with nothing sent is given back: after the nickname search reached Atlas, a refused lookup
+        must not make the whole query free (it could then be repeated at the cost of the shared budget)."""
+        quota = UserQuota(lambda: (10, 3, 30, 300), clock=self.clock)
+        self.atlas.searches['Name'] = [(1, 'Name')]
+        self.atlas.docs[(1, 'pve')] = AtlasCooldownError(5)
+        charge = quota.ticket('a', False)
+        self.assertEqual(await self.players.search('Name', 'pve', charge=charge), [(1, 'Name')])
+        with self.assertRaises(AtlasCooldownError):
+            await self.players.profile('pve', 1, charge=charge)
+        self.assertEqual(len(quota.history['a']), 1)
+        # A search Atlas answered with an error was sent as well.
+        self.atlas.searches['Other'] = AtlasHTTPError(502)
+        self.atlas.docs[(2, 'pve')] = AtlasBudgetError(60)
+        self.clock.advance(30)
+        charge = quota.ticket('a', False)
+        with self.assertRaises(AtlasHTTPError):
+            await self.players.search('Other', 'pve', charge=charge)
+        with self.assertRaises(AtlasBudgetError):
+            await self.players.profile('pve', 2, charge=charge)
+        self.assertEqual(len(quota.history['a']), 2)
+        # The other order (the rename check after a lookup): the lookup was sent, the refused search changes nothing.
+        self.atlas.put(3, 'pve')
+        self.atlas.searches['Third'] = AtlasCooldownError(5)
+        self.clock.advance(30)
+        charge = quota.ticket('a', False)
+        await self.players.profile('pve', 3, charge=charge)
+        with self.assertRaises(AtlasCooldownError):
+            await self.players.search('Third', 'pve', charge=charge)
+        self.assertEqual(len(quota.history['a']), 3)
+        # A lookup Atlas answered with an error was sent too.
+        self.atlas.docs[(4, 'pve')] = AtlasHTTPError(502)
+        self.clock.advance(30)
+        charge = quota.ticket('a', False)
+        with self.assertRaises(AtlasHTTPError):
+            await self.players.profile('pve', 4, charge=charge)
+        with self.assertRaises(AtlasCooldownError):
+            await self.players.search('Third', 'pve', charge=charge)
+        self.assertEqual(len(quota.history['a']), 4)
 
     async def test_cache_at_least_a_minute_and_refresh_skips_it(self):
         self.atlas.put(1, 'pve')
@@ -696,6 +774,40 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         await self.ask(plugin, '/tarkov pvp 刷新')
         self.assertEqual(self.atlas.calls[-1], ('lookup', 1, 'pvp'))
         self.assertIn('还没有绑定账号', (await self.ask(plugin, '/tarkov', sender='bob'))[0])
+
+    async def test_a_failed_atlas_bind_keeps_the_account_the_search_found(self):
+        """The name was settled by Atlas' search (or the name list); when the lookup then fails, the tarkov.dev
+        fallback binds that account instead of asking the local record again and answering "cannot tell"."""
+        plugin = self.plugin()
+        self.profiles[('pve', 1)] = profile(aid=1)
+        self.atlas.searches['Test_Player'] = [(1, 'Test_Player')]
+        self.atlas.docs[(1, 'pve')] = self.error(502)
+        reply = (await self.ask(plugin, '/tarkov 绑定 Test_Player'))[0]
+        self.assertNotIn('不能确定', reply)
+        self.assertIn('（账号 ID 1）', reply)
+        self.assertIn('已绑定：', reply)
+        # The reply says why the snapshot was used.
+        self.assertIn('Atlas 查询失败（HTTP 502），已改用 tarkov.dev 快照确认账号。', reply)
+        self.assertEqual(self.fetched[0], ('pve', 1))
+        self.assertIsNotNone(await asyncio.to_thread(plugin.accounts.bound, plugin.binding_key(Event('x', sender='alice'))))
+        # By account id the fallback worked before and still does, with the same note.
+        self.atlas.docs[(2, 'pve')] = self.error(502)
+        self.profiles[('pve', 2)] = profile(aid=2)
+        reply = (await self.ask(plugin, '/tarkov 绑定 2', sender='bob'))[0]
+        self.assertIn('（账号 ID 2）', reply)
+        self.assertIn('已改用 tarkov.dev 快照确认账号', reply)
+
+    async def test_usage_and_nickname_texts_match_what_atlas_queries_accept(self):
+        plugin = self.plugin()
+        usage = (await self.ask(plugin, '/tarkov 绑定'))[0]
+        self.assertIn('绑定 <昵称、账号ID 或玩家页网址>', usage)
+        # The input rule has no dot, so the texts must not offer one.
+        self.assertIn('请发送昵称', (await self.ask(plugin, '/tarkov Dotted.Name'))[0])
+        long_name = (await self.ask(plugin, '/tarkov TarkovCitizen1234567'))[0]
+        self.assertIn('Atlas 只能搜索 3～15 个字符的昵称（字母、数字、_ -）', long_name)
+        with self.assertRaises(QueryError) as caught:
+            await AtlasPlayers(FakeAtlas()).search('TarkovCitizen1234567', 'pve')
+        self.assertIn('（字母、数字、_ -）', str(caught.exception))
 
     async def test_a_picture_failure_is_reported_with_the_links(self):
         plugin = self.plugin(draw=True)

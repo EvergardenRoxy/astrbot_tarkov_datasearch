@@ -14,6 +14,9 @@ GROUPS = {
                'status_qq_push_enabled'),
     'boss': ('boss_enabled', 'boss_broadcast_enabled', 'boss_poll_minutes', 'boss_modes', 'boss_notify_targets',
              'boss_qq_push_enabled', 'boss_event_ignore', 'boss_portraits_update'),
+    'weekly': ('weekly_enabled', 'weekly_pvp_players', 'weekly_pve_players', 'weekly_season_players',
+               'weekly_keep_days', 'weekly_push_enabled', 'weekly_push_weekday', 'weekly_push_time',
+               'weekly_notify_targets'),
 }
 GROUP_OF = {key: group for group, keys in GROUPS.items() for key in keys}
 

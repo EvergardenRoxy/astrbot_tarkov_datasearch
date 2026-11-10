@@ -39,6 +39,10 @@ CATALOG = 'catalog.json'
 FEEDS = (('tasks', 'pvp'), ('tasks', 'pve'), ('items', 'pvp'))
 
 
+class CatalogUnavailable(RuntimeError):
+    """The icon catalog could not be built a moment ago; it is not tried again until the wait is over."""
+
+
 def sanitize(body):
     """PNG bytes of a downloaded picture, scaled into STORE_SIZE; raises on anything that is not a sane image."""
     if len(body) > DOWNLOAD_LIMITS[1]:
@@ -106,6 +110,9 @@ class AtlasAssets:
         self.memory, self.failed, self.pending = {}, {}, {}
         self.catalog_data = None
         self.rebuild_after = 0
+        # After a failed build (public data unreachable) pictures are drawn without the catalog until this time,
+        # instead of each one waiting for the same failing download.
+        self.catalog_retry_at = 0
         self.slots = asyncio.Semaphore(SLOTS)
         self.lock = asyncio.Lock()
         self.closed = False
@@ -136,10 +143,14 @@ class AtlasAssets:
         self.write(self.root/CATALOG, json.dumps(catalog, ensure_ascii=False).encode())
 
     async def catalog(self, *, rebuild=False):
-        """The icon links: memory, then the saved catalog, then built from the public feeds (and saved)."""
+        """The icon links: memory, then the saved catalog, then built from the public feeds (and saved). A failed
+        build raises, and for FAILURE_SECONDS afterwards CatalogUnavailable is raised without another try; `rebuild`
+        (the manual update, a new achievement) always tries."""
         if self.catalog_data is not None and not rebuild:
             return self.catalog_data
         if not rebuild:
+            if self.clock() < self.catalog_retry_at:
+                raise CatalogUnavailable()
             try:
                 saved = await asyncio.to_thread(self.read_catalog)
             except (OSError, ValueError, TypeError, AttributeError):
@@ -147,10 +158,17 @@ class AtlasAssets:
             if saved and saved['achievements']:
                 self.catalog_data = saved
                 return saved
-        feeds = []
-        for resource, mode in FEEDS:
-            feeds.append(await self.feed(resource, mode))
-        catalog = await asyncio.to_thread(build_catalog, feeds)
+        try:
+            feeds = []
+            for resource, mode in FEEDS:
+                feeds.append(await self.feed(resource, mode))
+            catalog = await asyncio.to_thread(build_catalog, feeds)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self.catalog_retry_at = self.clock()+FAILURE_SECONDS
+            raise
+        self.catalog_retry_at = 0
         if not self.closed:
             await asyncio.to_thread(self.write_catalog, catalog)
             self.catalog_data = catalog
@@ -280,6 +298,7 @@ class AtlasAssets:
             self.memory.clear()
             self.failed.clear()
             self.catalog_data = None
+            self.catalog_retry_at = self.rebuild_after = 0
             return await asyncio.to_thread(self.remove_all)
 
     async def close(self):

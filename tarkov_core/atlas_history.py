@@ -5,7 +5,8 @@ Stores Atlas' raw response (gzip-compressed JSON) of every successful lookup; ta
 nothing. Retention (hours) and the total size cap (MiB) come from the settings; the oldest rows go first. Only this
 plugin's own data directory is written; the privacy switch turns recording off and deletes the file.
 
-The read side (latest, history, compare, accounts) is the interface for future features; nothing schedules pulls yet.
+The read side (latest, history, compare, accounts) is the interface for future features. The weekly report keeps its
+own compact samples (weekly_store.py); its nightly pulls are recorded here like any other successful lookup.
 """
 import datetime
 import gzip

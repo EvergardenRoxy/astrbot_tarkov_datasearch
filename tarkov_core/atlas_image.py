@@ -243,9 +243,10 @@ def centered(d, cx, cy, value, face, size, width, color, weight=None, align='m',
     mid(d, cx, cy, clip(d, value, f, width), f, color, align)
 
 
-def statistics(d, card, top):
-    """Large horizontal PMC/Scav rows; header and headline use the same model's survival formula."""
-    y = large_band(d, top, '统计数据')
+def statistics(d, card, top, *, title='统计数据', note=None):
+    """Large horizontal PMC/Scav rows; header and headline use the same model's survival formula.
+    `title` and `note` let the weekly report reuse the table and the exit bars (the defaults draw the player picture)."""
+    y = large_band(d, top, title)
     d.rectangle((M, y, W-M, y+62), fill=PANEL_2)
     x = M
     for label, width in STAT_COLUMNS:
@@ -262,14 +263,15 @@ def statistics(d, card, top):
         d.line((M, y+88, W-M, y+88), fill=RULE)
         y += 88
     mid(d, M+10, y+34, '幸存率 =（撤离＋转移）÷总战局数', font('sc', 27, 500), ACCENT)
-    return exit_bars(d, card, y+79)
+    return exit_bars(d, card, y+79, note=note)
 
 
-def exit_bars(d, card, top):
+def exit_bars(d, card, top, *, note=None):
     rows = card['combat_rows']
     mid(d, M+8, top+20, '撤离状态', font('sc', 30, 700), TEXT)
     pmc, scav = (row['stats'] for row in rows)
-    note = f"图例数字为 PMC / SCAV · 最长连续幸存：PMC {pmc['streak']} 局，SCAV {scav['streak']} 局"
+    if note is None:
+        note = f"图例数字为 PMC / SCAV · 最长连续幸存：PMC {pmc['streak']} 局，SCAV {scav['streak']} 局"
     mid(d, M+210, top+20, clip(d, note, font('sc', 24, 500), W-2*M-210), font('sc', 24, 500), DIM)
     x, bw, y = M+145, W-2*M-145, top+65
     for percent in (0, 25, 50, 75, 100):

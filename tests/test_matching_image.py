@@ -1,4 +1,4 @@
-from font_support import TEST_FONT  # Complete font fixture; no network access.
+from font_support import TEST_FONT  # noqa: F401  (imported for its effect: the complete font fixture; no network access)
 
 import dataclasses
 import io

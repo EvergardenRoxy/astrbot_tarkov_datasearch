@@ -28,6 +28,10 @@ ACCOUNT = re.compile(r'[1-9][0-9]{0,11}')
 NICKNAME = re.compile(r'[A-Za-z0-9_.-]{3,15}')
 # Longest wait for the shared gate in a player query (a lookup right after a search, a busy retry).
 PLAYER_WAIT_SECONDS = 20
+# A nickname query is a search and, one shared interval later, a lookup. With an interval above the usual wait the
+# lookup could never start in time (every nickname query waited 20 seconds and was refused), so the wait then
+# reaches that start plus this margin.
+PLAYER_WAIT_MARGIN = 10
 # Error codes of the public EFTForge relay; anything else is reported as 'http'.
 ERROR_CODES = ('busy', 'rate', 'session', 'backend', 'not_found', 'no_profile', 'mode', 'bad_account', 'bad_nickname',
                'lookup', 'unavailable')
@@ -123,14 +127,22 @@ class AtlasClient:
     async def matching(self):
         return await self._get(MATCHING_PATH, {'hours': '24'})
 
-    async def lookup(self, account_id, mode, *, max_wait=PLAYER_WAIT_SECONDS):
-        """One player document (`mode` is pvp, pve, season or arena). Waits at most `max_wait` for the shared gate."""
-        return await self._get(LOOKUP_PATH, {'accountId': str(account_id), 'mode': mode}, max_wait=max_wait,
+    def player_wait(self):
+        """How long a player request may wait for the shared gate: the usual limit, or the configured interval plus
+        a margin when that is longer."""
+        return max(PLAYER_WAIT_SECONDS, self.cooldown.interval+PLAYER_WAIT_MARGIN)
+
+    async def lookup(self, account_id, mode, *, max_wait=None):
+        """One player document (`mode` is pvp, pve, season or arena). Waits at most `max_wait` (default:
+        `player_wait()`) for the shared gate."""
+        return await self._get(LOOKUP_PATH, {'accountId': str(account_id), 'mode': mode},
+                               max_wait=self.player_wait() if max_wait is None else max_wait,
                                limits=PLAYER_LIMITS, counted=True)
 
-    async def search(self, nickname, mode, *, max_wait=PLAYER_WAIT_SECONDS):
+    async def search(self, nickname, mode, *, max_wait=None):
         """Atlas' nickname search: {nickname, players: [{accountId, nickname, side, level}], cached, mode}."""
-        return await self._get(SEARCH_PATH, {'nickname': nickname, 'mode': mode}, max_wait=max_wait,
+        return await self._get(SEARCH_PATH, {'nickname': nickname, 'mode': mode},
+                               max_wait=self.player_wait() if max_wait is None else max_wait,
                                limits=PLAYER_LIMITS, counted=True)
 
     async def _get(self, path, params, *, max_wait=None, limits=LIMITS, counted=False):

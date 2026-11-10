@@ -11,7 +11,7 @@ from functools import lru_cache
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from . import NAME, NOTICE, REPO, VERSION
-from .fonts import FONTS, FONT_FILES, font
+from .fonts import FONTS, font  # noqa: F401  (FONTS is re-exported: the tests read image.FONTS)
 from .card import EXITS, SURVIVED, refresh_note, stale_note
 
 

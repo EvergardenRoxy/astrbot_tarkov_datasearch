@@ -101,14 +101,15 @@ class AtlasCooldown:
     async def claim_within(self, max_wait, *, sleep=asyncio.sleep):
         """Like claim(), but waits up to `max_wait` seconds for the shared interval, an upstream pause or another
         request in flight (player queries: a name search is followed by a lookup that must respect the interval).
-        A pause longer than the wait fails at once; nothing is queued beyond `max_wait`."""
+        A pause or a next start beyond the wait fails at once instead of sleeping until the limit; nothing is
+        queued beyond `max_wait`."""
         deadline = self.clock()+max_wait
         while True:
             now = self.clock()
             remaining = max(self.next_start, self.paused_until)-now
             if not self.in_flight and remaining <= 0:
                 break
-            if self.paused_until > deadline or now >= deadline:
+            if max(self.next_start, self.paused_until) > deadline or now >= deadline:
                 raise AtlasCooldownError(max(0, remaining), busy=self.in_flight)
             step = max(remaining, POLL_SECONDS) if self.in_flight else remaining
             await sleep(min(step, deadline-now))

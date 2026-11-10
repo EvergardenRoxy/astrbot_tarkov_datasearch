@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 
 from tarkov_core import VERSION
-from tarkov_core.modes import GAME_MODES, MODES
+from tarkov_core.modes import GAME_MODES
 from tarkov_core.settings import GROUPS
 
 ROOT = Path(__file__).resolve().parents[1]

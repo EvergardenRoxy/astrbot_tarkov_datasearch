@@ -1099,7 +1099,8 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                  ('qq_tseason', 'tseason 7', 'season 7'), ('qq_tarena', 'tarena a b', 'arena a b'),
                  ('qq_tbind', 'tbind https://tarkov.dev/players/pve/7', 'bind https://tarkov.dev/players/pve/7'),
                  ('qq_tunbind', 'tunbind', 'unbind'), ('qq_thelp', 'thelp', 'help'), ('qq_tstatus', 'tstatus', 'status'),
-                 ('qq_tboss', 'tboss pve 变化', 'boss pve 变化'), ('qq_tmatch', 'tmatch', 'matching'))
+                 ('qq_tboss', 'tboss pve 变化', 'boss pve 变化'), ('qq_tmatch', 'tmatch', 'matching'),
+                 ('qq_tweekly', 'tweekly pve Player One', 'weekly pve Player One'))
         for handler, text, expected in cases:
             for platform in ('qq_official', 'qq_official_webhook'):
                 with self.subTest(handler=handler, platform=platform):
