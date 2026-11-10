@@ -10,19 +10,19 @@
 
 ## 当前状态
 
-- 本次交付目标 **0.5.1**（PVP／PVE／赛季手机读图、幸存率与 K/D 口径统一；待 PR 审核合并）；上次版本 0.5.0（服务器匹配时间与 Atlas 玩家查询；更早的版本见下方“各版本做了什么”）。尚未在聊天平台实测（维护者对 0.3.0 做过小范围封闭测试）。
+- 本次交付目标 **0.6.0**（玩家周报，以及 0.5.1 之后的检查与修正；在分支 `feat/player-mobile-statistics`，尚未合并）；上次版本 0.5.1（PVP／PVE／赛季手机读图、幸存率与 K/D 口径统一）、0.5.0（服务器匹配时间与 Atlas 玩家查询；更早的版本见下方“各版本做了什么”）。尚未在聊天平台实测（维护者对 0.3.0 做过小范围封闭测试）。
 - 已用真实网络把插件的查询流程完整跑过多遍：AstrBot 本身用测试替身代替，数据从 `players.tarkov.dev` 实际下载。用账号 ID、昵称和网址查过 PVP、PVE、赛季和竞技场。其中一份 PVE 档案与维护者从 tarkov.dev 网站下载的个人档案逐字段比对，完全一致。
 - 服务器状态、Boss 刷率、公共数据缓存和 QQ 官方机器人路由（0.4.5 起）默认关闭，见下方“0.4.5”一节和 handoff.md §3、§9。状态和 Boss 目前只回复图片；按维护者 2026-10-24 的更正，图片是默认、文字和 Markdown 仍要保留用于兼容，这部分暂缓。物品查询已做完又封存。
-- 自动测试共 358 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
+- 自动测试共 519 项，全部通过。每次推送代码时，GitHub Actions 会在 Python 3.12 和 3.13 上各跑一遍。
 
-修改由 Claude Opus 5.5（通过 Claude Code）完成，经项目维护者审阅。做法与 spark 项目相同：先写测试，再改代码，最后跑完全部测试。另外用“故意改坏代码”的方式检查测试：把关键保护逐一从代码里去掉，确认每一项都会被测试发现（每一轮修改都做，数量见下文各节）。
+修改由 Claude Opus 5.5、Claude Fable 5.2（均通过 Claude Code）和 OpenAI Codex 完成，经项目维护者审阅。做法与 spark 项目相同：先写测试，再改代码，最后跑完全部测试。另外用“故意改坏代码”的方式检查测试：把关键保护逐一从代码里去掉，确认每一项都会被测试发现（每一轮修改都做，数量见下文各节）。
 
 ## 自己核对的方法
 
 ```bash
 pip install -r requirements.txt
-python -m unittest discover -s tests   # 本次分支应显示 Ran 326 tests ... OK
-python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.5.1.zip
+python -m unittest discover -s tests   # 本次分支应显示 Ran 519 tests ... OK
+python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v0.6.0.zip
 ```
 
 在聊天中核对：
@@ -516,7 +516,7 @@ python tools/package_plugin.py         # 生成 dist/astrbot_tarkov_datasearch-v
 - [x] 数据单独存在 `weekly.sqlite3`，只存压缩后的数字，默认保留 30 天；不保存聊天用户 ID。
 - [x] 用户自己查询名单内玩家时顺带记一个样本。
 - [x] 519 项测试通过（新增 55 项）；26 处保护逐个撤销后均被测试发现；两张示例图已检查。
-- [x] 文档：[玩家周报](docs/weekly-report.md)、[规划记录](docs/weekly-report-plan.md)、CHANGELOG“未发布”、handoff。
+- [x] 文档：[玩家周报](docs/weekly-report.md)、[规划记录](docs/weekly-report-plan.md)、CHANGELOG、handoff。
 - [ ] 竞技场周报（规划见规划记录第 5 节，本次不做）。
 - [ ] 真实环境验证：一整晚的 Atlas 采样、聊天平台上的命令和定时播报。
-- [ ] README 功能列表加入玩家周报（按惯例发版时与维护者一起改）。
+- [x] 发版 0.6.0（维护者要求）：版本号统一升至 0.6.0，CHANGELOG“未发布”改为 0.6.0 小节；README 加入玩家周报（功能列表、`tweekly`、六组设置、示例图、文档链接）；AI 声明补充 Claude Fable 5.2；虚构数据的示例图按新版本号重新生成。

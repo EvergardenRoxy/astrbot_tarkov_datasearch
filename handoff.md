@@ -26,8 +26,8 @@ earlier). From now on new work is appended as new sections.
 | Item | Value |
 |---|---|
 | Task | AstrBot plugin to look up Escape from Tarkov player profiles in chat (maintainer request, 2026-10-13); since 2026-10-24 also public game data: server status, Boss spawn rates, items. |
-| License / AI statement | GPL-3.0-or-later. README and the top of CHANGELOG carry the same AI statement: participating AI listed by name only (Claude Opus 5.5 via Claude Code; the Boss background by GPT-Image-2.5-sunburst), no per-task description. Per-version AI notes were removed from CHANGELOG (maintainer, 2026-11-08). |
-| Release target | 0.5.1 on `main` (PR #14 merged 2026-11-08); review fixes after it are unreleased (last section, CHANGELOG "未发布"). Before: 0.5.0 on 2026-11-08; 0.4.8 on 2026-11-04; 0.4.7 on 2026-11-04; 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
+| License / AI statement | GPL-3.0-or-later. README and the top of CHANGELOG carry the same AI statement: participating AI listed by name only (Claude Opus 5.5 and, since 0.6.0, Claude Fable 5.2, both via Claude Code; OpenAI Codex; the Boss background by GPT-Image-2.5-sunburst), no per-task description. Per-version AI notes were removed from CHANGELOG (maintainer, 2026-11-08). |
+| Release target | 0.6.0 on `feat/player-mobile-statistics` (2026-11-10: weekly report plus the post-0.5.1 review fixes; not merged, no PR yet). Before: 0.5.1 on `main` (PR #14 merged 2026-11-08); 0.5.0 on 2026-11-08; 0.4.8 on 2026-11-04; 0.4.7 on 2026-11-04; 0.4.6 on 2026-10-24; 0.4.5 and 0.4.4 before) (`tarkov_core/__init__.py` `VERSION`, `metadata.yaml`, `@register(...)`, CHANGELOG; `test_version_is_consistent`). Release branches `v0.3.0` … `v0.4.4` are stacked one commit each (§10). |
 | Work branch | `main` was overwritten with the `1024` history on 2026-10-24 (§16); the item query was archived (§11). |
 | Tests | 519 (`python tools/download_font.py` once, then `python -m unittest discover -s tests`; needs `pip install -r requirements.txt`; local HTTP servers need sockets). CI runs Python 3.12 and 3.13 on pull requests and on `main`. |
 | AstrBot evidence | 4.16.0 wheel read and its registration/wake/filter/parser bodies replayed by `tools/verify_qq_routes.py` (146 cases at 0.4.6; SDK and network boundaries doubled). Plugin patterns copied from the spark plugin, which was live-tested on 4.28.2. The maintainer ran a small closed test of 0.3.0. **No live AstrBot run of the 1024 features; QQ image delivery and proactive push are unverified.** |
@@ -1011,8 +1011,12 @@ bind account and note, Atlas bind usage, the download bound of the rewritten tes
 
 Requested by the maintainer; implemented with Claude Code after a design discussion (decisions in
 `docs/weekly-report-plan.md` §3, user documentation `docs/weekly-report.md`). Based on branch `ccr-9dd865fa-km4sh9`
-(the post-0.5.1 review fixes) at the maintainer's request; pushed as `feat/player-mobile-statistics`. No version bump
-(still 0.5.1; CHANGELOG "未发布" has the entry); README untouched (edited with the maintainer at release).
+(the post-0.5.1 review fixes) at the maintainer's request; pushed as `feat/player-mobile-statistics`. Released as
+**0.6.0** the same day at the maintainer's request: version in `__init__`, `metadata.yaml`, `@register`, footer test
+strings; CHANGELOG "未发布" became "0.6.0 - 2026-11-10" (it also holds the post-0.5.1 review fixes); README gained the
+weekly report (feature list, `tweekly`, six settings groups, previews, links) and the AI statement in README and
+CHANGELOG adds Claude Fable 5.2 (maintainer's instruction). Previews with invented data were rebuilt for the footer
+version; the status, Boss and matching previews (live public data) were not.
 
 Maintainer decisions that shape the code:
 - **Background Atlas requests are allowed for this feature** (upstream relaxed its terms): start 03:00 Beijing time,

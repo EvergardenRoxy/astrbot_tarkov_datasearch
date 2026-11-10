@@ -1,17 +1,17 @@
-[![AI Co-created](https://img.shields.io/badge/AI-Claude%20Opus%205.5%20%2B%20Claude%20Code-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](README.md#ai-制作声明) [![AI Co-created](https://img.shields.io/badge/AI-OpenAI%20Codex-412991?style=for-the-badge&logo=openai&logoColor=white)](README.md#ai-制作声明)
+[![AI Co-created](https://img.shields.io/badge/AI-Claude%20Opus%205.5%20%2B%20Claude%20Fable%205.2%20%2B%20Claude%20Code-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](README.md#ai-制作声明) [![AI Co-created](https://img.shields.io/badge/AI-OpenAI%20Codex-412991?style=for-the-badge&logo=openai&logoColor=white)](README.md#ai-制作声明)
 
 > [!IMPORTANT]
 > **AI 共创声明：本更新日志所记录的修改与日志本身，由项目维护者与生成式 AI 共同完成。** AI 生成或修改的内容由项目维护者审阅、验证并承担最终维护责任。
 >
-> 参与的 AI：**Claude Opus 5.5**（通过 **Claude Code**）、**OpenAI Codex**；Boss 图的背景纹理由维护者用 **GPT-Image-2.5-sunburst** 生成。完整声明见 [README](README.md#ai-制作声明)。
+> 参与的 AI：**Claude Opus 5.5**、**Claude Fable 5.2**（均通过 **Claude Code**）、**OpenAI Codex**；Boss 图的背景纹理由维护者用 **GPT-Image-2.5-sunburst** 生成。完整声明见 [README](README.md#ai-制作声明)。
 
 # 更新日志
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## 未发布
+## 0.6.0 - 2026-11-10
 
-> 0.5.1 之后的检查与修正（2026-11-10），尚未发版，版本号仍是 0.5.1。**尚未在 QQ 等聊天平台实测。** 依据与验证见 [handoff.md](handoff.md) 的“Post-0.5.1 review fixes”一节。
+> 新增玩家周报，并包含 0.5.1 之后的检查与修正。**周报的夜间采样、聊天命令和每周播报尚未在真实 Atlas 与聊天平台上实测。** 依据与验证见 [handoff.md](handoff.md) 的“Weekly report”和“Post-0.5.1 review fixes”两节。
 
 ### 新增
 
@@ -35,10 +35,13 @@
 - Atlas 数据来源下，绑定用法提示改为“昵称、账号 ID 或玩家页网址”；昵称规则的提示去掉点号（输入规则本来就不接受点号）。
 - 插件说明（`metadata.yaml` 和注册描述）改为“玩家档案默认来自 Atlas，可改用 tarkov.dev 快照”，用词改为“幸存率”。
 - “Atlas 共用请求间隔”的设置提示写明排队上限。
+- **AI 声明**：README 与本日志的 AI 声明补充 Claude Fable 5.2（玩家周报和 0.5.1 之后的修正由其完成）。
+- README 补充玩家周报：功能列表、单词命令 `tweekly`、设置分组（六组）、示例图和文档链接。
+- 版本号升至 0.6.0。
 
 ### 开发
 
-- 测试：并发上限用例不再依赖 20 毫秒的固定等待；测试里打开的 SQLite 连接用完即关闭；清理未使用的导入。450 项测试通过。
+- 测试：并发上限用例不再依赖 20 毫秒的固定等待；测试里打开的 SQLite 连接用完即关闭；清理未使用的导入。加上周报的 55 项，共 519 项测试通过。
 - CI：完整字体按固定版本缓存，不再每次下载；只在 `main` 的推送和拉取请求时运行（此前有拉取请求的分支每次推送会跑两遍），其他分支可在 Actions 页面手动运行。
 
 ## 0.5.1 - 2026-11-08
