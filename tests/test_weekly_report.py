@@ -69,10 +69,40 @@ class SampleTests(unittest.TestCase):
         for value in (None, 'x', 1, 1.5, True, [], {}, [[None]], float('inf')):
             for field in ('stats', 'skills', 'achievements', 'experience', 'level', 'prestigeLevel'):
                 with self.subTest(field=field, value=value):
-                    self.assertEqual(extract_sample(atlas_profile('pve', **{field: value}), 'pve')['nickname'], 'Test_Player')
+                    result = extract_sample(atlas_profile('pve', **{field: value}), 'pve')
+                    if field == 'stats':
+                        self.assertIsNone(result)
+                    else:
+                        self.assertEqual(result['nickname'], 'Test_Player')
 
 
 class ReportTests(unittest.TestCase):
+    def test_missing_statistics_cannot_turn_a_gap_into_a_reset(self):
+        docs = [atlas_profile('pve', looked_up=iso(LAST-offset*DAY)) for offset in (2, 1, 0)]
+        docs[0]['stats']['pmc']['counters'] = [[['Sessions'], 1000]]
+        docs[1]['stats']['pmc'] = None
+        docs[2]['stats']['pmc']['counters'] = [[['Sessions'], 1005]]
+        samples = [extract_sample(doc, 'pve') for doc in docs]
+        self.assertIsNone(samples[1])
+        report = build_report([s for s in samples if s is not None], 'pve', LAST)
+        self.assertEqual(report['pmc']['raids'], 5)
+        self.assertFalse(report['reset'])
+
+    def test_sparse_and_empty_counters_are_valid_but_corruption_is_not(self):
+        doc = atlas_profile('pve')
+        doc['stats']['pmc']['counters'] = [[['Sessions'], 0]]
+        doc['stats']['scav']['counters'] = []
+        self.assertEqual(extract_sample(doc, 'pve')['scav']['raids'], 0)
+        for side in ('pmc', 'scav'):
+            for bad in (None, {}, [], {'counters': None}, {'counters': {}}, {'counters': [None]},
+                        {'counters': [[['Sessions'], None]]}, {'counters': [[['Sessions'], True]]},
+                        {'counters': [[['Sessions'], -1]]}, {'counters': [[['Sessions'], float('inf')]]},
+                        {'counters': [[['Sessions', {}], 1]]}):
+                with self.subTest(side=side, bad=bad):
+                    broken = copy.deepcopy(doc)
+                    broken['stats'][side] = bad
+                    self.assertIsNone(extract_sample(broken, 'pve'))
+
     def test_a_counter_that_drops_restarted_from_zero(self):
         self.assertEqual(increase([1000, 1010, 3, 9]), (19, True))
         self.assertEqual(increase([5, None, 7]), (2, False))

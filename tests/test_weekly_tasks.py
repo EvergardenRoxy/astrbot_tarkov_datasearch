@@ -3,12 +3,13 @@ import asyncio
 import pathlib
 import tempfile
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from tarkov_core.atlas_cooldown import AtlasBudgetError, AtlasCooldownError
 from tarkov_core.atlas_players import AtlasNotFound
 from tarkov_core.notifications import PermanentDeliveryError
 from tarkov_core.transport import ConnectionFailure
-from tarkov_core.weekly_store import WeeklyStore
+from tarkov_core.weekly_store import SampleResult, WeeklyStore
 from tarkov_core.weekly_tasks import (IDLE_SECONDS, WeeklyBroadcast, WeeklySampler, day_id, in_window, latest_slot,
                                       parse_schedule, until_window)
 from test_weekly_report import DAY, LAST
@@ -62,14 +63,14 @@ class SamplerTests(unittest.IsolatedAsyncioTestCase):
                                      lambda: self.on, self.errors.append, clock=lambda: self.now, sleep=self.sleep,
                                      rand=lambda low, high: (self.calls.append(('rand', low, high)), 37)[1])
 
-    async def resolve(self, mode, entry):
+    async def resolve(self, mode, entry, *, deadline=None):
         self.calls.append(('resolve', mode, entry))
         answer = self.names.get(entry, (None, None, True))
         if isinstance(answer, BaseException):
             raise answer
         return answer
 
-    async def fetch(self, mode, account_id):
+    async def fetch(self, mode, account_id, *, deadline=None):
         self.calls.append(('fetch', mode, account_id))
         answer = self.answers.get(account_id)
         if isinstance(answer, list):
@@ -78,9 +79,10 @@ class SamplerTests(unittest.IsolatedAsyncioTestCase):
             raise answer
         return {'nickname': f'Name{account_id}', 'doc': {}}
 
-    async def save(self, account_id, mode, summary):
+    async def save(self, account_id, mode, summary, *, day=None):
         self.saved.append((account_id, mode))
-        return True
+        self.store.attempted(mode, str(account_id), day, True)
+        return SampleResult.ADDED
 
     async def sleep(self, seconds):
         self.slept.append(seconds)
@@ -106,6 +108,53 @@ class SamplerTests(unittest.IsolatedAsyncioTestCase):
         self.names['Named'] = (22, 'Named', False)
         self.assertEqual(await self.sampler.step(), 'pulled')
         self.assertEqual(self.calls, [('resolve', 'pve', 'Named'), ('fetch', 'pve', 22)])
+
+    async def test_save_failure_or_invalid_sample_is_retried_but_bounded(self):
+        self.entries = [('pve', '11')]
+        original_save = self.sampler.save
+        self.sampler.save = AsyncMock(side_effect=OSError('one-off write failure'))
+        self.assertEqual(await self.sampler.step(), 'failed')
+        self.assertEqual(self.store.pending(self.entries, day_id(self.now)), self.entries)
+        self.sampler.save = original_save
+        self.assertEqual(await self.sampler.step(), 'pulled')
+        self.assertIsNone(await self.sampler.step())
+        for failure in (OSError('persistent write failure'), SampleResult.INVALID):
+            self.now += DAY
+            self.sampler.save = AsyncMock(**({'side_effect': failure} if isinstance(failure, Exception)
+                                            else {'return_value': failure}))
+            self.assertEqual(await self.sampler.step(), 'failed')
+            self.assertEqual(await self.sampler.step(), 'failed')
+            self.assertIsNone(await self.sampler.step())
+            self.assertEqual(self.sampler.save.await_count, 2)
+
+    async def test_new_alias_of_completed_account_never_pulls_it_again(self):
+        self.entries = [('pve', '11'), ('pve', 'Named')]
+        self.names['Named'] = (11, 'Named', True)
+        self.assertEqual(await self.sampler.step(), 'pulled')
+        self.assertEqual(await self.sampler.step(), 'resolved')
+        self.assertIsNone(await self.sampler.step())
+        self.assertEqual([call for call in self.calls if call[0] == 'fetch'], [('fetch', 'pve', 11)])
+
+    async def test_unwritable_progress_blocks_more_http_until_failure_can_be_recorded(self):
+        self.entries = [('pve', '11')]
+        self.sampler.save = AsyncMock(side_effect=OSError('disk full'))
+        with patch.object(self.store, 'attempted', side_effect=OSError('disk full')):
+            for _ in range(3):
+                with self.assertRaises(OSError):
+                    await self.sampler.step()
+        self.assertEqual([call for call in self.calls if call[0] == 'fetch'], [('fetch', 'pve', 11)])
+        # Once progress can be written again, the original failure consumes one attempt, not zero or three.
+        self.assertEqual(await self.sampler.step(), 'failed')
+        self.assertIsNone(await self.sampler.step())
+        self.assertEqual(self.sampler.save.await_count, 2)
+
+    async def test_local_alias_of_completed_account_is_skipped(self):
+        self.entries = [('pve', '11'), ('pve', 'Named')]
+        self.names['Named'] = (11, 'Named', False)
+        self.assertEqual(await self.sampler.step(), 'pulled')
+        self.assertEqual(await self.sampler.step(), 'skipped')
+        self.assertIsNone(await self.sampler.step())
+        self.assertEqual(self.saved, [(11, 'pve')])
 
     async def test_nothing_outside_the_window_or_when_off(self):
         for moment in (LAST-1, LAST+6*HOUR, LAST+12*HOUR):
@@ -144,7 +193,7 @@ class SamplerTests(unittest.IsolatedAsyncioTestCase):
     async def test_it_sleeps_until_three_and_survives_errors(self):
         self.now = LAST-200
         self.stop_after = 3
-        async def broken(mode, account_id):
+        async def broken(mode, account_id, **kwargs):
             raise RuntimeError('boom')
         self.sampler.fetch = broken
         self.entries = [('pve', '11')]

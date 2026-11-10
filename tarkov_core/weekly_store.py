@@ -1,14 +1,17 @@
 """Weekly report data in its own SQLite file: resolved roster names, each night's sampling progress, compact
 samples and broadcast records. Never the bindings database.
 
-The roster itself (account ids or nicknames per mode) lives in the plugin settings (maintainer, 2026-11-10); a roster
-entry is identified here by (mode, the entry lower-cased). Nothing is deleted when an entry leaves the settings:
+The roster itself (account ids or nicknames per mode) lives in the plugin settings (maintainer, 2026-11-10).
+Names retain their entry keys; nightly progress uses (mode, account id) once resolved, merging legacy entry keys.
+Nothing is deleted when an entry leaves the settings:
 samples simply expire (`keep_days`). No chat user ids are stored.
 """
 import json
+import math
 import sqlite3
 import threading
 import time
+from enum import Enum
 
 from .modes import GAME_MODES
 
@@ -27,7 +30,7 @@ CREATE TABLE IF NOT EXISTS pushes (
     attempts INTEGER NOT NULL DEFAULT 0, at REAL NOT NULL, PRIMARY KEY (slot, target, mode));
 '''
 MAX_BODY = 64*1024
-# Attempts per roster entry and night: one retry after a failure, then tomorrow.
+# Attempts per resolved account (or unresolved entry) and night: one retry after a failure, then tomorrow.
 ATTEMPTS = 2
 # Broadcast records are kept this long (they only stop a slot from being sent twice).
 PUSH_KEEP = 60*86400
@@ -35,6 +38,12 @@ PUSH_KEEP = 60*86400
 
 def key_of(entry):
     return str(entry).strip().lower()
+
+
+class SampleResult(Enum):
+    ADDED = 'added'
+    DUPLICATE = 'duplicate'
+    INVALID = 'invalid'
 
 
 class WeeklyStore:
@@ -71,8 +80,11 @@ class WeeklyStore:
     def resolve(self, mode, entry, account_id, nickname):
         if mode not in GAME_MODES or type(account_id) is not int:
             raise ValueError('invalid roster entry')
-        self._run(lambda c: c.execute('INSERT OR REPLACE INTO players VALUES (?, ?, ?, ?, ?)',
-                                      (mode, key_of(entry), account_id, str(nickname)[:64], self.clock())))
+        def work(connection):
+            connection.execute('INSERT OR REPLACE INTO players VALUES (?, ?, ?, ?, ?)',
+                               (mode, key_of(entry), account_id, str(nickname)[:64], self.clock()))
+            self._merge_pulls(connection)
+        self._run(work)
 
     def roster(self, mode, entries):
         """[(entry, account id or None, nickname or None)] for the settings' entries of a mode, in their order."""
@@ -83,45 +95,97 @@ class WeeklyStore:
 
     # ---- the night's progress ----
 
+    @staticmethod
+    def _identity(connection, mode, entry):
+        key = key_of(entry)
+        if key.startswith('id:'):
+            return key
+        if key.isascii() and key.isdigit():
+            return f'id:{int(key)}'
+        row = connection.execute('SELECT account_id FROM players WHERE mode=? AND entry=?', (mode, key)).fetchone()
+        return f'id:{row[0]}' if row else key
+
+    def _merge_pulls(self, connection):
+        """Lazily migrate legacy entry-keyed progress and newly resolved aliases, in the caller's transaction.
+
+        The latest day wins; its attempts are combined and any terminal result remains terminal. Canonical keys
+        cannot be player nicknames. Repeating this migration, including after a restart, does not recount attempts.
+        """
+        groups = {}
+        for mode, entry, day, attempts, done, error, at in connection.execute('SELECT * FROM pulls').fetchall():
+            identity = self._identity(connection, mode, entry)
+            groups.setdefault((mode, identity), []).append((entry, day, attempts, done, error, at))
+        for (mode, identity), rows in groups.items():
+            if len(rows) == 1 and rows[0][0] == identity:
+                continue
+            day = max(row[1] for row in rows)
+            current = [row for row in rows if row[1] == day]
+            latest = max(current, key=lambda row: row[5])
+            connection.executemany('DELETE FROM pulls WHERE mode=? AND entry=?', [(mode, row[0]) for row in rows])
+            connection.execute('INSERT INTO pulls VALUES (?, ?, ?, ?, ?, ?, ?)',
+                               (mode, identity, day, sum(row[2] for row in current),
+                                int(any(row[3] for row in current)), latest[4], latest[5]))
+
     def pending(self, entries, day):
         """[(mode, entry)] still to pull on `day`, in the given order: not attempted today first, then those whose
         single retry is left. entries: [(mode, entry)]."""
-        rows = self._run(lambda c: c.execute('SELECT mode, entry, attempts, done FROM pulls WHERE day = ?', (day,)).fetchall(),
-                         [], create=False)
-        state = {(row[0], row[1]): (row[2], row[3]) for row in rows}
-        fresh = [pair for pair in entries if (pair[0], key_of(pair[1])) not in state]
-        again = [pair for pair in entries if not state.get((pair[0], key_of(pair[1])), (0, 1))[1]
-                 and state[(pair[0], key_of(pair[1]))][0] < ATTEMPTS]
-        return fresh+again
+        def work(connection):
+            self._merge_pulls(connection)
+            rows = connection.execute('SELECT mode, entry, attempts, done FROM pulls WHERE day=?', (day,)).fetchall()
+            state = {(row[0], row[1]): (row[2], row[3]) for row in rows}
+            fresh, again, seen = [], [], set()
+            for mode, entry in entries:
+                identity = (mode, self._identity(connection, mode, entry))
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                previous = state.get(identity)
+                if previous is None:
+                    fresh.append((mode, entry))
+                elif not previous[1] and previous[0] < ATTEMPTS:
+                    again.append((mode, entry))
+            return fresh+again
+        # The first step has no progress to merge yet; do not create a database merely to read it.
+        return self._run(work, list(dict.fromkeys(entries)), create=False)
 
     def attempted(self, mode, entry, day, done, error=None):
-        """Count one attempt of the entry on `day`; `done` ends the entry for the day."""
-        def work(connection):
-            row = connection.execute('SELECT day, attempts FROM pulls WHERE mode = ? AND entry = ?',
-                                     (mode, key_of(entry))).fetchone()
-            attempts = (row[1] if row and row[0] == day else 0)+1
-            connection.execute('INSERT OR REPLACE INTO pulls VALUES (?, ?, ?, ?, ?, ?, ?)',
-                               (mode, key_of(entry), day, attempts, 1 if done else 0,
-                                None if error is None else str(error)[:64], self.clock()))
-        self._run(work)
+        """Count an attempt on `day`; resolved aliases share the account's budget and terminal state."""
+        self._run(lambda c: self._attempted(c, mode, entry, day, done, error))
+
+    def _attempted(self, connection, mode, entry, day, done, error=None):
+        self._merge_pulls(connection)
+        identity = self._identity(connection, mode, entry)
+        row = connection.execute('SELECT day, attempts, done FROM pulls WHERE mode=? AND entry=?',
+                                 (mode, identity)).fetchone()
+        if row and row[0] == day and row[2]:
+            return  # Terminal results are idempotent, including duplicate sample saves.
+        attempts = (row[1] if row and row[0] == day else 0)+1
+        connection.execute('INSERT OR REPLACE INTO pulls VALUES (?, ?, ?, ?, ?, ?, ?)',
+                           (mode, identity, day, attempts, int(done),
+                            None if error is None else str(error)[:64], self.clock()))
 
     # ---- samples ----
 
-    def add_sample(self, account_id, mode, sample, fetched_at=None):
-        """Store a sample; False when it is not storable or the same Atlas time is already stored. Prunes."""
+    def add_sample(self, account_id, mode, sample, fetched_at=None, *, day=None):
+        """Return ADDED, DUPLICATE or INVALID; storage failures raise. With `day`, commit the sample and the
+        account's nightly completion in the same transaction. User-fed samples do not complete a nightly pull."""
         if mode not in GAME_MODES or type(account_id) is not int or not isinstance(sample, dict) \
                 or not isinstance(sample.get('looked_up'), (int, float)) or isinstance(sample.get('looked_up'), bool):
-            return False
+            return SampleResult.INVALID
+        if not math.isfinite(sample['looked_up']):
+            return SampleResult.INVALID
         body = json.dumps(sample, ensure_ascii=False, separators=(',', ':'))
         if len(body.encode()) > MAX_BODY:
-            return False
+            return SampleResult.INVALID
         def work(connection):
             now = self.clock()
             added = connection.execute(
                 'INSERT OR IGNORE INTO samples (account_id, mode, looked_up, fetched_at, body) VALUES (?, ?, ?, ?, ?)',
                 (account_id, mode, sample['looked_up'], now if fetched_at is None else fetched_at, body)).rowcount == 1
             self._prune(connection, now)
-            return added
+            if day is not None:
+                self._attempted(connection, mode, str(account_id), day, True)
+            return SampleResult.ADDED if added else SampleResult.DUPLICATE
         return self._run(work)
 
     def samples(self, account_id, mode, since):

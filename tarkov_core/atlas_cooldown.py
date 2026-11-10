@@ -25,6 +25,12 @@ class AtlasBudgetError(QueryError):
         self.retry_after_seconds = math.ceil(seconds)
 
 
+class AtlasDeadlineError(AtlasCooldownError):
+    """A scheduled request's window ended before it was sent; no budget was consumed."""
+    def __init__(self):
+        super().__init__(0)
+
+
 class AtlasBudget:
     """Sliding minute and hour windows over the Atlas player requests actually sent, for every user together.
 
@@ -98,21 +104,25 @@ class AtlasCooldown:
             yield
 
     @asynccontextmanager
-    async def claim_within(self, max_wait, *, sleep=asyncio.sleep):
+    async def claim_within(self, max_wait, *, sleep=asyncio.sleep, deadline=None):
         """Like claim(), but waits up to `max_wait` seconds for the shared interval, an upstream pause or another
         request in flight (player queries: a name search is followed by a lookup that must respect the interval).
         A pause or a next start beyond the wait fails at once instead of sleeping until the limit; nothing is
         queued beyond `max_wait`."""
-        deadline = self.clock()+max_wait
+        wait_until = self.clock()+max_wait
+        if deadline is not None:
+            wait_until = min(wait_until, deadline)
         while True:
             now = self.clock()
+            if deadline is not None and now >= deadline:
+                raise AtlasDeadlineError()
             remaining = max(self.next_start, self.paused_until)-now
             if not self.in_flight and remaining <= 0:
                 break
-            if max(self.next_start, self.paused_until) > deadline or now >= deadline:
+            if max(self.next_start, self.paused_until) > wait_until or now >= wait_until:
                 raise AtlasCooldownError(max(0, remaining), busy=self.in_flight)
             step = max(remaining, POLL_SECONDS) if self.in_flight else remaining
-            await sleep(min(step, deadline-now))
+            await sleep(min(step, wait_until-now))
         async with self._reserved(now):
             yield
 

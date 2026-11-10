@@ -34,6 +34,20 @@ RANK_ROWS = 20
 RATE_RAIDS = 5
 
 
+def valid_counters(block):
+    """A sparse, possibly empty counter list is valid; missing or corrupt statistics are not zero."""
+    if not isinstance(block, dict) or not isinstance(block.get('counters'), list):
+        return False
+    for entry in block['counters']:
+        if not isinstance(entry, list) or len(entry) != 2 or not isinstance(entry[0], list) or not entry[0] \
+                or not all(isinstance(part, str) and part for part in entry[0]):
+            return False
+        value = number(entry[1])
+        if value is None or value < 0:
+            return False
+    return True
+
+
 def extract_sample(doc, mode):
     """The compact sample of one Atlas document of the main game, or None when it cannot be used."""
     if mode not in GAME_MODES or not isinstance(doc, dict):
@@ -46,7 +60,9 @@ def extract_sample(doc, mode):
     if moment is None:
         return None
     stats = doc.get('stats') if isinstance(doc.get('stats'), dict) else {}
-    pmc_block = stats.get('pmc') if isinstance(stats.get('pmc'), dict) else {}
+    if not all(valid_counters(stats.get(side)) for side in ('pmc', 'scav')):
+        return None
+    pmc_block = stats['pmc']
     level, experience = number(doc.get('level')), number(doc.get('experience'))
     prestige, play = number(doc.get('prestigeLevel')), number(pmc_block.get('time'))
     skills = {}
@@ -59,7 +75,7 @@ def extract_sample(doc, mode):
               for a in achievement_list(doc) if a['at'] and moment-RECENT <= a['at'] <= moment+86400]
     recent.sort(key=lambda a: -a['at'])
     return {
-        'v': 1, 'looked_up': moment, 'nickname': name,
+        'v': 2, 'looked_up': moment, 'nickname': name,
         'level': int(level) if level is not None and 0 <= level <= 1000 else None,
         'experience': int(experience) if experience is not None and experience >= 0 else None,
         'prestige': int(prestige) if prestige and prestige > 0 else 0,

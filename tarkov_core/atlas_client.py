@@ -7,10 +7,11 @@ import math
 import re
 import time
 import zlib
+from contextlib import nullcontext
 
 import aiohttp
 
-from .atlas_cooldown import AtlasCooldown
+from .atlas_cooldown import AtlasCooldown, AtlasDeadlineError
 from .transport import ConnectionFailure, HTTPClient, HTTPError, QueryError, USER_AGENT, validate_proxy
 
 HOST = 'https://www.eftforge.com'
@@ -132,34 +133,50 @@ class AtlasClient:
         a margin when that is longer."""
         return max(PLAYER_WAIT_SECONDS, self.cooldown.interval+PLAYER_WAIT_MARGIN)
 
-    async def lookup(self, account_id, mode, *, max_wait=None):
+    async def lookup(self, account_id, mode, *, max_wait=None, deadline=None):
         """One player document (`mode` is pvp, pve, season or arena). Waits at most `max_wait` (default:
         `player_wait()`) for the shared gate."""
         return await self._get(LOOKUP_PATH, {'accountId': str(account_id), 'mode': mode},
                                max_wait=self.player_wait() if max_wait is None else max_wait,
-                               limits=PLAYER_LIMITS, counted=True)
+                               limits=PLAYER_LIMITS, counted=True, deadline=deadline)
 
-    async def search(self, nickname, mode, *, max_wait=None):
+    async def search(self, nickname, mode, *, max_wait=None, deadline=None):
         """Atlas' nickname search: {nickname, players: [{accountId, nickname, side, level}], cached, mode}."""
         return await self._get(SEARCH_PATH, {'nickname': nickname, 'mode': mode},
                                max_wait=self.player_wait() if max_wait is None else max_wait,
-                               limits=PLAYER_LIMITS, counted=True)
+                               limits=PLAYER_LIMITS, counted=True, deadline=deadline)
 
-    async def _get(self, path, params, *, max_wait=None, limits=LIMITS, counted=False):
+    async def _get(self, path, params, *, max_wait=None, limits=LIMITS, counted=False, deadline=None):
         if self.closed:
             raise RuntimeError('Atlas client closed')
         if not allowed(path, params):
             raise ValueError('unsupported Atlas request')
         proxy = self.validated_proxy()  # Invalid configuration fails before admission.
         task = asyncio.current_task()
-        gate = self.cooldown.claim() if max_wait is None else self.cooldown.claim_within(max_wait)
+        remaining = None if deadline is None else deadline-self.cooldown.clock()
+        if remaining is not None and remaining <= 0:
+            raise AtlasDeadlineError()
+        gate_options = {} if deadline is None else {'deadline': deadline}
+        gate = self.cooldown.claim() if max_wait is None else self.cooldown.claim_within(max_wait, **gate_options)
         # Fail fast during a local budget pause. Reserve only after admission so sliding windows count HTTP
         # request starts rather than time spent waiting; recheck then because other waiters may have used slots.
         if counted and self.budget is not None:
             self.budget.check()
-        async with gate:
-            token = self.budget.reserve() if counted and self.budget is not None else None
-            return await self._send(path, params, proxy, limits, token, task)
+        sent = False
+        window = asyncio.timeout(remaining) if remaining is not None else nullcontext()
+        try:
+            # This also cancels an in-flight background request at the end of its window.
+            async with window:
+                async with gate:
+                    if deadline is not None and self.cooldown.clock() >= deadline:
+                        raise AtlasDeadlineError()
+                    token = self.budget.reserve() if counted and self.budget is not None else None
+                    sent = True
+                    return await self._send(path, params, proxy, limits, token, task)
+        except TimeoutError:
+            if not sent:
+                raise AtlasDeadlineError() from None
+            raise
 
     async def _send(self, path, params, proxy, limits, token, task):
         self.tasks.add(task)

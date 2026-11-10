@@ -161,9 +161,18 @@ class AtlasPlayers:
             keep(charge)
         return summary
 
-    async def _fetch(self, mode, aid):
+    async def profile_once(self, mode, aid, *, deadline=None):
+        """One cancellable background lookup, independent of chat tasks and their busy retries.
+
+        Shares the HTTP gate, budget, mapping and resulting cache, but never joins a shielded foreground task.
+        """
+        return await self._fetch(mode, aid, retry=False, deadline=deadline)
+
+    async def _fetch(self, mode, aid, *, retry=True, deadline=None):
+        options = {} if deadline is None else {'deadline': deadline}
+        request = lambda: self.client.lookup(aid, mode, **options)
         try:
-            doc = await self._busy_retry(lambda: self.client.lookup(aid, mode))
+            doc = await self._busy_retry(request) if retry else await request()
         except AtlasHTTPError as exc:
             missing = http_not_found(exc, mode, aid)
             if missing:
@@ -197,6 +206,18 @@ class AtlasPlayers:
                 return []
             raise
         keep(charge)
+        return search_results(doc)
+
+    async def search_once(self, nickname, mode, *, deadline=None):
+        """One background name search. The sampler, not this service, schedules any retry."""
+        if not NICKNAME.fullmatch(nickname):
+            raise QueryError('Atlas 昵称格式无法识别')
+        try:
+            doc = await self.client.search(nickname, mode, deadline=deadline)
+        except AtlasHTTPError as exc:
+            if exc.code in ('not_found', 'no_profile'):
+                return []
+            raise
         return search_results(doc)
 
     @staticmethod
