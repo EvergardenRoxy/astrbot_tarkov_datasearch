@@ -1,9 +1,9 @@
+from contextlib import closing
 import asyncio
 import json
 import sqlite3
 import tempfile
 import threading
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -136,7 +136,7 @@ class ResourceCacheTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_corrupt_entry_is_rebuilt_without_sending_its_etag(self):
         await self.cache.get(self.key)
-        with sqlite3.connect(self.cache.path) as db:
+        with closing(sqlite3.connect(self.cache.path)) as db, db:
             db.execute('UPDATE resources SET body=?', (b'not json',))
         restored = await self.cache.get(self.key)
         self.assertEqual(self.calls[-1][1], {'etag': None, 'last_modified': None})
@@ -169,7 +169,7 @@ class ResourceCacheTests(unittest.IsolatedAsyncioTestCase):
         self.cache = ResourceCache(self.root, self.download, max_entries=2, max_bytes=1000)
         for mode in ('regular', 'pve', 'pvp-season'):
             await self.cache.get(ResourceKey('items', mode))
-        with sqlite3.connect(self.cache.path) as db:
+        with closing(sqlite3.connect(self.cache.path)) as db, db:
             paths = [row[0] for row in db.execute('SELECT path FROM resources')]
         self.assertEqual(set(paths), {'/pve/items', '/pvp-season/items'})
         async def no_store(key, **kwargs):
@@ -203,11 +203,13 @@ class ResourceCacheTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_download_concurrency_is_bounded_across_different_resources(self):
         running, peak = 0, 0
-        gate = asyncio.Event()
+        gate, both = asyncio.Event(), asyncio.Event()
         async def slow(key, **kwargs):
             nonlocal running, peak
             running += 1
             peak = max(peak, running)
+            if running >= 2:
+                both.set()
             await gate.wait()
             running -= 1
             return await self.download(key, **kwargs)
@@ -215,7 +217,10 @@ class ResourceCacheTests(unittest.IsolatedAsyncioTestCase):
         keys = [ResourceKey('items', mode, language) for mode in ('regular', 'pve', 'pvp-season')
                 for language in (None, 'zh')]
         tasks = [asyncio.create_task(self.cache.get(key)) for key in keys]
-        await asyncio.sleep(.02)
+        # Wait until both slots are taken (a fixed 20 ms was not always enough on a slow machine), then give a
+        # third download the chance to start if the bound were missing.
+        await asyncio.wait_for(both.wait(), 30)
+        await asyncio.sleep(.05)
         gate.set()
         await asyncio.gather(*tasks)
         self.assertEqual(peak, 2)
@@ -225,7 +230,7 @@ class ResourceCacheTests(unittest.IsolatedAsyncioTestCase):
         self.cache = ResourceCache(self.root, self.download, max_bytes=100)
         for mode in ('regular', 'pve', 'pvp-season'):
             await self.cache.get(ResourceKey('items', mode))
-        with sqlite3.connect(self.cache.path) as db:
+        with closing(sqlite3.connect(self.cache.path)) as db, db:
             self.assertLessEqual(db.execute('SELECT SUM(LENGTH(body)) FROM resources').fetchone()[0], 100)
         async def no_cache(key, **kwargs):
             meta, body = await self.download(key, **kwargs)

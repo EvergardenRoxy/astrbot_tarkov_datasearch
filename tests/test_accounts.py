@@ -1,3 +1,4 @@
+from contextlib import closing
 import hashlib
 import tempfile
 import time
@@ -41,7 +42,7 @@ class AccountsTests(unittest.TestCase):
         recent = self.store.sessions(limit=3)
         self.assertEqual(recent, [f'bot:GroupMessage:g{accounts.MAX_SESSIONS+4}', f'bot:GroupMessage:g{accounts.MAX_SESSIONS+3}',
                                   f'bot:GroupMessage:g{accounts.MAX_SESSIONS+2}'])
-        with self.store.connect() as db:
+        with closing(self.store.connect()) as db, db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM sessions').fetchone()[0], accounts.MAX_SESSIONS)
         # A session seen again moves to the front; only the conversation id is stored, no user.
         self.store.touch_session('bot:GroupMessage:g7', now=99999)

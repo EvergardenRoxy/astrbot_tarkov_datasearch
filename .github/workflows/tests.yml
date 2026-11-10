@@ -1,8 +1,12 @@
 name: tests
 
+# Pull requests and main only: a branch with an open pull request used to run every push twice (push + pull_request).
+# A branch without a pull request can be run by hand (Actions > tests > Run workflow).
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -21,6 +25,12 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -r requirements.txt
+      # The pinned 17 MB font is kept between runs; the key changes with the pinned commit, size or checksum.
+      # tools/download_font.py verifies the cached file and downloads only when it is missing or wrong.
+      - uses: actions/cache@v4
+        with:
+          path: .cache/fonts
+          key: complete-font-${{ hashFiles('tarkov_core/font_download.py') }}
       - run: python tools/download_font.py
         timeout-minutes: 3
       - run: python -m unittest discover -s tests -v

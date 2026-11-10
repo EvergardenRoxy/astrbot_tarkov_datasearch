@@ -1,7 +1,7 @@
-from font_support import TEST_FONT  # Complete font fixture; no network access.
+from font_support import TEST_FONT  # noqa: F401  (imported for its effect: the complete font fixture; no network access)
 
-import asyncio
 import copy
+from contextlib import closing
 import io
 import json
 import sqlite3
@@ -481,17 +481,17 @@ class BossStoreTests(unittest.TestCase):
 
     def test_event_failure_rolls_back_baseline(self):
         self.store.observe(boss_card(), self.targets, now=100)
-        with sqlite3.connect(self.store.path) as db:
+        with closing(sqlite3.connect(self.store.path)) as db, db:
             db.execute("CREATE TRIGGER fail_event BEFORE INSERT ON events BEGIN SELECT RAISE(ABORT,'disk failure'); END")
         with self.assertRaises(sqlite3.IntegrityError): self.store.observe(boss_card(0.4), self.targets, now=200)
-        with sqlite3.connect(self.store.path) as db: db.execute('DROP TRIGGER fail_event')
+        with closing(sqlite3.connect(self.store.path)) as db, db: db.execute('DROP TRIGGER fail_event')
         self.store.observe(boss_card(0.4), self.targets, now=300)
         self.assertEqual(self.store.latest('pvp', now=300)[0]['compared_at'], 100)
 
     def test_old_scope_tables_and_baseline_are_retired_without_a_false_removal_alert(self):
         self.event()
         token = self.store.save_query([{'rows':['BEAR','USEC','old columns']}], now=200)
-        with sqlite3.connect(self.store.path) as db:
+        with closing(sqlite3.connect(self.store.path)) as db, db:
             db.execute("UPDATE metadata SET value='all-mobs-old-layout' WHERE key='scope'")
         self.assertIsNone(self.store.latest('pvp',now=201))
         self.assertIsNone(self.store.query(token,now=201))
@@ -555,7 +555,7 @@ class BossNotificationsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn((self.targets[0], 1), attempted)
         self.assertIn((self.targets[0], 2), attempted)
         await self.store.thread(lambda: None)
-        with sqlite3.connect(self.store.path) as db: db.execute('UPDATE deliveries SET next_at=0')
+        with closing(sqlite3.connect(self.store.path)) as db, db: db.execute('UPDATE deliveries SET next_at=0')
         self.monitor.store = BossStore(self.store.path)
         attempted.clear()
         await self.monitor.cycle()
@@ -572,7 +572,7 @@ class BossNotificationsTests(unittest.IsolatedAsyncioTestCase):
             return None
         self.monitor.send = send
         await self.monitor.cycle()
-        with sqlite3.connect(self.store.path) as db:
+        with closing(sqlite3.connect(self.store.path)) as db, db:
             states = {row[0] for row in db.execute('SELECT state FROM deliveries')}
         self.assertTrue({'blocked','unknown','pending'} <= states)
         self.assertNotIn('submitted',states)

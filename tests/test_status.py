@@ -1,7 +1,6 @@
+from contextlib import closing
 import asyncio
-import copy
 import io
-import json
 import sqlite3
 import tempfile
 import unittest
@@ -137,11 +136,11 @@ class NotificationStoreTests(unittest.TestCase):
 
     def test_failed_event_write_does_not_advance_baseline_and_lose_transition(self):
         self.store.observe(status_card(), self.targets, now=100)
-        with sqlite3.connect(self.store.path) as db:
+        with closing(sqlite3.connect(self.store.path)) as db, db:
             db.execute("CREATE TRIGGER fail_event BEFORE INSERT ON events BEGIN SELECT RAISE(ABORT,'disk failure'); END")
         with self.assertRaises(sqlite3.IntegrityError):
             self.store.observe(status_card('Down'), self.targets, now=200)
-        with sqlite3.connect(self.store.path) as db:
+        with closing(sqlite3.connect(self.store.path)) as db, db:
             db.execute('DROP TRIGGER fail_event')
         self.store.observe(status_card('Down'), self.targets, now=300)
         rows = self.store.due(self.targets, now=300)
@@ -200,7 +199,7 @@ class StatusNotificationsTests(unittest.IsolatedAsyncioTestCase):
             return None
         self.monitor.send = send
         await self.monitor.cycle()
-        with sqlite3.connect(self.store.path) as db:
+        with closing(sqlite3.connect(self.store.path)) as db, db:
             self.assertEqual({row[0] for row in db.execute('SELECT state FROM deliveries')}, {'blocked', 'unknown'})
 
     async def test_permission_failure_pauses_target_across_events_and_restart_until_reset(self):
@@ -211,7 +210,7 @@ class StatusNotificationsTests(unittest.IsolatedAsyncioTestCase):
         self.monitor.send = send
         await self.monitor.cycle()
         self.assertEqual(self.store.due(self.targets), [])
-        with sqlite3.connect(self.store.path) as db:
+        with closing(sqlite3.connect(self.store.path)) as db, db:
             self.assertEqual({row[0] for row in db.execute('SELECT state FROM deliveries')}, {'blocked'})
         restarted = NotificationStore(self.store.path)
         restarted.observe(status_card(), self.targets)

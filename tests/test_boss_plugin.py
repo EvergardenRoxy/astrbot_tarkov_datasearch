@@ -1,7 +1,6 @@
 import asyncio
 import io
 import json
-import sys
 import types
 import unittest
 from unittest.mock import AsyncMock, patch
