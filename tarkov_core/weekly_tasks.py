@@ -89,7 +89,7 @@ class Loop:
 
 class WeeklySampler(Loop):
     def __init__(self, store, entries, resolve, fetch, save, enabled, on_error, *, clock=time.time,
-                 sleep=asyncio.sleep, rand=random.uniform, monotonic=time.monotonic):
+                 sleep=asyncio.sleep, rand=random.uniform, monotonic=time.monotonic, paused=lambda: False):
         # resolve/fetch accept a monotonic `deadline`; each may issue at most one HTTP request.
         # resolve -> (account id or None, nickname, whether Atlas was asked); fetch -> summary.
         # save(..., day=day) -> SampleResult, atomically committing the sample and nightly completion.
@@ -97,6 +97,7 @@ class WeeklySampler(Loop):
         self.enabled, self.on_error = enabled, on_error
         self.clock, self.sleep, self.rand = clock, sleep, rand
         self.monotonic = monotonic
+        self.paused = paused
         self.unrecorded = None
 
     async def flush_progress(self):
@@ -111,7 +112,7 @@ class WeeklySampler(Loop):
     async def step(self):
         """At most one Atlas request. None: nothing to do now; otherwise what happened (the pause follows)."""
         now = self.clock()
-        if not self.enabled() or not in_window(now):
+        if not self.enabled() or not in_window(now) or self.paused():
             return None
         # Convert this night's wall-clock cutoff to the HTTP gate's monotonic clock once, before any awaits.
         end = local(now).replace(hour=END_HOUR, minute=0, second=0, microsecond=0).timestamp()

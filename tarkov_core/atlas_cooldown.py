@@ -34,10 +34,10 @@ class AtlasDeadlineError(AtlasCooldownError):
 class AtlasBudget:
     """Sliding minute and hour windows over the Atlas player requests actually sent, for every user together.
 
-    Atlas allows 20 a minute and 200 an hour per source IP (author, 2026-11-08); the defaults keep a margin. A request
-    refused with 429 is not counted by Atlas, so its slot is given back (`refund`)."""
+    Local settings bound the requests this plugin sends. A request refused with 429 is not counted by Atlas,
+    so its slot is given back (`refund`)."""
 
-    def __init__(self, per_minute=lambda: 10, per_hour=lambda: 150, *, clock=time.monotonic):
+    def __init__(self, per_minute=lambda: 15, per_hour=lambda: 200, *, clock=time.monotonic):
         self.per_minute, self.per_hour = per_minute, per_hour
         self.clock = clock
         self.sent = collections.deque()

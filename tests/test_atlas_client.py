@@ -2,13 +2,15 @@ import asyncio
 import gzip
 import json
 import unittest
+from contextlib import asynccontextmanager
 from unittest.mock import patch
 
 from aiohttp import web
 
 from tarkov_core import atlas_client
 from tarkov_core.atlas_client import AtlasClient, AtlasDataError, AtlasHTTPError
-from tarkov_core.atlas_cooldown import AtlasCooldown, AtlasCooldownError
+from tarkov_core.atlas_cooldown import AtlasCooldown, AtlasCooldownError, AtlasBudget
+from tarkov_core.atlas_access import AtlasAccess, AtlasAccessPaused
 from tarkov_core.matching import MatchingService
 from tarkov_core.transport import HTTPClient, QueryError
 from test_atlas_cooldown import Clock
@@ -94,7 +96,7 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.gate.paused_until, self.clock()+60)
 
     async def test_no_redirects_and_service_failures(self):
-        for status in (301, 403, 404, 503):
+        for status in (301, 404, 503, 403):
             self.response = lambda request, status=status: web.Response(status=status,
                 headers={'Location': '/redirect-target'}, text='private upstream text')
             with self.assertRaises(AtlasHTTPError) as caught:
@@ -103,6 +105,97 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn('private', str(caught.exception))
             self.clock.advance(10)
         self.assertEqual(len(self.seen), 4)
+
+    async def test_stats_and_live_parameters_and_strict_validation(self):
+        await self.client.lookup(1234567, 'pve', include_art=False)
+        self.clock.advance(10)
+        await self.client.search('Old_Name', 'pve', live=True)
+        self.assertEqual(self.seen[0][1], {'accountId': '1234567', 'mode': 'pve', 'art': '0'})
+        self.assertEqual(self.seen[1][1], {'nickname': 'Old_Name', 'mode': 'pve', 'live': '1'})
+        for value in (0, 1, '0', None):
+            with self.assertRaises(ValueError):
+                await self.client.lookup(1, 'pve', include_art=value)
+            with self.assertRaises(ValueError):
+                await self.client.search('Old_Name', 'pve', live=value)
+        for path, params in ((atlas_client.LOOKUP_PATH, {'accountId':'1', 'mode':'pve', 'art':'1'}),
+                             (atlas_client.SEARCH_PATH, {'nickname':'Old_Name', 'mode':'pve', 'live':'0'}),
+                             (atlas_client.LOOKUP_PATH, {'accountId':'1', 'mode':'pve', 'art':'0', 'url':'evil'})):
+            with self.assertRaises(ValueError):
+                await self.client._get(path, params)
+        self.assertEqual(len(self.seen), 2)
+
+    async def test_refusal_blocks_players_without_spending_more_budget_or_blocking_matching(self):
+        self.client.budget = AtlasBudget(clock=self.clock)
+        self.response = lambda request: web.json_response({'error':'forbidden'}, status=403)
+        with self.assertRaises(AtlasHTTPError):
+            await self.client.lookup(1, 'pve')
+        self.assertEqual(self.client.budget.remaining_hour(), 199)
+        self.clock.advance(3600)
+        for mode in ('pve', 'pvp', 'season', 'arena'):
+            with self.assertRaises(AtlasAccessPaused):
+                await self.client.lookup(2, mode)
+            with self.assertRaises(AtlasAccessPaused):
+                await self.client.search('Other_Name', mode)
+        self.assertEqual(len(self.seen), 1)
+        self.assertEqual(self.client.budget.remaining_hour(), 200)
+        self.response = lambda request: web.json_response(matching_data())
+        await self.client.matching()
+        self.assertEqual(len(self.seen), 2)
+
+    async def test_request_already_waiting_rechecks_refusal_before_sending(self):
+        entered, release = asyncio.Event(), asyncio.Event()
+        self.client.budget = AtlasBudget(clock=self.clock)
+        @asynccontextmanager
+        async def waiting(*args, **kwargs):
+            entered.set()
+            await release.wait()
+            yield
+        with patch.object(self.gate, 'claim_within', waiting):
+            task = asyncio.create_task(self.client.lookup(1, 'pve'))
+            await entered.wait()
+            await self.client.access.block('players', 403)
+            release.set()
+            with self.assertRaises(AtlasAccessPaused):
+                await task
+        self.assertEqual(self.seen, [])
+        self.assertEqual(self.client.budget.remaining_hour(), 200)
+
+    async def test_recovery_probe_respects_upstream_pause_and_does_not_retry_busy(self):
+        await self.client.access.block('players', 403)
+        await self.client.access.arm_recovery()
+        self.response = lambda request: web.json_response({'error':'busy'}, status=429, headers={'Retry-After':'100'})
+        with self.assertRaises(AtlasHTTPError):
+            await self.client.lookup(1, 'pve')
+        with self.assertRaises(AtlasAccessPaused):
+            await self.client.lookup(1, 'pve')
+        await self.client.access.arm_recovery()
+        with self.assertRaises(AtlasCooldownError):
+            await self.client.lookup(1, 'pve', max_wait=0)
+        self.assertEqual(len(self.seen), 1)
+        self.clock.advance(100)
+        self.response = lambda request: web.json_response({'nickname':'Synthetic'})
+        await self.client.lookup(1, 'pve')
+        self.assertFalse(self.client.access.is_blocked('players'))
+        self.clock.advance(10)
+        await self.client.lookup(2, 'pve')
+        self.assertEqual(len(self.seen), 3)
+
+    async def test_matching_refusal_requires_recovery_even_after_two_minutes(self):
+        service = MatchingService(self.client, enabled=lambda: True, clock=self.clock)
+        self.addAsyncCleanup(service.close)
+        await service.get()
+        self.clock.advance(900)
+        self.response = lambda request: web.Response(status=403)
+        with self.assertRaises(AtlasHTTPError):
+            await service.get()
+        self.clock.advance(1200)
+        with self.assertRaises(AtlasAccessPaused):
+            await service.get()
+        self.assertEqual(len(self.seen), 2)
+        await self.client.access.arm_recovery()
+        self.response = lambda request: web.json_response(matching_data())
+        self.assertFalse((await service.get()).from_cache)
+        self.assertEqual(len(self.seen), 3)
 
     async def test_wrong_media_json_and_gzip_are_rejected(self):
         responses = [web.Response(text='{}'), web.Response(body=b'{"a":NaN}', content_type='application/json'),

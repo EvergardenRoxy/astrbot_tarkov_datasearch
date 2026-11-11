@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS lookups (
     nickname TEXT NOT NULL,
     size INTEGER NOT NULL,
     body BLOB NOT NULL,
+    include_art INTEGER NOT NULL DEFAULT 1,
     UNIQUE (account_id, mode, looked_up)
 );
 CREATE INDEX IF NOT EXISTS lookups_time ON lookups (fetched_at);
@@ -54,13 +55,16 @@ class AtlasHistory:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.path, timeout=10)
         connection.executescript(SCHEMA)
+        if 'include_art' not in {row[1] for row in connection.execute('PRAGMA table_info(lookups)')}:
+            connection.execute('ALTER TABLE lookups ADD COLUMN include_art INTEGER NOT NULL DEFAULT 1')
         return connection
 
-    def record(self, account_id, mode, doc, fetched_at=None):
+    def record(self, account_id, mode, doc, fetched_at=None, *, include_art=True):
         """Store one Atlas document; False when it is not storable or already stored. Prunes afterwards."""
         moment = looked_up_seconds(doc)
         name = doc.get('nickname') if isinstance(doc, dict) else None
-        if mode not in MODES or type(account_id) is not int or moment is None or not isinstance(name, str):
+        if (mode not in MODES or type(account_id) is not int or moment is None or not isinstance(name, str)
+                or type(include_art) is not bool):
             return False
         body = gzip.compress(json.dumps(doc, ensure_ascii=False, separators=(',', ':')).encode(), 6)
         if len(body) > MAX_BODY:
@@ -70,10 +74,13 @@ class AtlasHistory:
             try:
                 with connection:
                     cursor = connection.execute(
-                        'INSERT OR IGNORE INTO lookups (account_id, mode, looked_up, fetched_at, nickname, size, body) '
-                        'VALUES (?, ?, ?, ?, ?, ?, ?)',
+                        'INSERT INTO lookups (account_id, mode, looked_up, fetched_at, nickname, size, body, include_art) '
+                        'VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, mode, looked_up) DO UPDATE SET '
+                        'fetched_at=excluded.fetched_at, nickname=excluded.nickname, size=excluded.size, '
+                        'body=excluded.body, include_art=excluded.include_art '
+                        'WHERE lookups.include_art=0 AND excluded.include_art=1',
                         (account_id, mode, moment, self.clock() if fetched_at is None else fetched_at, name[:64],
-                         len(body), body))
+                         len(body), body, int(include_art)))
                     self._prune(connection)
                 return cursor.rowcount == 1
             finally:

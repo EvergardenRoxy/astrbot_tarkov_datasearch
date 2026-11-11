@@ -72,6 +72,7 @@ class SettingsTests(unittest.TestCase):
         for key, low, high, default in (('atlas_query_cooldown_seconds', 10, 300, 10),
                                        ('user_query_cooldown_seconds', 30, 3600, 30),
                                        ('user_refresh_cooldown_seconds', 300, 86400, 300),
-                                       ('atlas_budget_per_minute', 1, 10, 10)):
+                                       ('atlas_budget_per_minute', 1, 15, 15),
+                                       ('atlas_budget_per_hour', 1, 200, 200)):
             item = atlas[key]
             self.assertEqual((item['slider']['min'], item['slider']['max'], item['default']), (low, high, default))

@@ -13,6 +13,7 @@ from astrbot.api.star import Context, Star, StarTools, register
 from .tarkov_core import COMMAND_STYLES, transport
 from .tarkov_core.atlas_client import NICKNAME as ATLAS_NICKNAME, AtlasClient
 from .tarkov_core.atlas_cooldown import AtlasBudget, AtlasCooldown
+from .tarkov_core.atlas_access import AtlasAccess
 from .tarkov_core.atlas_players import AtlasNotFound, AtlasPlayers, UserQuota, can_fall_back, failure_text
 from .tarkov_core.atlas_assets import AtlasAssets, level_badge
 from .tarkov_core.atlas_card import build as build_atlas_card
@@ -125,10 +126,11 @@ class TarkovPlugin(Star):
         # (mode, account id) -> the request in flight, shared by every query that needs it (review R-08).
         self.pending = {}
         self.http = transport.HTTPClient()
-        self.atlas_budget = AtlasBudget(lambda: self.int_setting('atlas_budget_per_minute', 10, 1, 10),
-                                        lambda: self.int_setting('atlas_budget_per_hour', 150, 1, 200))
+        self.atlas_budget = AtlasBudget(lambda: self.int_setting('atlas_budget_per_minute', 15, 1, 15),
+                                        lambda: self.int_setting('atlas_budget_per_hour', 200, 1, 200))
         self.atlas = AtlasClient(client=self.http, proxy=self.proxy,
-            cooldown=AtlasCooldown(self.atlas_interval()), budget=self.atlas_budget)
+            cooldown=AtlasCooldown(self.atlas_interval()), budget=self.atlas_budget,
+            access=AtlasAccess(self.root/'atlas-access.json'))
         self.atlas_players = AtlasPlayers(self.atlas,
             cache_seconds=lambda: self.int_setting('profile_cache_minutes', 10, 0, 1440)*60)
         self.quota = UserQuota(self.quota_limits)
@@ -168,12 +170,13 @@ class TarkovPlugin(Star):
         self.weekly_image_slots = asyncio.Semaphore(2)
         self.weekly_sampler = WeeklySampler(self.weekly_store, self.weekly_entries, self.weekly_resolve,
                                             self.weekly_fetch, self.weekly_save, self.weekly_sampling_active,
-                                            self.weekly_error)
+                                            self.weekly_error, paused=lambda: self.atlas.access.is_blocked('players'))
         self.weekly_broadcast = WeeklyBroadcast(self.weekly_store, self.weekly_schedule, self.weekly_targets,
                                                 self.weekly_modes, self.weekly_ranking_image, self.send_weekly,
                                                 self.weekly_broadcast_active, self.weekly_error)
 
     async def initialize(self):
+        await self.atlas.access.load()
         await self.atlas_settings_actions()
         if self.config.get('boss_portraits_update', False) is True:
             # Consume the administrator's one-shot action before any network work, preventing reload loops.
@@ -211,6 +214,17 @@ class TarkovPlugin(Star):
     async def atlas_settings_actions(self):
         """The one-shot picture actions and the history switch. Each one-shot setting is switched off and saved
         before any network work, so a reload never repeats it (as the Boss portraits do)."""
+        if self.config.get('atlas_access_reset', False) is True:
+            # Never arm a probe until the one-shot setting is durably consumed.
+            self.config['atlas_access_reset'] = False
+            try:
+                await asyncio.to_thread(self.config.save_config)
+                await self.atlas.access.arm_recovery()
+                logger.info('Tarkov Atlas access recovery armed; the next requested lookup will probe once')
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning('Tarkov Atlas recovery could not be armed: %s', type(exc).__name__)
         wanted = {'atlas_assets_clear': self.config.get('atlas_assets_clear', False),
                   'atlas_assets_update': self.config.get('atlas_assets_update', False)}
         actions = [key for key, value in wanted.items() if value is True]
@@ -259,7 +273,8 @@ class TarkovPlugin(Star):
         if not self.history_enabled() or summary.get('from_cache') or 'doc' not in summary:
             return
         try:
-            await asyncio.to_thread(self.atlas_history.record, aid, mode, summary['doc'], summary.get('fetched'))
+            await asyncio.to_thread(self.atlas_history.record, aid, mode, summary['doc'], summary.get('fetched'),
+                                    include_art=summary.get('include_art', True))
         except (OSError, sqlite3.Error, ValueError) as exc:
             logger.warning('Tarkov [%s] Atlas history not saved: %s', trace, type(exc).__name__)
 
@@ -821,7 +836,7 @@ class TarkovPlugin(Star):
         async for result in self.by_name(event, mode, explicit, target, trace, id_missing=missing):
             yield result
 
-    # ---- Atlas player source (docs/atlas-integration-plan.md §3) ----
+    # ---- Atlas player source (docs/archive/development-history.md#atlas-players) ----
 
     async def atlas_player(self, event, action, mode, target, url, trace, refresh, owner):
         """Query or bind through Atlas: one mode per query (the default one unless written), names resolved by the
@@ -869,14 +884,19 @@ class TarkovPlugin(Star):
         notes = []
         if asked and summary['nickname'].lower() != asked.lower():
             # The record or the name list may be out of date (renamed players): Atlas' own search decides.
-            if where != 'Atlas 搜索' and ATLAS_NICKNAME.fullmatch(asked):
+            if ATLAS_NICKNAME.fullmatch(asked):
                 other = await self.atlas_rename_check(mode, asked, aid, trace, charge)
                 if other is not None:
                     notes.append(f'{where}中的 {asked} 对应账号 ID {aid}（现在叫 {summary["nickname"]}）；'
                                  f'Atlas 搜索到的 {asked} 是账号 ID {other[0]}，下面是它的档案。')
                     aid, summary = other
             if summary['nickname'].lower() != asked.lower():
+                if action == 'bind':
+                    yield event.plain_result(f'无法确认昵称 {asked} 对应的账号；资料中的昵称是 {summary["nickname"]}。'
+                                             '请检查昵称，或使用账号 ID / 玩家页网址绑定。')
+                    return
                 notes.append(f'注意：{where}中的 {asked} 对应账号 ID {aid}，档案里现在的昵称是 {summary["nickname"]}，可能改过名。')
+                notes.append('本次昵称核验未通过，下面按已记录的账号 ID 展示资料。')
         if not summary.get('from_cache'):
             await self.record_history(aid, mode, summary, trace)
             await self.weekly_feed(aid, mode, summary)
@@ -899,11 +919,12 @@ class TarkovPlugin(Star):
         """(aid, summary) of the account Atlas' search finds under `asked` when it is not `aid`, else None. Failures
         only lose the check (the profile already found is shown)."""
         try:
-            found = await self.atlas_players.search(asked, mode, charge=charge)
-            exact = [entry for entry in found if entry[1].lower() == asked.lower() and entry[0] != aid]
-            if len(exact) != 1:
+            found = await self.atlas_players.search(asked, mode, charge=charge, live=True)
+            exact = [entry for entry in found if entry[1].lower() == asked.lower()]
+            if len(exact) != 1 or exact[0][0] == aid:
                 return None
-            return exact[0][0], await self.atlas_players.profile(mode, exact[0][0], charge=charge)
+            summary = await self.atlas_players.profile(mode, exact[0][0], refresh=True, charge=charge)
+            return (exact[0][0], summary) if summary['nickname'].lower() == asked.lower() else None
         except asyncio.CancelledError:
             raise
         except QueryError as exc:
@@ -1673,7 +1694,7 @@ class TarkovPlugin(Star):
 
     async def weekly_fetch(self, mode, aid, *, deadline=None):
         """One fresh Atlas document for the nightly sample (no user quota: the sampler paces itself)."""
-        summary = await self.atlas_players.profile_once(mode, aid, deadline=deadline)
+        summary = await self.atlas_players.profile_once(mode, aid, deadline=deadline, include_art=False)
         await self.record_history(aid, mode, summary, 'weekly')
         try:
             await asyncio.to_thread(self.accounts.remember, aid, summary['nickname'])

@@ -93,7 +93,7 @@ astrbot_tarkov_datasearch v0.6.1 · https://github.com/EvergardenRoxy/astrbot_ta
 
 ## 数据存储
 
-数据位于 `data/plugin_data/astrbot_tarkov_datasearch/`，具体文件见两份功能文档的“数据存储”一节：[玩家功能](docs/player-query.md#数据存储玩家功能)、[状态与 Boss](docs/status-and-boss.md#数据存储状态与-boss)、[玩家周报](docs/weekly-report.md#数据存储)；匹配时间只保存在内存里，不写入磁盘。绑定只保存带密钥的哈希，不保存 QQ 号等原始 ID；用过本插件命令的群会话（只存会话标识，不存用户）会被记住，作为没填推送目标时的推送对象（周报播报除外，它只发给明确填写的会话）；插件不另存“谁查询了谁”，但 AstrBot 的日志会记下每条消息的发送者和内容，请像对待聊天记录一样保管日志和整个数据目录。
+数据位于 `data/plugin_data/astrbot_tarkov_datasearch/`，具体文件见功能文档的“数据存储”一节：[玩家功能](docs/player-query.md#数据存储玩家功能)、[状态与 Boss](docs/status-and-boss.md#数据存储状态与-boss)、[玩家周报](docs/weekly-report.md#数据存储)；匹配时间只保存在内存里，不写入磁盘。绑定只保存带密钥的哈希，不保存 QQ 号等原始 ID；用过本插件命令的群会话（只存会话标识，不存用户）会被记住，作为没填推送目标时的推送对象（周报播报除外，它只发给明确填写的会话）；插件不另存“谁查询了谁”，但 AstrBot 的日志会记下每条消息的发送者和内容，请像对待聊天记录一样保管日志和整个数据目录。
 
 ## 特别致谢
 
@@ -112,8 +112,8 @@ Boss 图的背景纹理是 AI 生成的图片（见 [THIRD_PARTY.md](THIRD_PARTY
 - [塔科夫玩家数据查询](docs/player-query.md)：命令、模式、绑定、竞技场、数字含义、设置和数据存储。
 - [服务器状态与 Boss 刷率](docs/status-and-boss.md)：命令、设置、读图方法、活动 Boss 规则、变化推送和数据存储。
 - [服务器匹配时间](docs/matching.md)：命令、读图方法、缓存与请求频率、设置。
-- [玩家周报](docs/weekly-report.md)：命令、读图方法、采样规则、设置和数据存储；设计取舍与竞技场周报的规划见 [规划记录](docs/weekly-report-plan.md)。
-- [完整字体与图片开发](docs/development.md)：首次字体下载、本地测试和示例图准备。
+- [玩家周报](docs/weekly-report.md)：命令、读图方法、采样规则、设置和数据存储；设计取舍见 [决策摘要](docs/archive/development-history.md#weekly)，竞技场计划见 [当前待办](checklist.md#arena-weekly)。
+- [开发指南](docs/development.md)：功能与模块范围、文档导航、开发约束、字体、测试和示例图。
 - [CHANGELOG.md](CHANGELOG.md)：每个版本给使用者带来了哪些变化。
-- [checklist.md](checklist.md)：用通俗的话说明做了什么、为什么、怎么核对。
-- [handoff.md](handoff.md)：给 AI 和工程师看的英文技术记录，写明每次修改的代码位置、依据和测试。
+- [当前待办与已知问题](checklist.md)：未决事项、仅记录的问题及验证边界。
+- [工程交接](handoff.md)：简短的新工作记录及完整历史归档入口。

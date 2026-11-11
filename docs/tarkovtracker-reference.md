@@ -1,5 +1,7 @@
 # TarkovTracker 数据来源与本插件参考点
 
+> 研究参考，本插件未集成 TarkovTracker；以下结论固定于原核对日期，当前范围见 [开发指南](development.md)。
+
 核对日期：2026-10-24。目标仓库：[tarkovtracker-org/TarkovTracker](https://github.com/tarkovtracker-org/TarkovTracker)，核对 main 快照 `d07b3da5d4ebd5c83195fd3f1d6a0b2cd40f91de`。本次为只读源码/文档调研，没有运行目标项目、访问玩家数据或取得私有修正数据。
 
 ## 1. 数据来源总览

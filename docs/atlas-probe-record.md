@@ -1,5 +1,7 @@
 # Atlas 接口只读实测：请求与返回记录
 
+> 历史证据，以下响应仅代表 2026-11-08 探测时点，不作为当前服务状态或开发待办；入口见 [开发指南](development.md)。
+
 日期：2026-11-08（UTC）。来源：本开发环境（Claude Code 云端容器）通过代理访问。**全部是 GET 请求，没有写入、没有登录、没有使用任何密钥。**
 
 统一请求头：`User-Agent: astrbot_tarkov_datasearch-planning-probe (+https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch)`，大多数请求带 `Accept-Encoding: gzip`。没有 Cookie，没有其他自定义请求头。
