@@ -836,7 +836,7 @@ class TarkovPlugin(Star):
         async for result in self.by_name(event, mode, explicit, target, trace, id_missing=missing):
             yield result
 
-    # ---- Atlas player source (docs/atlas-integration-plan.md §3) ----
+    # ---- Atlas player source (docs/archive/development-history.md#atlas-players) ----
 
     async def atlas_player(self, event, action, mode, target, url, trace, refresh, owner):
         """Query or bind through Atlas: one mode per query (the default one unless written), names resolved by the

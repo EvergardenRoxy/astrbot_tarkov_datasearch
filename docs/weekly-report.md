@@ -2,7 +2,7 @@
 
 # 玩家周报（可选功能）
 
-给管理员列出的玩家做“近 7 天”的战绩小结：每天凌晨自动采样一次，聊天里可以查个人周报和排行，也可以每周定时把排行发到指定的群。**默认关闭**，娱乐用途，数字是两次采样之间的差值，不是逐局记录。支持 PVP、PVE、赛季；竞技场已在规划里，尚未实现（见 [规划记录](weekly-report-plan.md)）。
+给管理员列出的玩家做“近 7 天”的战绩小结：每天凌晨自动采样一次，聊天里可以查个人周报和排行，也可以每周定时把排行发到指定的群。**默认关闭**，娱乐用途，数字是两次采样之间的差值，不是逐局记录。支持 PVP、PVE、赛季；竞技场已在规划里，尚未实现（见 [当前待办](../checklist.md#arena-weekly)）。
 
 数据来自 **[Atlas](https://eftforge.com/atlas)**，所以需要“玩家数据来源”为 Atlas（默认值）。图片带 Atlas 标志和链接，图片后另附一行可点击的链接。
 
@@ -81,8 +81,8 @@ Atlas 是个人维护的服务。上游放宽使用限制后（2026-11-10），�
 
 ## 相关
 
-- [规划记录](weekly-report-plan.md)：设计取舍、维护者的决定、竞技场周报的规划。
-- [玩家数据查询](player-query.md)、[Atlas 接入规划](atlas-integration-plan.md)。
+- [周报决策摘要](archive/development-history.md#weekly)：设计取舍与维护者的决定；[竞技场周报待办](../checklist.md#arena-weekly)。
+- [玩家数据查询](player-query.md)、[Atlas 接入决策](archive/development-history.md#atlas-players)。
 
 ### 接口调用补充（2026-11-11）
 

@@ -62,5 +62,5 @@ Atlas 是个人维护的服务，要求客户端做缓存、不高频轮询。�
 
 ## 相关
 
-- [Atlas 接入规划](atlas-integration-plan.md)、[匹配时间后端规划](atlas-matching-backend-plan.md)：接口说明、实测记录和设计取舍。
+- [匹配时间决策摘要](archive/development-history.md#atlas-matching)：缓存、冷却和输出取舍；[Atlas 探测证据](atlas-probe-record.md)。
 - Atlas 标志的来源见 [THIRD_PARTY.md](../THIRD_PARTY.md)。Atlas 是独立的开源项目（AGPL-3.0-or-later），与本插件没有隶属关系，也不是 Battlestate Games 的项目。
