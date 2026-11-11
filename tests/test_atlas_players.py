@@ -85,16 +85,16 @@ class ProfileMappingTests(unittest.TestCase):
 
 
 class BudgetAndGateTests(unittest.IsolatedAsyncioTestCase):
-    def test_default_budget_is_ten_per_minute(self):
+    def test_default_budget_is_fifteen_per_minute_and_two_hundred_per_hour(self):
         clock = Clock()
         budget = AtlasBudget(clock=clock)
-        for _ in range(10):
+        for _ in range(15):
             budget.reserve()
         with self.assertRaises(AtlasBudgetError):
             budget.reserve()
         clock.advance(60)
         budget.reserve()
-        self.assertEqual(budget.remaining_hour(), 139)
+        self.assertEqual(budget.remaining_hour(), 184)
 
     def test_minute_and_hour_windows(self):
         clock = Clock()
@@ -327,6 +327,48 @@ class FakeAtlas:
 
 
 class PlayerServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_statistical_and_full_cache_variants_do_not_overwrite_each_other(self):
+        self.atlas.put(1, 'pve')
+        calls = []
+        async def lookup(aid, mode, **kwargs):
+            calls.append(kwargs)
+            return atlas_profile(mode, accountId=str(aid), character={'full':'synthetic'} if kwargs['include_art'] else None)
+        self.atlas.lookup = lookup
+        stats = await self.players.profile_once('pve', 1)
+        self.assertIsNone(stats['doc']['character'])
+        self.assertIsNone(self.players.cached('pve', 1))
+        full = await self.players.profile('pve', 1)
+        self.assertEqual(full['doc']['character'], {'full':'synthetic'})
+        self.assertIsNone(self.players.cached('pve', 1, include_art=False)['doc']['character'])
+        self.assertEqual(calls, [{'include_art':False}, {'include_art':True}])
+        await self.players.profile('pve', 1)
+        self.assertEqual(len(calls), 2)
+
+    async def test_access_pause_refunds_only_a_query_that_sent_nothing(self):
+        from tarkov_core.atlas_access import AtlasAccessPaused
+        quota = UserQuota(lambda: (10, 3, 30, 300), clock=self.clock)
+        self.atlas.docs[(1, 'pve')] = AtlasAccessPaused('players')
+        with self.assertRaises(AtlasAccessPaused):
+            await self.players.profile('pve', 1, charge=quota.ticket('user', False))
+        self.assertEqual(quota.history.get('user', []), [])
+
+    async def test_busy_attempt_keeps_user_charge_if_recovery_blocks_the_retry(self):
+        from tarkov_core.atlas_access import AtlasAccessPaused
+        quota = UserQuota(lambda: (10, 3, 30, 300), clock=self.clock)
+        for kind in ('lookup', 'search'):
+            with self.subTest(kind=kind):
+                answers = [AtlasHTTPError(429, 'busy', 5), AtlasAccessPaused('players')]
+                async def request(*args, **kwargs):
+                    raise answers.pop(0)
+                setattr(self.atlas, kind, request)
+                charge = quota.ticket(kind, False)
+                with self.assertRaises(AtlasAccessPaused):
+                    if kind == 'lookup':
+                        await self.players.profile('pve', 1, charge=charge)
+                    else:
+                        await self.players.search('Some_Name', 'pve', charge=charge)
+                self.assertEqual(len(quota.history[kind]), 1)
+
     def setUp(self):
         self.clock = Clock()
         self.atlas = FakeAtlas()
@@ -425,9 +467,9 @@ class PlayerServiceTests(unittest.IsolatedAsyncioTestCase):
         foreground = asyncio.create_task(self.players.profile('pve', 1))
         background = None
         try:
-            self.assertEqual(await asyncio.wait_for(entered.get(), 2), {})
+            self.assertEqual(await asyncio.wait_for(entered.get(), 2), {'include_art': True})
             background = asyncio.create_task(self.players.profile_once('pve', 1, deadline=12345))
-            self.assertEqual(await asyncio.wait_for(entered.get(), 2), {'deadline': 12345})
+            self.assertEqual(await asyncio.wait_for(entered.get(), 2), {'deadline': 12345, 'include_art': False})
             background.cancel()
             with self.assertRaises(asyncio.CancelledError):
                 await background
@@ -693,6 +735,69 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         self.atlas.put(7, 'pve', nickname='Now_Other')
         [reply] = await self.ask(plugin, '/tarkov pve Gone_Name')
         self.assertIn('档案里现在的昵称是 Now_Other', self.text(reply))
+
+    async def test_rename_verification_forces_live_and_does_not_bind_unverified_names(self):
+        plugin = self.plugin()
+        await asyncio.to_thread(plugin.accounts.remember, 5, 'Old_Name')
+        self.atlas.put(5, 'pve', nickname='New_Name')
+        live_requests = []
+        async def search(name, mode, **kwargs):
+            live_requests.append(kwargs.get('live'))
+            return {'players': []}
+        self.atlas.search = search
+        reply = (await self.ask(plugin, '/tarkov 绑定 pve Old_Name'))[0]
+        self.assertIn('无法确认昵称', reply)
+        self.assertEqual(live_requests, [True])
+        self.assertIsNone(await asyncio.to_thread(plugin.accounts.bound, plugin.binding_key(Event())))
+
+    async def test_manual_access_recovery_is_saved_before_arming_and_does_not_fetch(self):
+        plugin = self.plugin({'atlas_access_reset':True})
+        await plugin.atlas.access.block('players', 403)
+        order = []
+        def saved():
+            self.assertFalse(plugin.config['atlas_access_reset'])
+            order.append('save')
+        original = plugin.atlas.access.arm_recovery
+        async def arm():
+            self.assertEqual(order, ['save'])
+            order.append('arm')
+            await original()
+        with patch.object(plugin.config, 'save_config', saved), patch.object(plugin.atlas.access, 'arm_recovery', arm):
+            await plugin.atlas_settings_actions()
+        self.assertEqual(order, ['save', 'arm'])
+        self.assertFalse(plugin.atlas.access.is_blocked('players'))
+        self.assertEqual(self.atlas.calls, [])
+
+    async def test_unsaved_recovery_action_does_not_unlock_access(self):
+        plugin = self.plugin({'atlas_access_reset':True})
+        await plugin.atlas.access.block('players', 403)
+        with patch.object(plugin.config, 'save_config', side_effect=OSError('unavailable')):
+            await plugin.atlas_settings_actions()
+        self.assertTrue(plugin.atlas.access.is_blocked('players'))
+
+    async def test_initial_atlas_index_search_is_reverified_when_profile_name_differs(self):
+        plugin = self.plugin()
+        requests = []
+        self.atlas.put(5, 'pve', nickname='Renamed')
+        self.atlas.put(6, 'pve', nickname='Asked_Name')
+        async def search(name, mode, **kwargs):
+            live = kwargs.get('live', False)
+            requests.append(live)
+            return {'players': [{'accountId': '6' if live else '5', 'nickname':'Asked_Name'}]}
+        self.atlas.search = search
+        await self.ask(plugin, '/tarkov pve Asked_Name')
+        self.assertEqual(requests, [False, True])
+        self.assertEqual(self.cards[-1]['aid'], '6')
+
+    async def test_live_ambiguity_including_old_id_does_not_bind_another_account(self):
+        plugin = self.plugin()
+        await asyncio.to_thread(plugin.accounts.remember, 5, 'Old_Name')
+        self.atlas.put(5, 'pve', nickname='Renamed')
+        self.atlas.put(6, 'pve', nickname='Old_Name')
+        self.atlas.searches['Old_Name'] = [(5, 'Old_Name'), (6, 'Old_Name')]
+        reply = (await self.ask(plugin, '/tarkov 绑定 pve Old_Name'))[0]
+        self.assertIn('无法确认昵称', reply)
+        self.assertIsNone(await asyncio.to_thread(plugin.accounts.bound, plugin.binding_key(Event())))
 
     async def test_unknown_and_ambiguous_names(self):
         plugin = self.plugin()

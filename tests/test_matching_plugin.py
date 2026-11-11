@@ -51,8 +51,8 @@ class MatchingPluginTests(unittest.IsolatedAsyncioTestCase):
             plugin = self.plugin(config)
             self.assertEqual(plugin.atlas.cooldown.interval, 10)
             self.assertEqual(plugin.quota_limits(), (10, 3, 30, 300))
-            self.assertEqual(plugin.atlas_budget.per_minute(), 10)
-            self.assertEqual(plugin.atlas_budget.per_hour(), 150)
+            self.assertEqual(plugin.atlas_budget.per_minute(), 15)
+            self.assertEqual(plugin.atlas_budget.per_hour(), 200)
             self.assertIn('查询 10 次、刷新 3 次', plugin.atlas_help())
         plugin = self.plugin({'atlas': {'user_query_cooldown_seconds': 60, 'user_refresh_cooldown_seconds': 600,
                                         'atlas_budget_per_minute': 3}})

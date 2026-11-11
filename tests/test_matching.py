@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 from tarkov_core.atlas_client import AtlasDataError, AtlasHTTPError
 from tarkov_core.atlas_cooldown import AtlasCooldownError
+from tarkov_core.atlas_access import AtlasAccess, AtlasAccessPaused
 from tarkov_core.matching import MatchingService, normalize
 from tarkov_core.transport import ConnectionFailure, QueryError
 from test_atlas_cooldown import Clock
@@ -68,6 +69,7 @@ class MatchingTests(unittest.IsolatedAsyncioTestCase):
         self.clock = Clock()
         self.client = Mock()
         self.client.validated_proxy.return_value = None
+        self.client.access = AtlasAccess()
         self.client.matching = AsyncMock(return_value=matching_data())
         self.service = MatchingService(self.client, enabled=lambda: True, clock=self.clock,
                                        wall_clock=lambda: 123)
@@ -144,11 +146,11 @@ class MatchingTests(unittest.IsolatedAsyncioTestCase):
     async def test_non_transient_http_error_has_independent_two_minute_window(self):
         first = await self.service.get()
         self.clock.advance(900)
-        self.client.matching.side_effect = AtlasHTTPError(403)
+        self.client.matching.side_effect = AtlasHTTPError(404)
         for _ in range(20):
             with self.assertRaises(AtlasHTTPError) as caught:
                 await self.service.get()
-            self.assertEqual(caught.exception.status, 403)  # Never masked by the stale result.
+            self.assertEqual(caught.exception.status, 404)  # Never masked by the stale result.
         self.assertEqual(self.client.matching.await_count, 2)
         self.clock.advance(119)
         with self.assertRaises(AtlasHTTPError):

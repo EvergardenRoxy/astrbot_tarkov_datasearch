@@ -12,6 +12,7 @@ from contextlib import nullcontext
 import aiohttp
 
 from .atlas_cooldown import AtlasCooldown, AtlasDeadlineError
+from .atlas_access import AtlasAccess
 from .transport import ConnectionFailure, HTTPClient, HTTPError, QueryError, USER_AGENT, validate_proxy
 
 HOST = 'https://www.eftforge.com'
@@ -45,7 +46,9 @@ class AtlasDataError(QueryError):
 
 class AtlasHTTPError(HTTPError):
     def __init__(self, status, code='http', retry_after=None):
-        super().__init__(f'Atlas 查询失败（HTTP {status}），请稍后再试', status, retry_after)
+        message = (f'Atlas 访问已暂停（HTTP {status}），请管理员检查访问权限后在设置中恢复'
+                   if status in (401, 403) else f'Atlas 查询失败（HTTP {status}），请稍后再试')
+        super().__init__(message, status, retry_after)
         self.code = code
 
 
@@ -104,20 +107,25 @@ def allowed(path, params):
     if not isinstance(params, dict) or params.get('mode') not in ATLAS_MODES:
         return False
     if path == LOOKUP_PATH:
-        return set(params) == {'accountId', 'mode'} and isinstance(params['accountId'], str) and bool(ACCOUNT.fullmatch(params['accountId']))
+        return (set(params) in ({'accountId', 'mode'}, {'accountId', 'mode', 'art'})
+                and params.get('art', '0') == '0' and isinstance(params['accountId'], str)
+                and bool(ACCOUNT.fullmatch(params['accountId'])))
     if path == SEARCH_PATH:
-        return set(params) == {'nickname', 'mode'} and isinstance(params['nickname'], str) and bool(NICKNAME.fullmatch(params['nickname']))
+        return (set(params) in ({'nickname', 'mode'}, {'nickname', 'mode', 'live'})
+                and params.get('live', '1') == '1' and isinstance(params['nickname'], str)
+                and bool(NICKNAME.fullmatch(params['nickname'])))
     return False
 
 
 class AtlasClient:
-    def __init__(self, *, client=None, cooldown=None, proxy=lambda: None, budget=None):
+    def __init__(self, *, client=None, cooldown=None, proxy=lambda: None, budget=None, access=None):
         self.http = client if client is not None else HTTPClient()
         self.owns_http = client is None
         self.cooldown = cooldown if cooldown is not None else AtlasCooldown()
         self.proxy = proxy
         # The minute/hour budget of player requests (matching is not counted: Atlas limits player lookups).
         self.budget = budget
+        self.access = access if access is not None else AtlasAccess()
         self.closed = False
         self.tasks = set()
 
@@ -133,16 +141,26 @@ class AtlasClient:
         a margin when that is longer."""
         return max(PLAYER_WAIT_SECONDS, self.cooldown.interval+PLAYER_WAIT_MARGIN)
 
-    async def lookup(self, account_id, mode, *, max_wait=None, deadline=None):
+    async def lookup(self, account_id, mode, *, max_wait=None, deadline=None, include_art=True):
         """One player document (`mode` is pvp, pve, season or arena). Waits at most `max_wait` (default:
         `player_wait()`) for the shared gate."""
-        return await self._get(LOOKUP_PATH, {'accountId': str(account_id), 'mode': mode},
+        if type(include_art) is not bool:
+            raise ValueError('include_art must be a boolean')
+        params = {'accountId': str(account_id), 'mode': mode}
+        if not include_art:
+            params['art'] = '0'
+        return await self._get(LOOKUP_PATH, params,
                                max_wait=self.player_wait() if max_wait is None else max_wait,
                                limits=PLAYER_LIMITS, counted=True, deadline=deadline)
 
-    async def search(self, nickname, mode, *, max_wait=None, deadline=None):
+    async def search(self, nickname, mode, *, max_wait=None, deadline=None, live=False):
         """Atlas' nickname search: {nickname, players: [{accountId, nickname, side, level}], cached, mode}."""
-        return await self._get(SEARCH_PATH, {'nickname': nickname, 'mode': mode},
+        if type(live) is not bool:
+            raise ValueError('live must be a boolean')
+        params = {'nickname': nickname, 'mode': mode}
+        if live:
+            params['live'] = '1'
+        return await self._get(SEARCH_PATH, params,
                                max_wait=self.player_wait() if max_wait is None else max_wait,
                                limits=PLAYER_LIMITS, counted=True, deadline=deadline)
 
@@ -152,6 +170,8 @@ class AtlasClient:
         if not allowed(path, params):
             raise ValueError('unsupported Atlas request')
         proxy = self.validated_proxy()  # Invalid configuration fails before admission.
+        scope = 'matching' if path == MATCHING_PATH else 'players'
+        await self.access.check(scope)
         task = asyncio.current_task()
         remaining = None if deadline is None else deadline-self.cooldown.clock()
         if remaining is not None and remaining <= 0:
@@ -163,16 +183,24 @@ class AtlasClient:
         if counted and self.budget is not None:
             self.budget.check()
         sent = False
+        probe = success = False
         window = asyncio.timeout(remaining) if remaining is not None else nullcontext()
         try:
             # This also cancels an in-flight background request at the end of its window.
             async with window:
                 async with gate:
-                    if deadline is not None and self.cooldown.clock() >= deadline:
-                        raise AtlasDeadlineError()
-                    token = self.budget.reserve() if counted and self.budget is not None else None
-                    sent = True
-                    return await self._send(path, params, proxy, limits, token, task)
+                    try:
+                        probe = await self.access.before_send(scope)
+                        if deadline is not None and self.cooldown.clock() >= deadline:
+                            raise AtlasDeadlineError()
+                        token = self.budget.reserve() if counted and self.budget is not None else None
+                        sent = True
+                        result = await self._send(path, params, proxy, limits, token, task)
+                        success = True
+                        return result
+                    finally:
+                        if probe:
+                            await self.access.finish_probe(scope, success)
         except TimeoutError:
             if not sent:
                 raise AtlasDeadlineError() from None
@@ -187,6 +215,8 @@ class AtlasClient:
                                    timeout=timeout, headers={'User-Agent': USER_AGENT,
                                    'Accept': 'application/json', 'Accept-Encoding': 'gzip'}) as response:
                 status = response.status
+                if status in (401, 403):
+                    await self.access.block('matching' if path == MATCHING_PATH else 'players', status)
                 pause = None
                 if status == 429 or (500 <= status <= 599 and 'Retry-After' in response.headers):
                     pause = retry_after(response.headers.get('Retry-After'))

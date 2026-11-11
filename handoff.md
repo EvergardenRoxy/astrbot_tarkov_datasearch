@@ -1114,3 +1114,53 @@ The maintainer requested version 0.6.1, a branch push and a pull request, with n
 Version literals in metadata, registration, the core package, README's output example and output/image assertions
 are aligned to 0.6.1. The weekly backend fixes are recorded under 0.6.1 in CHANGELOG. Existing preview assets are
 kept as supplied; no preview-generation scripts are run for this release.
+
+
+## Atlas rev7 implementation and remaining scope (2026-11-11)
+
+Authorized by the maintainer: execute items 1–4 of the update plan; keep the rest
+in planning. Baseline is the fetched GitHub main `141e04b` / v0.6.1. Upstream quota
+figures are intentionally not reproduced in project documentation. Local defaults
+and the per-minute configurable ceiling change to 15/min and 200/hour; explicit
+lower settings, shared intervals and personal query/refresh rules remain effective.
+
+- Nightly profile_once requests explicitly use art=0; ordinary queries retain their
+  previous variant. Bounded caches and pending requests include the art variant.
+  The history database adds include_art with old rows defaulting to full-request
+  semantics; same-timestamp stats documents may upgrade to full, never downgrade.
+- Rename verification sends live=1 even when the initial result was from Atlas
+  search. Only a unique candidate followed by a fresh matching profile can replace
+  the old ID. Ambiguous or unverified nickname bindings are rejected; a query may
+  show the already-known ID with an explicit warning. Sent attempts keep their
+  user charge when a later busy retry is locally refused.
+- atlas_access.py holds separate players/matching refusal scopes. Admission checks
+  run before queueing and again before reserving HTTP budget. 401/403 persistently
+  pause a scope. atlas-access.json stores only bounded state metadata; corrupt
+  state fails closed. An administrator's one-shot atlas_access_reset is saved
+  before arming one demand-driven probe; recovery never resets quota or upstream
+  pauses, and never starts a network request. Failed/cancelled probes reblock.
+- Paused samplers wait without consuming per-account retry progress. Existing
+  cutoffs, pacing, cancellation isolation and labelled tarkov.dev fallbacks remain.
+
+TarkovCitizen is not a demonstrated production defect: the audit reproduced only
+an artificial short prefix string; known long generated names already fail the
+network length check. No prefix blocking or dotted-name expansion was implemented.
+The remaining plan distinguishes realistic scenarios from speculative edge cases,
+spells out source-specific input options, and separates cache policy confirmation
+from any data deletion. In particular, stopping history writes must not reuse the
+current privacy toggle, which deletes old data.
+
+Detailed status and remaining execution decisions: docs/atlas-rev7-update-plan.md;
+active todo list: docs/atlas-integration-plan.md section 8. No version bump, README
+release edit, key support, player-index/render/ban/change-feed feature, migration
+that deletes data, or external message is included.
+
+Validation: 29 behavioural regression cases added to the original 540. Python 3.12:
+569 tests pass in 17.408s; Python 3.13: 569 pass in 17.426s, including package
+checks. Cases cover strict HTTP parameters, art cache separation, legacy history
+migration/full-document precedence, forced live search, ambiguous binding refusal,
+local refusal refund vs sent busy charge, persistent access scopes, corrupt/write-
+failed state, queued-request rechecks, saved recovery actions, one probe, retained
+Retry-After, and paused sampler progress. No real Atlas or chat requests were sent.
+The workspace Python 3.13 venv was prepared separately with project dependencies;
+no repository dependency ranges changed. git diff --check and local links pass.

@@ -3,6 +3,7 @@ import asyncio
 import gzip
 import io
 import json
+import sqlite3
 import tempfile
 import unittest
 import unittest.mock
@@ -424,6 +425,38 @@ class HistoryTests(unittest.TestCase):
         self.assertLess(older['looked_up'], newer['looked_up'])
         self.assertIsNone(self.history.compare(1234567, 'pvp'))
         self.assertEqual(self.history.accounts(), [(1234567, 'pve', 'Test_Player'), (1234567, 'pvp', 'Test_Player')])
+
+    def test_stats_history_upgrades_once_and_never_replaces_full_document(self):
+        stats = self.doc(0, character=None)
+        full = self.doc(0, character={'full':'synthetic-image'})
+        self.assertTrue(self.history.record(1234567, 'pve', stats, include_art=False))
+        self.assertFalse(self.history.record(1234567, 'pve', stats, include_art=False))
+        self.assertTrue(self.history.record(1234567, 'pve', full, include_art=True))
+        self.assertFalse(self.history.record(1234567, 'pve', stats, include_art=False))
+        self.assertEqual(len(self.history.history(1234567, 'pve')), 1)
+        self.assertEqual(self.history.latest(1234567, 'pve')['document']['character'], full['character'])
+
+    def test_legacy_database_is_migrated_without_replacing_existing_full_document(self):
+        from tarkov_core.atlas_history import SCHEMA
+        connection = sqlite3.connect(self.history.path)
+        try:
+            connection.executescript(SCHEMA.replace('    include_art INTEGER NOT NULL DEFAULT 1,\n', ''))
+            document = self.doc(0, character={'full':'old-synthetic'})
+            body = gzip.compress(json.dumps(document).encode())
+            with connection:
+                connection.execute('INSERT INTO lookups (account_id,mode,looked_up,fetched_at,nickname,size,body) '
+                    'VALUES (?,?,?,?,?,?,?)', (1234567, 'pve', 1800000000., self.clock(), 'Test_Player', len(body), body))
+        finally:
+            connection.close()
+        self.history.record(1234567, 'pve', self.doc(1, character=None), include_art=False)
+        rows = self.history.history(1234567, 'pve')
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(any(row['document'].get('character') == {'full':'old-synthetic'} for row in rows))
+        connection = sqlite3.connect(self.history.path)
+        try:
+            self.assertEqual(connection.execute('SELECT include_art FROM lookups ORDER BY id').fetchall(), [(1,), (0,)])
+        finally:
+            connection.close()
 
     def test_unstorable_documents(self):
         for account, mode, doc in ((1, 'pve', self.doc(0, looked_up=None)), (1, 'regular', self.doc(0)),

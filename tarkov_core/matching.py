@@ -11,7 +11,7 @@ from .transport import ConnectionFailure, QueryError
 
 CACHE_SECONDS = 15*60
 MAX_AGE_SECONDS = 60*60
-# Non-transient HTTP errors (403, 404, ...) have their own short window (maintainer): users cannot re-hit Atlas on
+# Other non-transient HTTP errors (404, ...) have their own short window: users cannot re-hit Atlas on
 # every query, and stale data never masks the error.
 HTTP_ERROR_SECONDS = 2*60
 HOURS = 24
@@ -129,6 +129,7 @@ class MatchingService:
             raise QueryError('匹配时间查询尚未开启')
         # Check configuration even when returning cached data.
         self.client.validated_proxy()
+        await self.client.access.check('matching')
         cached = self._cached_result()
         if cached is not None and not cached.stale:
             return cached
@@ -162,6 +163,11 @@ class MatchingService:
             return result
         except (ConnectionFailure, AtlasDataError, AtlasCooldownError, AtlasHTTPError) as exc:
             # Configuration/programming errors and non-transient HTTP errors cannot masquerade as success.
+            if isinstance(exc, AtlasHTTPError) and exc.status in (401, 403):
+                if not self.client.access.is_blocked('matching'):
+                    await self.client.access.block('matching', exc.status)
+                self.http_error = None
+                raise
             if isinstance(exc, AtlasHTTPError) and exc.status != 429 and not 500 <= exc.status <= 599:
                 # Independent of the 15-minute window: neither shortens nor extends it.
                 self.http_error = (exc.status, exc.code)
