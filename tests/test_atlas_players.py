@@ -672,8 +672,6 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.cards[-1]['overall_table'])
         self.assertEqual(self.cards[-1]['achievement_total'], ATLAS_ARENA['achievements']['total'])
         self.assertEqual(len(self.assets.asked), 1)  # Only season needs the main game's icons.
-        entry = await asyncio.to_thread(plugin.atlas_history.latest, 1, 'arena')
-        self.assertEqual(entry['document']['mode'], 'arena')
 
     async def test_arena_cached_refresh_url_name_and_real_picture(self):
         plugin = self.plugin(draw=True)
@@ -698,7 +696,6 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('tarkov.dev 的快照', reply)
         self.assertIn('【塔科夫竞技场档案】', reply)
         self.assertEqual(self.fetched, [('arena', 1)])
-        self.assertIsNone(await asyncio.to_thread(plugin.atlas_history.latest, 1, 'arena'))
         self.atlas.docs[(2, 'arena')] = self.error(404, 'no_profile')
         [reply] = await self.ask(plugin, '/tarkov arena 2')
         self.assertIn('竞技场 模式下没有档案（Atlas）', reply)
@@ -978,27 +975,6 @@ class AtlasPluginTests(unittest.IsolatedAsyncioTestCase):
         reply = (await self.ask(plugin, '/tarkov 1'))[0]
         self.assertTrue(reply[0].data.startswith(b'\xff\xd8'))
         self.assertGreater(len(reply[0].data), 50000)
-
-    async def test_history_records_atlas_documents_only_when_switched_on(self):
-        plugin = self.plugin()
-        self.atlas.put(1, 'pve')
-        await self.ask(plugin, '/tarkov 1')
-        await self.ask(plugin, '/tarkov 1')
-        entry = await asyncio.to_thread(plugin.atlas_history.latest, 1, 'pve')
-        self.assertEqual(entry['document']['nickname'], 'Test_Player')
-        self.assertEqual(len(await asyncio.to_thread(plugin.atlas_history.history, 1, 'pve')), 1)
-        # A tarkov.dev fallback is never stored.
-        self.profiles[('pve', 2)] = profile(aid=2)
-        self.atlas.docs[(2, 'pve')] = test_plugin.sys.modules['tarkov_test_plugin.tarkov_core.atlas_cooldown'].AtlasBudgetError(60)
-        await self.ask(plugin, '/tarkov 2')
-        self.assertIsNone(await asyncio.to_thread(plugin.atlas_history.latest, 2, 'pve'))
-        off = self.plugin({'atlas_history_enabled': False})
-        self.assertTrue(off.atlas_history.path.exists())
-        await off.initialize()
-        self.assertFalse(off.atlas_history.path.exists())
-        self.atlas.put(3, 'pve')
-        await self.ask(off, '/tarkov 3')
-        self.assertFalse(off.atlas_history.path.exists())
 
     async def test_one_shot_picture_settings_are_consumed(self):
         config = {'atlas_assets_update': True, 'atlas_assets_clear': True}

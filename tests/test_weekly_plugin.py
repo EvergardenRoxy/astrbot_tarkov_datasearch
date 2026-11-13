@@ -181,7 +181,6 @@ class WeeklyPluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await plugin.weekly_save(1234567, 'pve', summary), self.module.SampleResult.ADDED)
         self.assertEqual(await plugin.weekly_save(1234567, 'pve', summary), self.module.SampleResult.DUPLICATE)
         self.assertEqual(await plugin.weekly_save(1234567, 'pve', {'doc': None}), self.module.SampleResult.INVALID)
-        self.assertEqual((await asyncio.to_thread(plugin.atlas_history.latest, 1234567, 'pve'))['nickname'], 'Test_Player')
         self.assertEqual((await asyncio.to_thread(plugin.accounts.lookup, 'Test_Player'))[0], [(1234567, 'Test_Player')])
         # Wired into the sampler with the maintainer's pacing.
         self.assertEqual(plugin.weekly_sampler.entries(), [('pve', '1234567'), ('pve', 'Player_Two')])

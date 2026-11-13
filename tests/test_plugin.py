@@ -170,6 +170,14 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.transport, 'fetch_profile', self.fake_fetch):
             return [r async for r in plugin.tarkov_command(event)]
 
+    async def test_retired_history_settings_and_file_are_dropped(self):
+        retired = Path(self.temp.name)/'atlas-history.sqlite3'
+        retired.write_bytes(b'old')
+        plugin = self.plugin({'atlas_history_enabled': False, 'atlas_history_hours': 1, 'atlas_history_max_mb': 16})
+        await plugin.initialize()
+        self.assertFalse(retired.exists())
+        await plugin.terminate()
+
     async def test_profile_queue_bound_preserves_shared_requests(self):
         plugin = self.plugin()
         gate = asyncio.Event()

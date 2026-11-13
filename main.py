@@ -17,7 +17,6 @@ from .tarkov_core.atlas_access import AtlasAccess
 from .tarkov_core.atlas_players import AtlasNotFound, AtlasPlayers, UserQuota, can_fall_back, failure_text
 from .tarkov_core.atlas_assets import AtlasAssets, level_badge
 from .tarkov_core.atlas_card import build as build_atlas_card
-from .tarkov_core.atlas_history import AtlasHistory
 from .tarkov_core.atlas_image import render_atlas_image
 from .tarkov_core.font_download import FontDownloadError, FullFont
 from .tarkov_core.fonts import use_chinese_font
@@ -81,6 +80,7 @@ WEEKLY_MAX_PLAYERS = 40
 # The last word of a player query: skip the local cache and ask Atlas again (maintainer: refresh is part of the query).
 REFRESH_WORDS = ('refresh', '刷新')
 PLAYER_SOURCES = ('atlas', 'tarkov-dev')
+RETIRED_FILES = tuple('atlas-history.sqlite3'+suffix for suffix in ('', '-journal', '-wal', '-shm'))
 
 
 class IndexTimeout(TimeoutError):
@@ -135,9 +135,6 @@ class TarkovPlugin(Star):
             cache_seconds=lambda: self.int_setting('profile_cache_minutes', 10, 0, 1440)*60)
         self.quota = UserQuota(self.quota_limits)
         self.atlas_assets = AtlasAssets(self.root/'atlas-assets', self.public_feed, proxy=self.proxy, client=self.http)
-        self.atlas_history = AtlasHistory(self.root/'atlas-history.sqlite3',
-            hours=lambda: self.int_setting('atlas_history_hours', 180, 1, 8760),
-            max_bytes=lambda: self.int_setting('atlas_history_max_mb', 64, 16, 128)*1024*1024)
         self.atlas_image_slots = asyncio.Semaphore(2)
         self.full_font = FullFont(self.root/'fonts', proxy=self.proxy, client=self.http,
                                   mirror=lambda: self.config.get('font_download_url', ''))
@@ -176,6 +173,7 @@ class TarkovPlugin(Star):
                                                 self.weekly_broadcast_active, self.weekly_error)
 
     async def initialize(self):
+        await asyncio.to_thread(self.remove_retired_files)
         await self.atlas.access.load()
         await self.atlas_settings_actions()
         if self.config.get('boss_portraits_update', False) is True:
@@ -210,6 +208,14 @@ class TarkovPlugin(Star):
             if self.boss_enabled() and self.config.get('boss_broadcast_enabled', False) is True:
                 logger.info('Tarkov Boss broadcasts idle: no eligible configured modes/targets; check settings and platform capability')
         await self.weekly_start()
+
+    def remove_retired_files(self):
+        """Data of features that no longer exist (0.7.0: the raw Atlas lookup history held player documents)."""
+        for name in RETIRED_FILES:
+            try:
+                (self.root/name).unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning('Tarkov retired file %s not removed: %s', name, type(exc).__name__)
 
     async def atlas_settings_actions(self):
         """The one-shot picture actions and the history switch. Each one-shot setting is switched off and saved
@@ -250,33 +256,11 @@ class TarkovPlugin(Star):
                 raise
             except Exception as exc:
                 logger.warning('Tarkov Atlas icon download failed: %s', type(exc).__name__)
-        try:
-            if self.history_enabled():
-                await asyncio.to_thread(self.atlas_history.prune)
-            else:
-                # Privacy switch off: nothing is recorded and earlier records are deleted.
-                await asyncio.to_thread(self.atlas_history.delete_all)
-        except (OSError, sqlite3.Error) as exc:
-            logger.warning('Tarkov Atlas history maintenance failed: %s', type(exc).__name__)
-
-    def history_enabled(self):
-        return self.config.get('atlas_history_enabled', True) is True
-
     async def public_feed(self, resource, mode):
         """The parsed `data` of a tarkov.dev public resource (the icon catalog of the Atlas picture)."""
         snapshot = await self.public_resource(resource, mode=mode, allow_stale=True)
         document = await snapshot.json()
         return document['data']
-
-    async def record_history(self, aid, mode, summary, trace):
-        """Keep Atlas' raw document in the local history (privacy switch on; never tarkov.dev snapshots)."""
-        if not self.history_enabled() or summary.get('from_cache') or 'doc' not in summary:
-            return
-        try:
-            await asyncio.to_thread(self.atlas_history.record, aid, mode, summary['doc'], summary.get('fetched'),
-                                    include_art=summary.get('include_art', True))
-        except (OSError, sqlite3.Error, ValueError) as exc:
-            logger.warning('Tarkov [%s] Atlas history not saved: %s', trace, type(exc).__name__)
 
     def int_setting(self, key, default, low, high):
         try:
@@ -581,11 +565,6 @@ class TarkovPlugin(Star):
     @filter.custom_filter(QQOfficialFilter)
     async def qq_tweekly(self, event: AstrMessageEvent):
         async for result in self.qq_word(event, 'weekly'): yield result
-
-    @staticmethod
-    def status_arguments(event):
-        words = event.message_str.strip().split(maxsplit=1)
-        return words[1] if len(words) > 1 else ''
 
     async def handle(self, event, text):
         words = text.split()
@@ -898,7 +877,6 @@ class TarkovPlugin(Star):
                 notes.append(f'注意：{where}中的 {asked} 对应账号 ID {aid}，档案里现在的昵称是 {summary["nickname"]}，可能改过名。')
                 notes.append('本次昵称核验未通过，下面按已记录的账号 ID 展示资料。')
         if not summary.get('from_cache'):
-            await self.record_history(aid, mode, summary, trace)
             await self.weekly_feed(aid, mode, summary)
             try:
                 await asyncio.to_thread(self.accounts.remember, aid, summary['nickname'])
@@ -1695,7 +1673,6 @@ class TarkovPlugin(Star):
     async def weekly_fetch(self, mode, aid, *, deadline=None):
         """One fresh Atlas document for the nightly sample (no user quota: the sampler paces itself)."""
         summary = await self.atlas_players.profile_once(mode, aid, deadline=deadline, include_art=False)
-        await self.record_history(aid, mode, summary, 'weekly')
         try:
             await asyncio.to_thread(self.accounts.remember, aid, summary['nickname'])
         except sqlite3.Error as exc:

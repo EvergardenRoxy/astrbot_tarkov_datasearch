@@ -10,7 +10,6 @@ Nothing here raises on odd field types. Arena is not covered yet (checklist.md#a
 import datetime
 
 from .atlas_card import MODE_LABELS, achievement_list, combat_row, counts, online, ratio, survival_rate
-from .atlas_history import looked_up_seconds
 from .atlas_profile import AtlasProfileError, achievements as achievement_count, common_skills, nickname
 from .modes import GAME_MODES
 from .profile import ELITE_PROGRESS, STATIC, number
@@ -32,6 +31,18 @@ WEEKDAYS = ('周一', '周二', '周三', '周四', '周五', '周六', '周日'
 RANK_ROWS = 20
 # The best survival rate is only named among players with at least this many raids.
 RATE_RAIDS = 5
+
+
+def looked_up_seconds(doc):
+    """Epoch seconds of Atlas' own `looked_up` time (ISO 8601 with a zone), or None."""
+    value = doc.get('looked_up') if isinstance(doc, dict) else None
+    if not isinstance(value, str):
+        return None
+    try:
+        moment = datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    return moment.timestamp() if moment.tzinfo else None
 
 
 def valid_counters(block):

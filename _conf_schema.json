@@ -365,34 +365,6 @@
                 "default": false,
                 "hint": "打开并保存后，删除本地保存的全部图标和物品图片；之后用到时重新下载。"
             },
-            "atlas_history_enabled": {
-                "type": "bool",
-                "description": "保存 Atlas 查询记录",
-                "default": true,
-                "hint": "在本机保存每次成功查询的 Atlas 原始数据，为以后的定时拉取、周报和按时间比较预留。只存在插件数据目录，不上传；不保存 tarkov.dev 的快照。关闭后不再保存，并删除已有记录。"
-            },
-            "atlas_history_hours": {
-                "type": "int",
-                "description": "查询记录保留时间（小时）",
-                "default": 180,
-                "hint": "超过这个时间的记录自动删除。",
-                "slider": {
-                    "min": 1,
-                    "max": 8760,
-                    "step": 1
-                }
-            },
-            "atlas_history_max_mb": {
-                "type": "int",
-                "description": "查询记录总大小上限（MB）",
-                "default": 64,
-                "hint": "16～128 MB，超过时先删最早的记录。",
-                "slider": {
-                    "min": 16,
-                    "max": 128,
-                    "step": 1
-                }
-            },
             "font_download_url": {
                 "type": "string",
                 "description": "完整中文字体下载地址（可选）",
