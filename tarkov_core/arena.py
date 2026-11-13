@@ -9,8 +9,7 @@ from the main game's level table).
 import re
 import time
 
-from .card import STALE_DAYS, refresh_note, stale_note, when
-from .output import markdown_refresh, markdown_source_lines, md, source_lines
+from .card import STALE_DAYS, when
 from .profile import last_active, number
 from .text import clean
 from .transport import QueryError
@@ -102,14 +101,6 @@ def rank(arp):
     return next((tier, name) for limit, tier, name in RANKS if arp <= limit)
 
 
-def arp_text(arp):
-    """"1200（Jackal）", or the top label alone (no ARP above TOP_ARP)."""
-    found = rank(arp)
-    if found and found[0] == 'TOP':
-        return found[1]
-    return f'{arp}（{found[1]}）' if found else str(arp)
-
-
 def kd(stats):
     deaths = stats.get('deaths')
     return f"{stats.get('kills', 0)/deaths:.2f}" if deaths else None
@@ -158,78 +149,3 @@ def build_arena_card(summary, notes=(), now=None, refresh_url=None):
         'notes': list(notes),
         'refresh_url': refresh_url,
     }
-
-
-def overall_text(stats):
-    parts = [f"对局 {stats.get('games', 0)}", f"击杀 {stats.get('kills', 0)}", f"死亡 {stats.get('deaths', 0)}",
-             f"K/D {kd(stats) or '—'}"]
-    if stats.get('best_arp'):
-        parts.append(f"最佳 ARP {arp_text(stats['best_arp'])}")
-    for key, label in (('max_killstreak', '最长连杀'), ('win_streak', '最长连胜')):
-        if stats.get(key):
-            parts.append(f'{label} {stats[key]}')
-    return '，'.join(parts)
-
-
-def mode_text(label, stats):
-    parts = [f"对局 {stats.get('games', 0)}"]
-    if stats.get('wins') is not None:
-        rate = win_rate(stats)
-        parts.append(f"胜 {stats['wins']}" + (f'（{rate}）' if rate else ''))
-    parts += [f"击杀 {stats.get('kills', 0)}", f"死亡 {stats.get('deaths', 0)}", f"K/D {kd(stats) or '—'}"]
-    if stats.get('mvp'):
-        parts.append(f"MVP {stats['mvp']}")
-    return f'　{label}：' + '，'.join(parts)
-
-
-def footer(card, quote=''):
-    lines = []
-    if card['updated']:
-        lines.append(f"数据来自 tarkov.dev，档案更新于 {card['updated']}（北京时间）")
-    else:
-        lines.append('数据来自 tarkov.dev（时间为北京时间）')
-    if card['stale_days']:
-        lines.append(stale_note(card['stale_days']))
-    lines += [md(note) if quote else note for note in card['notes']]
-    if card['refresh_url']:
-        lines.append(markdown_refresh(card['refresh_url']) if quote else refresh_note(card['refresh_url']))
-    return [quote+line for line in lines]
-
-
-def render_arena_text(card):
-    aid = f"（账号 ID {card['aid']}）" if card['aid'] is not None else ''
-    lines = [f"【塔科夫竞技场档案】{card['nickname']}{aid}"]
-    extra = [f"成就 {card['achievements']} 个"]
-    if card['last_active']:
-        extra.append(f"最近活跃 {card['last_active']}")
-    lines += ['｜'.join(extra), '']
-    if not card['sections']:
-        lines.append('暂无竞技场对局记录')
-    for section in card['sections']:
-        head = f"{section['title']}：" + (overall_text(section['overall']) if section['overall'] else '（无总计）')
-        lines.append(head)
-        lines += [mode_text(label, stats) for label, stats in section['modes']]
-    return '\n'.join(lines+['']+footer(card)+source_lines())
-
-
-def render_arena_markdown(card):
-    lines = [f"## 塔科夫竞技场档案：{md(card['nickname'])}", '']
-    basics = [f"**账号 ID** {card['aid']}"] if card['aid'] is not None else []
-    basics.append(f"成就 {card['achievements']} 个")
-    if card['last_active']:
-        basics.append(f"最近活跃 {card['last_active']}")
-    lines += [' · '.join(basics), '']
-    if not card['sections']:
-        lines += ['暂无竞技场对局记录', '']
-    for section in card['sections']:
-        lines.append(f"### {section['title']}")
-        if section['overall']:
-            lines.append(overall_text(section['overall']))
-        lines += ['', '| 模式 | 对局 | 胜 | 胜率 | 击杀 | 死亡 | K/D | MVP |', '|---|---:|---:|---:|---:|---:|---:|---:|']
-        for label, stats in section['modes']:
-            wins = stats.get('wins')
-            lines.append(f"| {md(label)} | {stats.get('games', 0)} | {'—' if wins is None else wins} | "
-                         f"{win_rate(stats) or '—'} | {stats.get('kills', 0)} | {stats.get('deaths', 0)} | "
-                         f"{kd(stats) or '—'} | {stats.get('mvp', 0)} |")
-        lines.append('')
-    return '\n'.join(lines+footer(card, '> ')+markdown_source_lines())

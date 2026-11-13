@@ -18,10 +18,6 @@ def use_chinese_font(path):
     _chinese_font = str(path) if path is not None else None
 
 
-def chinese_font_path():
-    return _chinese_font
-
-
 @lru_cache(maxsize=256)
 def _load(path, size, weight, basic):
     engine = ImageFont.Layout.BASIC if basic else None

@@ -1,5 +1,4 @@
 """Conditional Boss spawn records, independent of display language and transport."""
-import hashlib
 import json
 import math
 from collections import defaultdict
@@ -212,8 +211,3 @@ def build_table(before, after):
                                'current': new['chance'] if new else None, 'change': note, 'changed': bool(note)})
                 changed |= bool(note)
     return output, changed
-
-
-def state_fingerprint(state):
-    semantic = [(m['map_id'], [(r['mob_id'], r['rule'], r['chance']) for r in m['rows']]) for m in state]
-    return hashlib.sha256(packed(semantic).encode()).hexdigest()
