@@ -5,7 +5,7 @@ steps between consecutive samples of the last seven days (rolling, counted back 
 2026-11-10). A counter that goes down restarted from zero (wipe, season reset, prestige), so that step counts the
 new value. Samples are normally taken once a night (weekly_tasks.py); a step is put on the "game day" its later
 sample closes, i.e. the date twelve hours before that sample (a 03:00 sample closes the day before).
-Nothing here raises on odd field types. Arena is not covered yet (checklist.md#arena-weekly).
+Nothing here raises on odd field types. Arena is not covered.
 """
 import datetime
 
@@ -231,7 +231,9 @@ def build_ranking(entries, mode):
     def row(place, report):
         total = report['total']
         before, after = report['level']
-        return {'place': place, 'nickname': report['nickname'], 'raids': f"{total['raids']:,}",
+        # A row built from fewer days than the ranking's seven says so next to the name.
+        short = f"（{report['span_days']} 天）" if report['span_days'] < 7 else ''
+        return {'place': place, 'nickname': report['nickname']+short, 'raids': f"{total['raids']:,}",
                 'survival': survival_rate(total), 'player_kills': f"{total['player_kills']:,}",
                 'kd': ratio(total['player_kills'], total['killed']+total['left']), 'kills': f"{total['kills']:,}",
                 'killed': f"{total['killed']:,}",

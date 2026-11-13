@@ -17,6 +17,32 @@ class PermanentDeliveryError(Exception):
     pass
 
 
+async def submit(send, target, picture, on_error):
+    """Send one picture to one target. 'submitted', 'unknown' (the platform did not say: never repeated, it may have
+    arrived), 'blocked' (the target refuses pushes) or, for a failure worth another try, any other word."""
+    try:
+        result = await asyncio.wait_for(send(target, picture), timeout=20)
+        return 'submitted' if result is True else 'unknown' if result is None else 'platform_unavailable'
+    except asyncio.CancelledError:
+        raise
+    except (PermanentDeliveryError, PermissionError) as exc:
+        on_error(exc)
+        return 'blocked'
+    except Exception as exc:
+        on_error(exc)
+        return type(exc).__name__
+
+
+def after_attempt(attempts, outcome, now):
+    """(state, time of the next try) of a delivery after its `attempts`-th try: final outcomes stay, a failure is
+    tried again after 2, 4 minutes and given up on the third."""
+    if outcome in ('submitted', 'unknown', 'blocked'):
+        return outcome, 0
+    if attempts >= 3:
+        return 'failed', 0
+    return 'pending', now+min(1800, 120*2**(attempts-1))
+
+
 class NotificationStore:
     def __init__(self, path):
         self.path = path
@@ -103,11 +129,7 @@ class NotificationStore:
             if row is None:
                 return
             attempts = row[0]+1
-            if outcome in ('submitted', 'unknown', 'blocked'):
-                state, next_at = outcome, 0
-            else:
-                state = 'failed' if attempts >= 3 else 'pending'
-                next_at = now+min(1800, 120*2**(attempts-1))
+            state, next_at = after_attempt(attempts, outcome, now)
             db.execute('UPDATE deliveries SET state=?,attempts=?,next_at=?,error=? WHERE event_id=? AND target=?',
                        (state, attempts, next_at, None if outcome == 'submitted' else outcome, event_id, target))
             if outcome == 'blocked':
@@ -162,16 +184,13 @@ class StatusNotifications:
                 try:
                     if event_id not in artifacts:
                         artifacts[event_id] = await self.prepare(payload)
-                    result = await asyncio.wait_for(self.send(target, artifacts[event_id]), timeout=20)
-                    outcome = 'submitted' if result is True else 'unknown' if result is None else 'platform_unavailable'
                 except asyncio.CancelledError:
                     raise
-                except (PermanentDeliveryError, PermissionError) as exc:
-                    outcome = 'blocked'
-                    self.on_error(exc)
                 except Exception as exc:
-                    outcome = type(exc).__name__
                     self.on_error(exc)
+                    outcome = type(exc).__name__
+                else:
+                    outcome = await submit(self.send, target, artifacts[event_id], self.on_error)
                 await self.store.thread(self.store.record, event_id, target, outcome)
             if failure is not None:
                 raise failure

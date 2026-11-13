@@ -1,10 +1,10 @@
-"""Weekly report data in its own SQLite file: resolved roster names, each night's sampling progress, compact
-samples and broadcast records. Never the bindings database.
+"""Weekly report data in its own SQLite file: each chat's roster, resolved roster names, each night's sampling
+progress, compact samples and broadcast records. Never the bindings database.
 
-The roster itself (account ids or nicknames per mode) lives in the plugin settings (maintainer, 2026-11-10).
-Names retain their entry keys; nightly progress uses (mode, account id) once resolved, merging legacy entry keys.
-Nothing is deleted when an entry leaves the settings:
-samples simply expire (`keep_days`). No chat user ids are stored.
+Every chat (AstrBot session id) keeps its own roster per mode: the players its reports and rankings are about and
+its weekly broadcast shows. What is known about a player is shared: a nickname resolves to one account for every
+chat, and an account listed in several chats is sampled once a night. Nightly progress uses (mode, account id)
+once resolved. Samples of players no chat lists any more simply expire (`keep_days`). No chat user ids are stored.
 """
 import json
 import math
@@ -16,6 +16,9 @@ from enum import Enum
 from .modes import GAME_MODES
 
 SCHEMA = '''
+CREATE TABLE IF NOT EXISTS rosters (
+    chat TEXT NOT NULL, mode TEXT NOT NULL, entry TEXT NOT NULL, label TEXT NOT NULL, added_at REAL NOT NULL,
+    PRIMARY KEY (chat, mode, entry));
 CREATE TABLE IF NOT EXISTS players (
     mode TEXT NOT NULL, entry TEXT NOT NULL, account_id INTEGER NOT NULL, nickname TEXT NOT NULL,
     resolved_at REAL NOT NULL, PRIMARY KEY (mode, entry));
@@ -30,6 +33,10 @@ CREATE TABLE IF NOT EXISTS pushes (
     attempts INTEGER NOT NULL DEFAULT 0, at REAL NOT NULL, PRIMARY KEY (slot, target, mode));
 '''
 MAX_BODY = 64*1024
+# Listed players per chat and mode, and sampled per mode for all chats together: 3 x 40 pulls of about 160 seconds
+# fit the 03:00-09:00 window.
+CHAT_PLAYERS = 40
+MODE_PLAYERS = 40
 # Attempts per resolved account (or unresolved entry) and night: one retry after a failure, then tomorrow.
 ATTEMPTS = 2
 # Broadcast records are kept this long (they only stop a slot from being sent twice).
@@ -78,20 +85,80 @@ class WeeklyStore:
         return tuple(row) if row else None
 
     def resolve(self, mode, entry, account_id, nickname):
-        if mode not in GAME_MODES or type(account_id) is not int:
-            raise ValueError('invalid roster entry')
         def work(connection):
             connection.execute('INSERT OR REPLACE INTO players VALUES (?, ?, ?, ?, ?)',
                                (mode, key_of(entry), account_id, str(nickname)[:64], self.clock()))
             self._merge_pulls(connection)
         self._run(work)
 
-    def roster(self, mode, entries):
-        """[(entry, account id or None, nickname or None)] for the settings' entries of a mode, in their order."""
-        known = {row[0]: (row[1], row[2]) for row in self._run(
-            lambda c: c.execute('SELECT entry, account_id, nickname FROM players WHERE mode = ?', (mode,)).fetchall(),
-            [], create=False)}
-        return [(entry, *known.get(key_of(entry), (None, None))) for entry in entries]
+    # ---- each chat's roster ----
+
+    def add(self, chat, mode, entry):
+        """List `entry` (an account id or a nickname) in a chat's roster. 'added', 'listed' (it already was),
+        'chat_full' or 'mode_full' (the night cannot sample more players of this mode)."""
+        def work(connection):
+            key = key_of(entry)
+            if connection.execute('SELECT 1 FROM rosters WHERE chat=? AND mode=? AND entry=?', (chat, mode, key)).fetchone():
+                return 'listed'
+            if connection.execute('SELECT COUNT(*) FROM rosters WHERE chat=? AND mode=?', (chat, mode)).fetchone()[0] >= CHAT_PLAYERS:
+                return 'chat_full'
+            sampled = {row[0] for row in connection.execute('SELECT DISTINCT entry FROM rosters WHERE mode=?', (mode,))}
+            if key not in sampled and len(sampled) >= MODE_PLAYERS:
+                return 'mode_full'
+            connection.execute('INSERT INTO rosters VALUES (?, ?, ?, ?, ?)', (chat, mode, key, str(entry).strip(), self.clock()))
+            return 'added'
+        return self._run(work)
+
+    def remove(self, chat, mode, entry):
+        """Take an entry off a chat's roster, by what was listed, its account id or its nickname. True when found."""
+        def work(connection):
+            wanted = key_of(entry)
+            for listed, account_id, nickname in self._roster(connection, chat, mode):
+                if wanted in (key_of(listed), str(account_id), key_of(nickname or '')):
+                    connection.execute('DELETE FROM rosters WHERE chat=? AND mode=? AND entry=?', (chat, mode, key_of(listed)))
+                    return True
+            return False
+        return self._run(work, False, create=False)
+
+    @staticmethod
+    def _roster(connection, chat, mode):
+        rows = connection.execute(
+            'SELECT r.label, p.account_id, p.nickname FROM rosters r LEFT JOIN players p ON p.mode=r.mode AND p.entry=r.entry '
+            'WHERE r.chat=? AND r.mode=? ORDER BY r.added_at, r.entry', (chat, mode)).fetchall()
+        # An account id is its own account, resolved or not.
+        return [(label, int(label) if account_id is None and label.isascii() and label.isdigit() else account_id, name)
+                for label, account_id, name in rows]
+
+    def roster(self, chat, mode):
+        """[(entry as listed, account id or None, nickname or None)] of a chat's roster, in the order added."""
+        return self._run(lambda c: self._roster(c, chat, mode), [], create=False)
+
+    def entries(self):
+        """[(mode, entry)] every chat lists, without repeats: what the nightly sampler pulls."""
+        return self._run(lambda c: [tuple(row) for row in c.execute(
+            'SELECT mode, MIN(label) FROM rosters GROUP BY mode, entry ORDER BY MIN(added_at), mode, entry')], [], create=False)
+
+    def chats(self):
+        """{chat: [modes it lists players in]}: who gets the weekly broadcast."""
+        found = {}
+        for chat, mode in self._run(lambda c: c.execute('SELECT DISTINCT chat, mode FROM rosters ORDER BY chat').fetchall(),
+                                    [], create=False):
+            found.setdefault(chat, []).append(mode)
+        return {chat: [mode for mode in GAME_MODES if mode in modes] for chat, modes in found.items()}
+
+    def listed(self, mode, account_id, nickname):
+        """Whether any chat lists this account in `mode`. A listed nickname not resolved yet that equals `nickname`
+        is resolved to the account on the way (a user's own lookup settles it before the nightly sampler does)."""
+        def work(connection):
+            key = key_of(nickname)
+            if (connection.execute('SELECT 1 FROM rosters WHERE mode=? AND entry=?', (mode, key)).fetchone()
+                    and not connection.execute('SELECT 1 FROM players WHERE mode=? AND entry=?', (mode, key)).fetchone()):
+                connection.execute('INSERT INTO players VALUES (?, ?, ?, ?, ?)', (mode, key, account_id, str(nickname)[:64], self.clock()))
+                self._merge_pulls(connection)
+            return connection.execute(
+                'SELECT 1 FROM rosters r LEFT JOIN players p ON p.mode=r.mode AND p.entry=r.entry '
+                'WHERE r.mode=? AND (r.entry=? OR p.account_id=?) LIMIT 1', (mode, str(account_id), account_id)).fetchone() is not None
+        return self._run(work, False, create=False)
 
     # ---- the night's progress ----
 

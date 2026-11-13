@@ -3,11 +3,11 @@
 Sampling rules given by the maintainer after Atlas relaxed its terms (2026-11-10), kept exactly:
 - sampling starts at 03:00 Beijing time (UTC+8) and stops at 09:00 (off-peak only; a missed night is not caught up);
 - one Atlas request at a time, for one listed player; the next one 120 seconds plus a random 20-60 seconds later;
-- only the players the administrator listed in the settings; no hourly cap beyond the plugin's shared Atlas gate.
+- only the players listed in a chat's roster; no hourly cap beyond the plugin's shared Atlas gate.
 A nickname that needs Atlas' search uses one step for the search and the next step for the lookup.
 
-The broadcast sends one ranking picture per mode to the listed targets at the configured weekly time; a slot missed
-by more than LATE seconds (the plugin was down) is skipped. Neither task starts when its feature is off.
+The broadcast sends every chat with a roster its own ranking pictures, one per mode, at the configured weekly time;
+a slot missed by more than LATE seconds (the plugin was down) is skipped. Neither task starts when its feature is off.
 """
 import asyncio
 import datetime
@@ -16,7 +16,8 @@ import re
 import time
 
 from .atlas_players import NOT_SENT, AtlasNotFound
-from .notifications import PermanentDeliveryError
+from .notifications import submit
+from .polling import Loop
 from .weekly_report import TZ
 from .weekly_store import SampleResult
 
@@ -72,21 +73,6 @@ def latest_slot(now, schedule):
     return slot.timestamp()
 
 
-class Loop:
-    """A cancellable background task around `run()`."""
-    task = None
-
-    def start(self):
-        if self.enabled() and (self.task is None or self.task.done()):
-            self.task = asyncio.create_task(self.run())
-
-    async def close(self):
-        if self.task is not None:
-            self.task.cancel()
-            await asyncio.gather(self.task, return_exceptions=True)
-            self.task = None
-
-
 class WeeklySampler(Loop):
     def __init__(self, store, entries, resolve, fetch, save, enabled, on_error, *, clock=time.time,
                  sleep=asyncio.sleep, rand=random.uniform, monotonic=time.monotonic, paused=lambda: False):
@@ -119,7 +105,7 @@ class WeeklySampler(Loop):
         deadline = self.monotonic()+(end-now)
         day = day_id(now)
         await self.flush_progress()
-        pending = await asyncio.to_thread(self.store.pending, self.entries(), day)
+        pending = await asyncio.to_thread(lambda: self.store.pending(self.entries(), day))
         if not pending:
             return None
         mode, entry = pending[0]
@@ -204,41 +190,35 @@ class WeeklySampler(Loop):
 
 
 class WeeklyBroadcast(Loop):
-    def __init__(self, store, schedule, targets, modes, prepare, send, enabled, on_error, *, clock=time.time,
+    def __init__(self, store, schedule, chats, prepare, send, enabled, on_error, *, clock=time.time,
                  sleep=asyncio.sleep):
-        # schedule() -> (weekday, hour, minute); targets() -> [session id]; modes() -> modes with listed players;
-        # prepare(mode) -> picture bytes or None (nobody has a report); send(target, bytes) -> True / None / other.
-        self.store, self.schedule, self.targets, self.modes = store, schedule, targets, modes
+        # schedule() -> (weekday, hour, minute); await chats() -> {session id: [modes it lists players in]};
+        # await prepare(chat, mode) -> picture bytes or None (nobody has a report);
+        # await send(chat, bytes) -> True / None / other.
+        self.store, self.schedule, self.chats = store, schedule, chats
         self.prepare, self.send, self.enabled, self.on_error = prepare, send, enabled, on_error
         self.clock, self.sleep = clock, sleep
 
     async def deliver(self, slot):
         """Send what is still owed for `slot`; True when something should be tried again."""
         again = False
-        for mode in self.modes():
-            picture = self
-            for target in self.targets():
-                state = await asyncio.to_thread(self.store.push_state, slot, target, mode)
+        for chat, modes in (await self.chats()).items():
+            for mode in modes:
+                state = await asyncio.to_thread(self.store.push_state, slot, chat, mode)
                 if state and (state[0] != 'retry' or state[1] >= PUSH_ATTEMPTS):
                     continue
                 try:
-                    if picture is self:
-                        picture = await self.prepare(mode)
-                    if picture is None:
-                        outcome = 'empty'
-                    else:
-                        result = await asyncio.wait_for(self.send(target, picture), timeout=20)
-                        # True: submitted to the platform. None: unknown, never repeated (it may have arrived).
-                        outcome = 'submitted' if result is True else 'unknown' if result is None else 'retry'
+                    picture = await self.prepare(chat, mode)
                 except asyncio.CancelledError:
                     raise
-                except (PermanentDeliveryError, PermissionError) as exc:
-                    outcome = 'blocked'
-                    self.on_error(exc)
                 except Exception as exc:
-                    outcome = 'retry'
                     self.on_error(exc)
-                await asyncio.to_thread(self.store.push_record, slot, target, mode, outcome)
+                    outcome = 'retry'
+                else:
+                    outcome = 'empty' if picture is None else await submit(self.send, chat, picture, self.on_error)
+                    if outcome not in ('empty', 'submitted', 'unknown', 'blocked'):
+                        outcome = 'retry'
+                await asyncio.to_thread(self.store.push_record, slot, chat, mode, outcome)
                 if outcome == 'retry' and (state[1] if state else 0)+1 < PUSH_ATTEMPTS:
                     again = True
         return again

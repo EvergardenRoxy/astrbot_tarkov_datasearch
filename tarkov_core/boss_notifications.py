@@ -8,7 +8,7 @@ from contextlib import closing
 
 from .boss_monitor import BOSS_SCOPE, build_table
 from .boss_table_image import change_lines, paginate_table
-from .notifications import MAX_EVENT_BYTES, MAX_EVENTS, RETENTION_SECONDS, NotificationStore, PermanentDeliveryError
+from .notifications import MAX_EVENT_BYTES, MAX_EVENTS, RETENTION_SECONDS, NotificationStore, after_attempt, submit
 
 QUERY_SECONDS = 86400
 MAX_QUERY_BYTES = 32*1024*1024
@@ -150,8 +150,7 @@ class BossStore(NotificationStore):
                              (event_id, target, page)).fetchone()
             if row is None: return
             attempts = row[0]+1
-            state = outcome if outcome in ('submitted', 'unknown', 'blocked') else 'failed' if attempts >= 3 else 'pending'
-            next_at = now+min(1800, 120*2**(attempts-1)) if state == 'pending' else 0
+            state, next_at = after_attempt(attempts, outcome, now)
             db.execute('UPDATE deliveries SET state=?,attempts=?,next_at=?,error=? WHERE event_id=? AND target=? AND page=?',
                        (state, attempts, next_at, None if outcome == 'submitted' else outcome, event_id, target, page))
             if state == 'blocked': db.execute('INSERT OR IGNORE INTO blocked_targets VALUES (?)', (target,))
@@ -190,17 +189,17 @@ class BossNotifications:
             artifacts, stopped = {}, set()
             for event_id, target, page, pages in due:
                 if target in stopped or not self.enabled() or target not in self.targets() or pages[page]['mode'] not in self.modes(): continue
+                key = (event_id, page)
                 try:
-                    key = (event_id, page)
-                    if key not in artifacts: artifacts[key] = await self.prepare(pages[page], page+1, len(pages))
-                    result = await asyncio.wait_for(self.send(target, artifacts[key]), timeout=20)
-                    outcome = 'submitted' if result is True else 'unknown' if result is None else 'platform_unavailable'
+                    if key not in artifacts:
+                        artifacts[key] = await self.prepare(pages[page], page+1, len(pages))
                 except asyncio.CancelledError:
                     raise
-                except (PermanentDeliveryError, PermissionError) as exc:
-                    outcome = 'blocked'; self.on_error(exc)
                 except Exception as exc:
-                    outcome = type(exc).__name__; self.on_error(exc)
+                    self.on_error(exc)
+                    outcome = type(exc).__name__
+                else:
+                    outcome = await submit(self.send, target, artifacts[key], self.on_error)
                 await self.store.thread(self.store.record_page, event_id, target, page, outcome)
                 if outcome != 'submitted': stopped.add(target)
             if failure: raise failure

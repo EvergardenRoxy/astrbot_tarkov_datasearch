@@ -1,6 +1,27 @@
-"""One cancellable, non-overlapping poller; normal interval comes from feature settings."""
+"""The plugin's background tasks: a cancellable loop, and a poller that repeats a cycle at a settings interval."""
 import asyncio
 import time
+
+
+class Loop:
+    """A background task around `run()`, started only while `enabled()`."""
+    task = None
+
+    def enabled(self):
+        raise NotImplementedError
+
+    async def run(self):
+        raise NotImplementedError
+
+    def start(self):
+        if self.enabled() and (self.task is None or self.task.done()):
+            self.task = asyncio.create_task(self.run())
+
+    async def close(self):
+        if self.task is not None:
+            self.task.cancel()
+            await asyncio.gather(self.task, return_exceptions=True)
+            self.task = None
 
 
 async def wait_for_change(event, seconds):
@@ -11,18 +32,17 @@ async def wait_for_change(event, seconds):
     event.clear()
 
 
-class PollingTask:
+class PollingTask(Loop):
+    """Runs `cycle()` every `interval()` seconds (at least two minutes), never two at once. After failures the wait
+    doubles, up to half an hour or the interval if that is longer."""
+
     def __init__(self, cycle, enabled, interval, on_error, *, clock=time.monotonic, wait=wait_for_change):
         self.cycle, self.enabled, self.interval, self.on_error = cycle, enabled, interval, on_error
         self.clock, self.wait = clock, wait
         self.changed = asyncio.Event()
-        self.task = None
-
-    def start(self):
-        if self.enabled() and (self.task is None or self.task.done()):
-            self.task = asyncio.create_task(self.run())
 
     def reconfigure(self):
+        """The settings changed: start if needed and measure the current wait again."""
         self.changed.set()
         self.start()
 
@@ -45,9 +65,3 @@ class PollingTask:
                 if remaining <= 0:
                     break
                 await self.wait(self.changed, remaining)
-
-    async def close(self):
-        if self.task is not None:
-            self.task.cancel()
-            await asyncio.gather(self.task, return_exceptions=True)
-            self.task = None

@@ -25,6 +25,13 @@ class AtlasBudgetError(QueryError):
         self.retry_after_seconds = math.ceil(seconds)
 
 
+class AtlasAccessPaused(QueryError):
+    """Atlas answered 401/403 a while ago; it is left alone until the pause ends (no request was sent)."""
+    def __init__(self, seconds):
+        super().__init__(f'Atlas 拒绝了访问，约 {math.ceil(seconds/60)} 分钟后自动重试')
+        self.retry_after_seconds = math.ceil(seconds)
+
+
 class AtlasDeadlineError(AtlasCooldownError):
     """A scheduled request's window ended before it was sent; no budget was consumed."""
     def __init__(self):
@@ -72,15 +79,8 @@ class AtlasBudget:
         except ValueError:
             pass
 
-    def remaining_hour(self):
-        self._trim(self.clock())
-        return max(0, self.per_hour()-len(self.sent))
-
-
 class AtlasCooldown:
     def __init__(self, interval=10, *, clock=time.monotonic):
-        if isinstance(interval, bool) or not isinstance(interval, (int, float)) or not math.isfinite(interval) or not 10 <= interval <= 300:
-            raise ValueError('invalid Atlas cooldown')
         self.interval = interval
         self.clock = clock
         self.next_start = 0
@@ -88,9 +88,6 @@ class AtlasCooldown:
         self.in_flight = False
 
     def pause(self, seconds):
-        # Infinite pause is fail-closed for an unrepresentably large Retry-After.
-        if seconds < 0 or math.isnan(seconds):
-            raise ValueError('invalid Atlas pause')
         self.paused_until = max(self.paused_until, self.clock()+seconds)
 
     @asynccontextmanager
