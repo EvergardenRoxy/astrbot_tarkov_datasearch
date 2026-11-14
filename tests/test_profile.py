@@ -2,8 +2,8 @@ import copy
 import unittest
 
 from fixtures import profile
+from tarkov_core.card import build_card
 from tarkov_core.modes import page_url, parse_mode, parse_player_url, path_of, search_url
-from tarkov_core.output import render
 from tarkov_core.profile import STATIC, counter, level_of, side_stats, summarize
 from tarkov_core.transport import QueryError
 
@@ -118,7 +118,7 @@ class SummaryTests(unittest.TestCase):
                 if path == ('info',) or path == ('info', 'nickname') and not isinstance(value, str):
                     continue
                 with self.subTest(path=path, value=repr(value)[:20]):
-                    render(summarize(raw), 'PVE')
+                    build_card(summarize(raw), 'PVE')
                     checked += 1
         self.assertGreater(checked, 1000)
 

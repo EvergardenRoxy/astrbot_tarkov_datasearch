@@ -45,7 +45,7 @@ class ResourceKey:
             return '/status'
         if self.mode not in MODE_NAMES.values():
             raise ValueError('请使用 regular、pve 或 pvp-season 公共数据路径')
-        if self.language is not None and (self.resource != 'maps' or self.language not in LANGUAGES):
+        if self.language is not None and self.language not in LANGUAGES:
             raise ValueError('该资源或语言不支持翻译字典')
         return f'/{self.mode}/{self.resource}'+('_'+self.language if self.language else '')
 

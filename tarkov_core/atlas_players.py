@@ -45,7 +45,7 @@ def failure_text(exc):
         if exc.code == 'busy':
             return 'Atlas 正忙（网站同时查询的人太多）'
         if exc.code == 'rate':
-            wait = f'，约 {math.ceil(exc.retry_after)} 秒后恢复' if exc.retry_after else ''
+            wait = f'，约 {math.ceil(exc.retry_after)} 秒后恢复' if exc.retry_after and math.isfinite(exc.retry_after) else ''
             return f'Atlas 暂时限制了这台服务器的查询次数{wait}'
         if exc.code in ('session', 'backend', 'lookup', 'unavailable'):
             return f'Atlas 暂时无法查询（{exc.code}）'

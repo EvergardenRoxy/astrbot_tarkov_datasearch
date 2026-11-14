@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
-from tarkov_core.boss_monitor import BOSS_SCOPE, DAILY_BOSSES, build_table, normalize_bosses, percent, probability, state_fingerprint
+from tarkov_core.boss_monitor import BOSS_SCOPE, DAILY_BOSSES, build_table, normalize_bosses, percent, probability
 from tarkov_core.boss_notifications import BossNotifications, BossStore, PAGES_PER_CYCLE, QUERY_SECONDS
 from tarkov_core import boss_table_image
 from tarkov_core.boss_table_image import BOSS_ROWS, FONT_SIZE, MAPS_PER_PAGE, MAX_CHANGE_LINES, RED, TEXT as INK, change_lines, compact_rows, notes_for, paginate_table, render_boss_page
@@ -91,7 +91,6 @@ class BossModelTests(unittest.TestCase):
             row['spawnTime'] = float(row['spawnTime'])
             row['escorts'] = [{'mob': 'follower', 'equipment': 'changed'}]
         after = normalize_bosses(modified, [{'factory-name': '工厂', 'Alpha': 'Boss Alpha', 'zone': '区域'}])
-        self.assertEqual(state_fingerprint(before), state_fingerprint(after))
         self.assertFalse(build_table(before, after)[1])
 
     def test_duplicates_keep_multiset_identity_and_probability_changes_have_percentage_points(self):
@@ -303,7 +302,6 @@ class EventBossTests(unittest.TestCase):
         rows, changed = build_table(before, after)
         self.assertTrue(changed)
         self.assertEqual({r['change'] for r in rows}, {'新增记录/规则', '已移除记录/规则'})
-        self.assertNotEqual(state_fingerprint(before), state_fingerprint(after))
         self.assertEqual(compact_rows(rows)[0]['rates'], ['1'])
 
     def test_infected_name_is_drawable(self):

@@ -3,6 +3,7 @@ import asyncio
 import datetime
 import email.utils
 import json
+import math
 import re
 import time
 from contextlib import nullcontext
@@ -28,7 +29,6 @@ PLAYER_WAIT_SECONDS = 20
 PLAYER_WAIT_MARGIN = 10
 # After a 401/403 Atlas is left alone this long, then asked again (maintainer: rare, no manual reset).
 REFUSED_SECONDS = 30*60
-MAX_PAUSE_SECONDS = 86400
 # Error codes of the public EFTForge relay; anything else is reported as 'http'.
 ERROR_CODES = ('busy', 'rate', 'session', 'backend', 'not_found', 'no_profile', 'mode', 'bad_account', 'bad_nickname',
                'lookup', 'unavailable')
@@ -48,14 +48,15 @@ class AtlasHTTPError(HTTPError):
 
 
 def retry_after(value):
-    """Seconds of a Retry-After header (a number or an HTTP date), at most a day; 60 when it is missing or unusable."""
+    """Seconds of a Retry-After header (a number or an HTTP date); 60 when it is missing or unusable. An upstream
+    pause is never shortened: a number too long to mean anything is "do not ask again" (infinity)."""
     try:
         if value and value.isascii() and value.isdigit():
-            return min(MAX_PAUSE_SECONDS, int(value[:9]))
+            return int(value) if len(value) < 19 else math.inf
         date = email.utils.parsedate_to_datetime(value)
         if date.tzinfo is None:
             date = date.replace(tzinfo=datetime.timezone.utc)
-        return min(MAX_PAUSE_SECONDS, max(0, date.timestamp()-time.time()))
+        return max(0, date.timestamp()-time.time())
     except (ValueError, TypeError, OverflowError):
         return 60
 

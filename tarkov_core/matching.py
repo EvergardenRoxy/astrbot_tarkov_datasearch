@@ -103,6 +103,9 @@ class MatchingService:
         cached = self._cached_result()
         if cached is not None and not cached.stale:
             return cached
+        if cached is not None and self.pending is not None:
+            # Nobody waits for a refresh while an older result can be shown.
+            return cached
         if self.pending is None:
             if self.http_error is not None and self.clock() < self.http_error_until:
                 raise AtlasHTTPError(*self.http_error)

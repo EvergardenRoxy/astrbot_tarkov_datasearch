@@ -509,7 +509,7 @@ class FullFontTests(unittest.IsolatedAsyncioTestCase):
 
     def test_every_renderer_shares_the_complete_font_without_a_subset_fallback(self):
         from tarkov_core import fonts, atlas_image, matching_image, image
-        original = fonts.chinese_font_path()
+        original = fonts._chinese_font
         try:
             fonts.use_chinese_font(None)
             for loader in (atlas_image.font, matching_image.font, image.font):
