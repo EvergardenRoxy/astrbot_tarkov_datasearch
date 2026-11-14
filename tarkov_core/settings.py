@@ -13,7 +13,7 @@ GROUPS = {
                'status_qq_push_enabled'),
     'boss': ('boss_enabled', 'boss_broadcast_enabled', 'boss_poll_minutes', 'boss_modes', 'boss_notify_targets',
              'boss_qq_push_enabled', 'boss_event_ignore', 'boss_portraits_update'),
-    'weekly': ('weekly_enabled', 'weekly_keep_days', 'weekly_push_enabled', 'weekly_push_weekday', 'weekly_push_time'),
+    'weekly': ('weekly_enabled', 'weekly_roster_admin_only', 'weekly_keep_days', 'weekly_push_enabled', 'weekly_push_weekday', 'weekly_push_time'),
 }
 GROUP_OF = {key: group for group, keys in GROUPS.items() for key in keys}
 # Whole-number settings: key -> (default, lowest, highest). A value outside is moved to the nearest bound.
@@ -26,7 +26,8 @@ INTS = {
     'atlas_budget_per_hour': (200, 1, 200), 'weekly_keep_days': (30, 14, 180),
 }
 # Switches that are on unless switched off; every other switch is off unless switched on.
-ON_BY_DEFAULT = frozenset(('qq_single_word_commands', 'name_index_enabled', 'matching_enabled'))
+ON_BY_DEFAULT = frozenset(('qq_single_word_commands', 'name_index_enabled', 'matching_enabled',
+                            'weekly_roster_admin_only'))
 
 
 class Settings(MutableMapping):

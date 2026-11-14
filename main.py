@@ -42,7 +42,7 @@ class QQOfficialFilter(filter.CustomFilter):
         return is_qq_official(event)
 
 
-@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '查询塔科夫玩家档案（默认来自 Atlas，可改用 tarkov.dev 快照）、服务器状态、Boss 刷率和匹配时间', '0.7.0')
+@register('astrbot_tarkov_datasearch', 'Evergarden_Roxy', '查询塔科夫玩家档案（默认来自 Atlas，可改用 tarkov.dev 快照）、服务器状态、Boss 刷率和匹配时间', '0.7.1')
 class TarkovPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)

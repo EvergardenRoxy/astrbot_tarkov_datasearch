@@ -38,7 +38,8 @@ class WeeklyTests(PluginCase):
     async def test_administrators_keep_the_roster_of_the_chat_they_are_in(self):
         plugin = self.plugin()
         self.assertEqual(await self.ask(plugin, '/tarkov 周报 添加 11'), ['只有 AstrBot 管理员可以修改周报名单。'])
-        self.assertIn('已把 11 加入本聊天的 PVE 周报名单', (await self.ask(plugin, '/tarkov 周报 添加 11', admin=True))[0])
+        self.assertEqual(await self.ask(plugin, '/tarkov 周报 添加 11', admin=True),
+                         ['已把 11 加入本聊天的 PVE 周报名单。查看名单：@机器人 tarkov 周报 名单 pve'])
         self.assertIn('已把 Some_Name 加入本聊天的 PVP 赛季 周报名单', (await self.ask(plugin, '/tarkov 周报 添加 赛季 Some_Name', admin=True))[0])
         self.assertIn('11 已经在本聊天的 PVE 周报名单内', (await self.ask(plugin, '/tarkov weekly add pve 11', admin=True))[0])
         self.assertIn('请填写账号 ID', (await self.ask(plugin, '/tarkov 周报 添加 a!', admin=True))[0])
@@ -55,6 +56,11 @@ class WeeklyTests(PluginCase):
         # A chat the plugin may no longer talk to is not pulled for.
         plugin.app.config['allowed_origins'] = [GROUP_1]
         self.assertEqual(plugin.weekly.sampler.entries(), [('pve', '11')])
+
+    async def test_the_roster_can_be_opened_to_everyone(self):
+        plugin = self.plugin({'weekly_roster_admin_only': False})
+        self.assertIn('已把 11 加入本聊天的 PVE 周报名单', (await self.ask(plugin, '/tarkov 周报 添加 11'))[0])
+        self.assertIn('已把 11 移出本聊天的 PVE 周报名单', (await self.ask(plugin, '/tarkov 周报 移除 11'))[0])
 
     async def test_each_chat_sees_only_its_own_players(self):
         plugin = self.plugin()

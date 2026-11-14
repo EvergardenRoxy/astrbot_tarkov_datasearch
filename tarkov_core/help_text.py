@@ -24,7 +24,7 @@ def feature_rows(command, features):
         rows.append(('匹配时间', f'{command} 匹配', '各服务器平均匹配时间图片；数据来自 Atlas'))
     if 'weekly' in features:
         rows.append(('玩家周报', f'{command} 周报 [模式] [昵称或排行]', '本聊天名单内玩家近 7 天的变化；数据来自 Atlas'))
-        rows.append(('周报名单', f'{command} 周报 添加|移除|名单 [模式] [昵称或账号ID]', '每个聊天各自的名单；添加和移除仅 AstrBot 管理员'))
+        rows.append(('周报名单', f'{command} 周报 添加|移除|名单 [模式] [昵称或账号ID]', '每个聊天各自的名单；谁可以添加和移除由管理员设置'))
     if 'qq_words' in features:
         words = ('tpve [目标] · tbind <目标> · tstatus · tboss' + (' · tmatch' if 'matching' in features else '')
                  + (' · tweekly' if 'weekly' in features else ''))
