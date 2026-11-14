@@ -11,7 +11,7 @@ import math
 import time
 
 from .atlas_client import AtlasDataError, AtlasHTTPError
-from .atlas_cooldown import AtlasAccessPaused, AtlasBudgetError, AtlasCooldownError
+from .atlas_cooldown import AtlasAccessPaused, AtlasBudgetError, AtlasCooldownError, AtlasNotSent
 from .atlas_profile import AtlasProfileError, search_results, summarize
 from .modes import label_of
 from .transport import ConnectionFailure, NotFound, QueryError
@@ -26,11 +26,16 @@ MAX_PENDING = 32
 QUOTA_USERS = 10000
 # Refusals before any request reaches Atlas (the plugin's budget, the shared gate, a 401/403 pause): the user's
 # quota is not counted.
-NOT_SENT = (AtlasBudgetError, AtlasCooldownError, AtlasAccessPaused)
+NOT_SENT = (AtlasBudgetError, AtlasCooldownError, AtlasAccessPaused, AtlasNotSent)
 
 
 class AtlasNotFound(NotFound):
-    """Atlas answered: no such account, or no profile in this mode. Never used for a failed request."""
+    """Atlas answered: no such account (`no_account`), or no profile in this mode. Never used for a failed request."""
+    no_account = False
+
+
+class AtlasNoAccount(AtlasNotFound):
+    no_account = True
 
 
 class QuotaError(QueryError):
@@ -131,7 +136,7 @@ class AtlasPlayers:
                                       retry, ticket)
         except AtlasHTTPError as exc:
             if exc.code == 'not_found':
-                raise AtlasNotFound(f'Atlas 找不到账号 ID {aid}') from None
+                raise AtlasNoAccount(f'Atlas 找不到账号 ID {aid}') from None
             if exc.code == 'no_profile':
                 # Remembered briefly, so repeated queries for a missing profile cost one request a minute.
                 self._remember((mode, aid, include_art), None)

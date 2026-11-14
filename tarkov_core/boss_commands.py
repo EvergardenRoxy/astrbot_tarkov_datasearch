@@ -14,7 +14,7 @@ from .modes import GAME_MODES, label_of, parse_mode
 from .notifications import PermanentDeliveryError
 from .polling import PollingTask
 from .public_api import LANGUAGES
-from .status_commands import push_error
+from .push_targets import push_error
 from .transport import QueryError
 
 PAGE_WORDS = ('页', 'page')
@@ -70,8 +70,10 @@ class BossCommands:
 
     async def start(self):
         if self.app.config.consume('boss_portraits_update'):
-            count = await self.portraits.refresh()
-            logger.info('Tarkov Boss portraits updated: %s/12', count)
+            try:
+                logger.info('Tarkov Boss portraits updated: %s/12', await self.portraits.refresh())
+            except OSError as exc:
+                logger.warning('Tarkov Boss portraits not updated: %s', type(exc).__name__)
         if self.broadcasting():
             await self.store.thread(self.store.reconcile, self.modes(), self.targets())
             self.poller.reconfigure()

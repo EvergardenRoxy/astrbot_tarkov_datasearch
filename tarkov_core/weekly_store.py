@@ -114,7 +114,7 @@ class WeeklyStore:
         def work(connection):
             wanted = key_of(entry)
             for listed, account_id, nickname in self._roster(connection, chat, mode):
-                if wanted in (key_of(listed), str(account_id), key_of(nickname or '')):
+                if wanted in (key_of(listed), key_of(nickname or '')) or (account_id is not None and wanted == str(account_id)):
                     connection.execute('DELETE FROM rosters WHERE chat=? AND mode=? AND entry=?', (chat, mode, key_of(listed)))
                     return True
             return False
@@ -133,10 +133,13 @@ class WeeklyStore:
         """[(entry as listed, account id or None, nickname or None)] of a chat's roster, in the order added."""
         return self._run(lambda c: self._roster(c, chat, mode), [], create=False)
 
-    def entries(self):
-        """[(mode, entry)] every chat lists, without repeats: what the nightly sampler pulls."""
+    def entries(self, chats):
+        """[(mode, entry)] listed by any of `chats`, without repeats: what the nightly sampler pulls."""
+        chats = list(chats)
+        marks = ','.join('?'*len(chats))
         return self._run(lambda c: [tuple(row) for row in c.execute(
-            'SELECT mode, MIN(label) FROM rosters GROUP BY mode, entry ORDER BY MIN(added_at), mode, entry')], [], create=False)
+            f'SELECT mode, MIN(label) FROM rosters WHERE chat IN ({marks}) GROUP BY mode, entry '
+            'ORDER BY MIN(added_at), mode, entry', chats)], [], create=False)
 
     def chats(self):
         """{chat: [modes it lists players in]}: who gets the weekly broadcast."""

@@ -3,7 +3,6 @@ fails. A snapshot exists only after someone searched the player on the tarkov.de
 own, so the replies say how to get one and how to refresh it.
 """
 import asyncio
-import re
 import sqlite3
 import time
 
@@ -15,13 +14,11 @@ from .arena import build_arena_card, summarize_arena
 from .arena_image import render_arena_image
 from .card import BOT_LIMIT, build_card
 from .image import render_image
-from .modes import GAME_MODES, MODES, label_of, page_url, path_of, search_url
+from .modes import ACCOUNT_ID, GAME_MODES, MODE_WORDS, MODES, label_of, page_url, path_of, search_url
 from .names import NAME, SUGGESTIONS, NameIndex, every
 from .profile import summarize
 from .transport import NotFound, QueryError
 
-# ASCII digits only: \d would also accept full-width and other Unicode digits.
-ACCOUNT_ID = re.compile(r'[0-9]{1,12}')
 # Profiles kept in memory at most, whatever the cache time.
 CACHE_ENTRIES = 128
 # How long "no profile in this mode" is remembered (seconds).
@@ -32,7 +29,6 @@ CACHE_NOTE_SECONDS = 60
 FETCHES_AT_ONCE = 6
 MAX_PENDING_PROFILES = 64
 PROFILE_QUEUE_SECONDS = 30
-MODE_WORDS = {'pvp': 'pvp', 'pve': 'pve', 'season': '赛季', 'arena': '竞技场'}
 LABEL_OF_PATH = {path: label for path, label, _ in MODES.values()}
 
 

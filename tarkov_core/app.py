@@ -66,7 +66,7 @@ class App:
         url = str(self.config.get('proxy_url', '')).strip()
         if not url:
             # An empty address must not turn into a direct connection.
-            raise QueryError('已开启“访问 tarkov.dev 时使用代理”，但没有填写代理地址，请在插件配置中填写或关闭代理')
+            raise QueryError('已开启“访问数据接口时使用代理”，但没有填写代理地址，请在插件配置中填写或关闭代理')
         return url
 
     def default_mode(self):

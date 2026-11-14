@@ -7,19 +7,10 @@ from astrbot.api.message_components import Image
 
 from .notifications import NotificationStore, PermanentDeliveryError, StatusNotifications
 from .polling import PollingTask
+from .push_targets import push_error
 from .server_status import normalize_status
 from .status_image import render_status_image
 from .transport import QueryError
-
-
-def push_error(what):
-    """The poller's error callback of a feature: a refused target is said once, anything else by its type."""
-    def report(exc):
-        if isinstance(exc, (PermanentDeliveryError, PermissionError)):
-            logger.warning('Tarkov %s push target refused; check the platform permissions, then switch the pushes off and on', what)
-        else:
-            logger.warning('Tarkov %s monitor failed: %s', what, type(exc).__name__)
-    return report
 
 
 class StatusCommands:

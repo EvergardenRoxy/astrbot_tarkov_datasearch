@@ -25,7 +25,7 @@ PROFILE_LIMITS = (4*1024*1024, 16*1024*1024)
 INDEX_LIMITS = (64*1024*1024, 192*1024*1024)
 
 BLOCKED = ('tarkov.dev 拒绝了这台服务器的访问（HTTP 403，Cloudflare 拦截）。'
-           '可以在插件配置中开启“访问 tarkov.dev 时使用代理”后重试')
+           '可以在插件配置中开启“访问数据接口时使用代理”后重试')
 
 
 class QueryError(Exception):

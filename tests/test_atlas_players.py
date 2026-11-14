@@ -11,7 +11,8 @@ from aiohttp import web
 from fixtures import ATLAS_ARENA, arena_profile, atlas_profile, profile
 from tarkov_core import atlas_client
 from tarkov_core.atlas_client import AtlasClient, AtlasHTTPError
-from tarkov_core.atlas_cooldown import AtlasAccessPaused, AtlasBudget, AtlasBudgetError, AtlasCooldown, AtlasCooldownError
+from tarkov_core.atlas_cooldown import (AtlasAccessPaused, AtlasBudget, AtlasBudgetError, AtlasCooldown, AtlasCooldownError,
+                                        AtlasNotSent)
 from tarkov_core.atlas_players import (AtlasNotFound, AtlasPlayers, QuotaError, UserQuota, can_fall_back,
                                        failure_text)
 from tarkov_core.atlas_profile import AtlasProfileError, search_results, summarize
@@ -371,7 +372,8 @@ class PlayerServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_refusals_before_sending_give_the_users_query_back(self):
         quota = UserQuota(lambda: (10, 3, 30, 300), clock=self.clock)
-        for refusal in (AtlasBudgetError(60), AtlasCooldownError(5)):
+        # The plugin's own limits, and what stops a request on this side (a proxy setting without an address).
+        for refusal in (AtlasBudgetError(60), AtlasCooldownError(5), AtlasNotSent('no proxy address')):
             with self.subTest(refusal=type(refusal).__name__):
                 self.atlas.docs[(1, 'pve')] = refusal
                 with self.assertRaises(type(refusal)):

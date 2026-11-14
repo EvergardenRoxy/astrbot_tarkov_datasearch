@@ -5,7 +5,6 @@ broadcast are about those players only. Sampling is shared: an account listed in
 night. Everything is read from the stored samples; the query commands never ask Atlas.
 """
 import asyncio
-import re
 import sqlite3
 import time
 
@@ -15,10 +14,10 @@ from astrbot.api.message_components import Image, Plain
 
 from .atlas_client import NICKNAME as ATLAS_NICKNAME
 from .matching_commands import SOURCE_LINE
-from .modes import GAME_MODES, label_of, parse_mode
+from .modes import ACCOUNT_ID, GAME_MODES, MODE_WORDS, label_of, parse_mode
 from .names import NAME
 from .notifications import PermanentDeliveryError
-from .status_commands import push_error
+from .push_targets import push_error, well_formed
 from .weekly_image import render_weekly_image
 from .weekly_report import SLACK, WEEK, build_card, build_ranking, build_report, extract_sample
 from .weekly_store import CHAT_PLAYERS, MODE_PLAYERS, SampleResult, WeeklyStore
@@ -28,8 +27,6 @@ ADD_WORDS = ('add', '添加')
 REMOVE_WORDS = ('remove', '移除', '删除')
 LIST_WORDS = ('list', '名单')
 RANK_WORDS = ('rank', 'ranking', '排行')
-ACCOUNT_ID = re.compile(r'[1-9][0-9]{0,11}')
-MODE_WORDS = {'pvp': 'pvp', 'pve': 'pve', 'season': '赛季'}
 TOO_FEW = '插件每天凌晨采样一次，至少要有隔天的两次样本。'
 
 
@@ -39,7 +36,7 @@ class WeeklyCommands:
         self.clock = time.time
         self.on_error = push_error('weekly')
         self.store = WeeklyStore(app.root/'weekly.sqlite3', keep_days=lambda: app.config.int('weekly_keep_days'))
-        self.sampler = WeeklySampler(self.store, self.store.entries, self.resolve, self.fetch, self.save,
+        self.sampler = WeeklySampler(self.store, self.entries, self.resolve, self.fetch, self.save,
                                      self.sampling, self.on_error, paused=lambda: app.atlas.refused('players'))
         self.broadcast = WeeklyBroadcast(self.store, self.schedule, self.chats, self.ranking_picture, self.send,
                                          self.broadcasting, self.on_error)
@@ -65,6 +62,11 @@ class WeeklyCommands:
         listed = await asyncio.to_thread(self.store.chats)
         return {chat: listed[chat] for chat in self.push.usable(listed, qq_enabled=True)}
 
+    def entries(self):
+        """[(mode, entry)] the night pulls: every player listed by a chat a push may still go to, each once. A chat
+        the plugin may no longer talk to (left "allowed_origins") costs Atlas nothing."""
+        return self.store.entries(self.push.usable(self.store.chats(), qq_enabled=True))
+
     async def start(self):
         try:
             await asyncio.to_thread(self.store.prune)
@@ -81,18 +83,25 @@ class WeeklyCommands:
 
     def adopt_settings_rosters(self):
         """Before 0.7.0 the rosters were three lists in the settings, broadcast to listed chats. Each of those chats
-        starts with those lists as its own roster (once: only while no chat has a roster)."""
+        starts with those lists as its own roster. Once: the old settings are then dropped from the configuration."""
         old = self.app.config.raw.get('weekly')
-        if not isinstance(old, dict) or self.store.chats():
+        keys = ['weekly_notify_targets', *(f'weekly_{mode}_players' for mode in GAME_MODES)]
+        if not isinstance(old, dict) or not any(key in old for key in keys):
             return
-        chats = self.push.usable(old.get('weekly_notify_targets') or [], qq_enabled=True)
+        rosters = {mode: [str(entry).strip() for entry in old.get(f'weekly_{mode}_players') or []] for mode in GAME_MODES}
+        chats = [str(chat).strip() for chat in old.get('weekly_notify_targets') or [] if well_formed(chat)]
         for chat in chats:
-            for mode in GAME_MODES:
-                for entry in old.get(f'weekly_{mode}_players') or []:
-                    if usable_entry(str(entry).strip()):
-                        self.store.add(chat, mode, str(entry).strip())
+            for mode, entries in rosters.items():
+                for entry in filter(usable_entry, entries):
+                    self.store.add(chat, mode, entry)
+        for key in keys:
+            old.pop(key, None)
+        self.app.config.save_config()
         if chats:
             logger.info('Tarkov weekly rosters of the old settings adopted by %s chats', len(chats))
+        elif any(rosters.values()):
+            logger.warning('Tarkov weekly rosters of the old settings had no broadcast target and were not adopted; '
+                           'add the players in chat with the weekly add command')
 
     # ---- what the nightly sampler calls ----
 

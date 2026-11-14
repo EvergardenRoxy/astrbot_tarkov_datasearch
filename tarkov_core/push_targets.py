@@ -5,12 +5,30 @@ import time
 
 from astrbot.api import logger
 
+from .notifications import PermanentDeliveryError
 from .platform_compat import QQ_OFFICIAL
 
 MESSAGE_TYPES = ('GroupMessage', 'FriendMessage', 'OtherMessage')
 MAX_TARGETS = 50
 # A group's "last used" time is written at most this often (seconds).
 REMEMBER_SECONDS = 3600
+
+
+def well_formed(target):
+    """Whether `target` is written like an AstrBot session id (platform:MessageType:id)."""
+    target = str(target).strip()
+    parts = target.split(':', 2)
+    return len(parts) == 3 and all(parts) and parts[1] in MESSAGE_TYPES and not any(c.isspace() for c in target)
+
+
+def push_error(what):
+    """The poller's error callback of a feature: a refused target is said once, anything else by its type."""
+    def report(exc):
+        if isinstance(exc, (PermanentDeliveryError, PermissionError)):
+            logger.warning('Tarkov %s push target refused; check the platform permissions, then switch the pushes off and on', what)
+        else:
+            logger.warning('Tarkov %s monitor failed: %s', what, type(exc).__name__)
+    return report
 
 
 class PushTargets:
@@ -60,8 +78,7 @@ class PushTargets:
         valid = []
         for target in targets:
             target = str(target).strip()
-            parts = target.split(':', 2)
-            if len(parts) != 3 or not all(parts) or parts[1] not in MESSAGE_TYPES or any(c.isspace() for c in target):
+            if not well_formed(target):
                 continue
             if allowed and target not in allowed:
                 continue

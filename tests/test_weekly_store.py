@@ -22,7 +22,7 @@ class StoreTests(unittest.TestCase):
     def test_reading_never_creates_the_file(self):
         store = self.store
         self.assertIsNone(store.resolved('pve', 'Someone'))
-        self.assertEqual((store.roster('bot:GroupMessage:g1', 'pve'), store.entries(), store.chats()), ([], [], {}))
+        self.assertEqual((store.roster('bot:GroupMessage:g1', 'pve'), store.entries(['bot:GroupMessage:g1']), store.chats()), ([], [], {}))
         self.assertFalse(store.remove('bot:GroupMessage:g1', 'pve', 'Someone'))
         self.assertFalse(store.listed('pve', 7, 'Someone'))
         self.assertEqual(store.pending([('pve', 'Someone')], '2026-11-09'), [('pve', 'Someone')])
@@ -56,7 +56,10 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(sorted(entry for entry, _, _ in store.roster(two, 'pve')), ['Other', 'player_one'])
         self.assertEqual(store.roster(one, 'pvp'), [('7', 7, None)])
         # One nightly pull per listed player, however many chats list them.
-        self.assertEqual(sorted(store.entries()), [('pve', 'Other'), ('pve', 'Player_One'), ('pvp', '7')])
+        self.assertEqual(sorted(store.entries([one, two])), [('pve', 'Other'), ('pve', 'Player_One'), ('pvp', '7')])
+        self.assertEqual(sorted(store.entries([two])), [('pve', 'Other'), ('pve', 'player_one')])
+        # An entry not resolved yet has no account id: nothing is found by the word "none".
+        self.assertFalse(store.remove(two, 'pve', 'none'))
         self.assertEqual(store.chats(), {one: ['pvp', 'pve'], two: ['pve']})
         # A user's own lookup settles a listed nickname before the nightly sampler does.
         self.assertTrue(store.listed('pve', 11, 'Player_One'))

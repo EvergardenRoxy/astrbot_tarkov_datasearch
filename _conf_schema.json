@@ -21,7 +21,7 @@
                 "type": "bool",
                 "description": "QQ 官方机器人单词命令",
                 "default": true,
-                "hint": "QQ 官方机器人的命令里不能有空格。开启后可用 tpvp、tpve、tseason、tarena（查玩家）、tbind、tunbind、thelp（绑定、解绑、帮助）、tstatus、tboss（状态、Boss），后面的参数可以带空格，例如“@机器人 tpve 昵称”。到 QQ 机器人后台把它们加进命令列表即可。"
+                "hint": "QQ 官方机器人的命令不能有空格。开启后可用 tpvp、tpve、tseason、tarena（查玩家）、tbind、tunbind、thelp（绑定、解绑、帮助）、tstatus、tboss、tmatch（状态、Boss、匹配时间）、tweekly（玩家周报），参数可带空格。请把它们加进 QQ 机器人后台的命令列表。"
             },
             "access_mode": {
                 "type": "string",

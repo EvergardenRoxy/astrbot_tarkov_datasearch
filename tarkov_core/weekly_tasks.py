@@ -16,6 +16,7 @@ import re
 import time
 
 from .atlas_players import NOT_SENT, AtlasNotFound
+from .modes import ACCOUNT_ID
 from .notifications import submit
 from .polling import Loop
 from .weekly_report import TZ
@@ -29,7 +30,6 @@ IDLE_SECONDS = 600
 LATE_SECONDS = 6*3600
 RETRY_SECONDS = 120
 PUSH_ATTEMPTS = 3
-ACCOUNT = re.compile(r'[0-9]{1,12}')
 WEEKDAYS = ('周一', '周二', '周三', '周四', '周五', '周六', '周日')
 CLOCK = re.compile(r'([01]?[0-9]|2[0-3])[:：]([0-5][0-9])')
 
@@ -112,7 +112,7 @@ class WeeklySampler(Loop):
         async def mark(done, error=None):
             self.unrecorded = (mode, entry, day, done, error)
             await self.flush_progress()
-        account_id = int(entry) if ACCOUNT.fullmatch(entry) else None
+        account_id = int(entry) if ACCOUNT_ID.fullmatch(entry) else None
         if account_id is None:
             known = await asyncio.to_thread(self.store.resolved, mode, entry)
             if known:

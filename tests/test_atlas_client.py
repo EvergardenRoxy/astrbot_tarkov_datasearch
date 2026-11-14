@@ -9,7 +9,7 @@ from aiohttp import web
 
 from tarkov_core import atlas_client
 from tarkov_core.atlas_client import AtlasClient, AtlasDataError, AtlasHTTPError
-from tarkov_core.atlas_cooldown import AtlasAccessPaused, AtlasBudget, AtlasCooldown, AtlasCooldownError
+from tarkov_core.atlas_cooldown import AtlasAccessPaused, AtlasBudget, AtlasCooldown, AtlasCooldownError, AtlasNotSent
 from tarkov_core.matching import MatchingService
 from tarkov_core.transport import HTTPClient, QueryError
 from test_atlas_cooldown import Clock
@@ -125,6 +125,18 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.retry_after_seconds, 29*60)
         with self.assertRaises(AtlasAccessPaused):
             await self.client.search('Some_Name', 'pve')
+        # A request that was waiting for its turn when the refusal came is not sent either.
+        waited = self.client.cooldown.claim_within
+
+        def turn(*args, **kwargs):
+            self.client.refused_until.pop('players')
+            gate = waited(*args, **kwargs)
+            self.client.refused_until['players'] = self.clock()+60
+            return gate
+        self.client.cooldown.claim_within = turn
+        with self.assertRaises(AtlasAccessPaused):
+            await self.client.lookup(1, 'pve')
+        self.client.cooldown.claim_within = waited
         # Nothing more was sent or counted, and matching (another scope) is still asked.
         self.assertEqual((len(self.seen), len(self.client.budget.sent)), (1, 1))
         self.response = lambda request: web.json_response(matching_data())
@@ -190,5 +202,5 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
         await client.close()
         self.assertFalse(pool.closed)
         await pool.close()
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(AtlasNotSent):
             await client.matching()

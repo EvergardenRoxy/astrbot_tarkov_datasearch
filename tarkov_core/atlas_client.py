@@ -10,7 +10,7 @@ from contextlib import nullcontext
 
 import aiohttp
 
-from .atlas_cooldown import AtlasAccessPaused, AtlasCooldown, AtlasDeadlineError
+from .atlas_cooldown import AtlasAccessPaused, AtlasCooldown, AtlasDeadlineError, AtlasNotSent
 from .transport import ConnectionFailure, HTTPError, QueryError, USER_AGENT, decoded_chunks, validate_proxy
 
 HOST = 'https://www.eftforge.com'
@@ -121,7 +121,7 @@ class AtlasClient:
     async def search(self, nickname, mode, *, deadline=None, live=False):
         """Atlas' nickname search: {nickname, players: [{accountId, nickname, side, level}], cached, mode}."""
         if not NICKNAME.fullmatch(nickname):
-            raise QueryError('Atlas 只能搜索 3～15 个字符的昵称（字母、数字、_ -），更长的名字请用账号 ID 或玩家页网址查询')
+            raise AtlasNotSent('Atlas 只能搜索 3～15 个字符的昵称（字母、数字、_ -），更长的名字请用账号 ID 或玩家页网址查询')
         params = {'nickname': nickname, 'mode': mode}
         if live:
             params['live'] = '1'
@@ -131,8 +131,11 @@ class AtlasClient:
         """Admission, then one request. `max_wait`: seconds to wait for the shared gate (None: do not wait);
         `deadline` (the cooldown's clock): a background request gives up, unsent, when it passes."""
         if self.closed:
-            raise RuntimeError('Atlas client closed')
-        proxy = self.validated_proxy()
+            raise AtlasNotSent('插件正在关闭')
+        try:
+            proxy = self.validated_proxy()
+        except QueryError as exc:
+            raise AtlasNotSent(str(exc)) from None
         if self.refused(scope):
             raise AtlasAccessPaused(self.refused(scope))
         counted = scope == 'players' and self.budget is not None
@@ -147,6 +150,9 @@ class AtlasClient:
             # The window also cancels a background request still in flight when its night ends.
             async with asyncio.timeout(remaining) if remaining is not None else nullcontext():
                 async with gate:
+                    if self.refused(scope):
+                        # Refused while this request waited for its turn.
+                        raise AtlasAccessPaused(self.refused(scope))
                     # Counted only now, so the windows hold request starts, not time spent waiting.
                     token = self.budget.reserve() if counted else None
                     sent = True

@@ -25,6 +25,10 @@ class AtlasBudgetError(QueryError):
         self.retry_after_seconds = math.ceil(seconds)
 
 
+class AtlasNotSent(QueryError):
+    """The request was not sent: the plugin is closing, or its own settings or input stop it."""
+
+
 class AtlasAccessPaused(QueryError):
     """Atlas answered 401/403 a while ago; it is left alone until the pause ends (no request was sent)."""
     def __init__(self, seconds):

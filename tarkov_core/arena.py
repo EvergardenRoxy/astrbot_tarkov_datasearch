@@ -1,7 +1,7 @@
-"""Tarkov Arena profiles: reading the document, the card, and the text and Markdown replies.
+"""Tarkov Arena profiles: reading the document and building the card.
 
 An Arena profile on players.tarkov.dev (`arena/<aid>.json`) has the same account id and nickname as the main game but
-no PMC/Scav statistics and no skills: `stat.arenaOverAllCounters` maps a mode key to `{"Counters": {name: int}}`
+no PMC/Scav statistics and no skills: `stat.arenaOverAllCounters` maps a mode key to `{"Counters": {name: int}}`.
 Keys starting with "Unranked" are unranked play, the others ranked; "Overall" sums a section.
 Mode names stay in English, as in the game (maintainer); the level is not shown (maintainer: the website derives it
 from the main game's level table).

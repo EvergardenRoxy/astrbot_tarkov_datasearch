@@ -52,6 +52,9 @@ class WeeklyTests(PluginCase):
         await self.ask(plugin, '/tarkov 周报 添加 11', admin=True, origin=GROUP_2)
         await self.ask(plugin, '/tarkov 周报 添加 22', admin=True, origin=GROUP_2)
         self.assertEqual(sorted(plugin.weekly.sampler.entries()), [('pve', '11'), ('pve', '22')])
+        # A chat the plugin may no longer talk to is not pulled for.
+        plugin.app.config['allowed_origins'] = [GROUP_1]
+        self.assertEqual(plugin.weekly.sampler.entries(), [('pve', '11')])
 
     async def test_each_chat_sees_only_its_own_players(self):
         plugin = self.plugin()
@@ -137,10 +140,20 @@ class WeeklyTests(PluginCase):
         for chat in (GROUP_1, GROUP_2):
             self.assertEqual([entry for entry, _, _ in store.roster(chat, 'pve')], ['11', 'Some_Name'])
             self.assertEqual([entry for entry, _, _ in store.roster(chat, 'pvp')], ['11'])
-        # Only once: a roster changed in chat is not overwritten by the old settings at the next start.
-        store.remove(GROUP_1, 'pve', 'Some_Name')
+        # Only once: the old settings are dropped, so a roster emptied in chat stays empty at the next start.
+        self.assertEqual(old['weekly'], {'weekly_enabled': True})
+        for chat in (GROUP_1, GROUP_2):
+            for mode, entry in (('pve', '11'), ('pve', 'Some_Name'), ('pvp', '11')):
+                store.remove(chat, mode, entry)
         await plugin.initialize()
-        self.assertEqual([entry for entry, _, _ in store.roster(GROUP_1, 'pve')], ['11'])
+        self.assertEqual(store.chats(), {})
+
+    async def test_old_rosters_without_a_broadcast_target_are_dropped_with_a_warning(self):
+        old = {'weekly': {'weekly_enabled': True, 'weekly_pve_players': ['11'], 'weekly_notify_targets': []}}
+        plugin = super().plugin(old)
+        await plugin.initialize()
+        self.assertTrue(any('not adopted' in log[0] for log in self.logs))
+        self.assertEqual((plugin.weekly.store.chats(), old['weekly']), ({}, {'weekly_enabled': True}))
 
 
 if __name__ == '__main__':

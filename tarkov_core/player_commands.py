@@ -205,7 +205,7 @@ class PlayerCommands:
 
     def missing(self, exc, action, mode, aid, target):
         """The reply when Atlas says there is no such account or no profile in the mode."""
-        if str(exc).startswith('Atlas 找不到'):
+        if exc.no_account:
             return f'{exc}，请检查账号 ID 或昵称。'
         other = MODE_WORDS[next(m for m in ('pvp', 'pve', 'season') if m != mode)]
         if action == 'bind':
