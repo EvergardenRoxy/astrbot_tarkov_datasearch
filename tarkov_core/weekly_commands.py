@@ -221,7 +221,7 @@ class WeeklyCommands:
     async def change(self, event, adding, chat, mode, target):
         """Add a player to this chat's roster of a mode, or take one off; the reply."""
         label = label_of(mode)
-        if not event.is_admin():
+        if self.app.config.flag('weekly_roster_admin_only') and not event.is_admin():
             return '只有 AstrBot 管理员可以修改周报名单。'
         if target is None:
             return self.usage()
@@ -239,7 +239,7 @@ class WeeklyCommands:
         if outcome == 'listed':
             return f'{target} 已经在本聊天的 {label} 周报名单内。'
         self.sampler.start()
-        return (f'已把 {target} 加入本聊天的 {label} 周报名单。{TOO_FEW}'
+        return (f'已把 {target} 加入本聊天的 {label} 周报名单。'
                 f"查看名单：{self.app.cmd('周报 名单', MODE_WORDS[mode])}")
 
     async def listing(self, chat, mode):
