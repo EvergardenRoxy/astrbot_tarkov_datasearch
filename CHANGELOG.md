@@ -1,9 +1,4 @@
-[![AI Co-created](https://img.shields.io/badge/AI-Claude%20Opus%205.5%20%2B%20Claude%20Fable%205.2%20%2B%20Claude%20Code-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](README.md#ai-制作声明) [![AI Co-created](https://img.shields.io/badge/AI-OpenAI%20Codex-412991?style=for-the-badge&logo=openai&logoColor=white)](README.md#ai-制作声明)
-
-> [!IMPORTANT]
-> **AI 共创声明：本更新日志所记录的修改与日志本身，由项目维护者与生成式 AI 共同完成。** AI 生成或修改的内容由项目维护者审阅、验证并承担最终维护责任。
->
-> 参与的 AI：**Claude Opus 5.5**、**Claude Fable 5.2**（均通过 **Claude Code**）、**OpenAI Codex**；Boss 图的背景纹理由维护者用 **GPT-Image-2.5-sunburst** 生成。完整声明见 [README](README.md#ai-制作声明)。
+Fable 5.2 进行了 v0.7.0 的整体重构，旧版本由 Opus 5.5 构建；见 [README](README.md#ai-制作声明)。
 
 # 更新日志
 
