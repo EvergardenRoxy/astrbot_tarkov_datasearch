@@ -1,7 +1,7 @@
 """What the help says, for the help picture (help_image.py) and the text sent when it cannot be drawn."""
 from .card import BOT_LIMIT
 from .modes import label_of, page_url, search_url
-from .snapshot_commands import every
+from .names import every
 
 NAME_RULE = '昵称只含字母、数字、下划线 _ 和连字符 -；_ 和 - 容易记混，查不到时插件会提示相近的名字。'
 

@@ -52,7 +52,7 @@ class HelpImageTests(unittest.TestCase):
         self.assertIn('竞技场要写明', joined)
         self.assertNotIn('也会看竞技场', joined)
         self.assertNotIn('昵称名单', joined)
-        self.assertIn('都不向机器人开放档案查询', joined)
+        self.assertIn('都不向机器人开放玩家档案的查询', joined)
         self.assertEqual(texts[-1], '本插件在 GitHub 开源，遵循 GPL-3.0-or-later 许可；与 Battlestate Games 无直接关系')
         self.assertIn('数据来自 tarkov.dev 公开快照（非实时）', texts)
 
@@ -82,15 +82,13 @@ class HelpImageTests(unittest.TestCase):
                         '@机器人 tarkov status', '@机器人 tarkov boss [模式] [变化]', '@机器人 tarkov 匹配',
                         '@机器人 tarkov 周报 [模式] [昵称或排行]', '@机器人 tarkov 周报 添加|移除|名单 [模式] [昵称或账号ID]'):
             self.assertIn(command, texts)
-        joined = '
-'.join(texts)
+        joined = '\n'.join(texts)
         self.assertIn('每次只查一个模式', joined)
         self.assertIn('tmatch · tweekly', joined)
         self.assertNotIn('先在 tarkov.dev 选好模式', joined)
         self.assertIn('数据来自 Atlas（实时查询）；故障时改用 tarkov.dev 快照', texts)
         # Features switched off are not offered.
-        self.assertNotIn('status', '
-'.join(drawn_texts(card(source='atlas'))[1]))
+        self.assertNotIn('status', '\n'.join(drawn_texts(card(source='atlas'))[1]))
         # The text sent when the picture cannot be drawn says the same.
         text = help_text(atlas)
         for row in atlas['rows']:

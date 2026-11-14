@@ -16,7 +16,7 @@ from .arena_image import render_arena_image
 from .card import BOT_LIMIT, build_card
 from .image import render_image
 from .modes import GAME_MODES, MODES, label_of, page_url, path_of, search_url
-from .names import NAME, SUGGESTIONS, NameIndex
+from .names import NAME, SUGGESTIONS, NameIndex, every
 from .profile import summarize
 from .transport import NotFound, QueryError
 
@@ -400,11 +400,3 @@ class SnapshotCommands:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-
-def every(seconds):
-    """A refresh interval in words: 每周, 每 2 周, 每天, 每 3 天, 每 5 小时."""
-    hours = max(1, round(seconds/3600))
-    for size, unit, one in ((168, '周', '每周'), (24, '天', '每天')):
-        if hours % size == 0:
-            return one if hours == size else f'每 {hours//size} {unit}'
-    return f'每 {hours} 小时'
