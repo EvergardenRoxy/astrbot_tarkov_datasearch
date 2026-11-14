@@ -1,19 +1,17 @@
 """Atlas player lookups for the chat commands: local cache, shared requests, one busy retry, per-user quotas.
 
 Every HTTP request goes through the plugin's single AtlasClient, so the shared start interval, the upstream
-Retry-After pause and the minute/hour budget (atlas_cooldown.py) apply to all of them. Nothing here polls, prefetches
-or retries in the background; requests happen for a user's command. The one background caller is the weekly
-report's nightly sampler (weekly_tasks.py), which paces itself by the rules the maintainer set after Atlas relaxed
-its terms (2026-11-10) and goes through this same client.
+Retry-After pause and the minute/hour budget (atlas_cooldown.py) apply to all of them. Nothing here polls or
+prefetches; requests happen for a user's command. The one background caller is the weekly report's nightly sampler
+(weekly_tasks.py), which paces itself and goes through this same client.
 """
 import asyncio
 import collections
 import math
 import time
 
-from .atlas_client import NICKNAME, AtlasDataError, AtlasHTTPError
-from .atlas_cooldown import AtlasBudgetError, AtlasCooldownError
-from .atlas_access import AtlasAccessPaused
+from .atlas_client import AtlasDataError, AtlasHTTPError
+from .atlas_cooldown import AtlasAccessPaused, AtlasBudgetError, AtlasCooldownError, AtlasNotSent
 from .atlas_profile import AtlasProfileError, search_results, summarize
 from .modes import label_of
 from .transport import ConnectionFailure, NotFound, QueryError
@@ -24,30 +22,20 @@ MIN_CACHE_SECONDS = 60
 NOT_FOUND_SECONDS = 60
 CACHE_ENTRIES = 256
 MAX_PENDING = 32
-# Users whose quota history is kept at most (oldest forgotten first).
+# Users whose quota record is kept at most (oldest forgotten first).
 QUOTA_USERS = 10000
-
-
-# Refusals before any request reaches Atlas (the plugin's budget, the shared gate): the user's quota is given back.
-NOT_SENT = (AtlasBudgetError, AtlasCooldownError, AtlasAccessPaused)
-
-
-def refund(charge):
-    undo = getattr(charge, 'refund', None)
-    if undo is not None:
-        undo()
-
-
-def keep(charge):
-    """A request of this query reached Atlas: a later refusal (the lookup after a nickname search, the rename check
-    after a lookup) no longer gives the query back."""
-    mark = getattr(charge, 'keep', None)
-    if mark is not None:
-        mark()
+# Refusals before any request reaches Atlas (the plugin's budget, the shared gate, a 401/403 pause): the user's
+# quota is not counted.
+NOT_SENT = (AtlasBudgetError, AtlasCooldownError, AtlasAccessPaused, AtlasNotSent)
 
 
 class AtlasNotFound(NotFound):
-    """Atlas answered: no such account, or no profile in this mode. Never used for a failed request."""
+    """Atlas answered: no such account (`no_account`), or no profile in this mode. Never used for a failed request."""
+    no_account = False
+
+
+class AtlasNoAccount(AtlasNotFound):
+    no_account = True
 
 
 class QuotaError(QueryError):
@@ -58,7 +46,7 @@ def failure_text(exc):
     """Why an Atlas request failed, for the chat (never raw upstream text)."""
     if isinstance(exc, AtlasHTTPError):
         if exc.status in (401, 403):
-            return 'Atlas 访问已暂停，请管理员检查访问权限后在设置中恢复'
+            return 'Atlas 拒绝了访问，稍后会自动重试'
         if exc.code == 'busy':
             return 'Atlas 正忙（网站同时查询的人太多）'
         if exc.code == 'rate':
@@ -90,15 +78,6 @@ def can_fall_back(exc):
                             AtlasProfileError, TimeoutError))
 
 
-def http_not_found(exc, mode, aid):
-    """AtlasNotFound for Atlas' own "not found" answers, else None."""
-    if isinstance(exc, AtlasHTTPError) and exc.code == 'not_found':
-        return AtlasNotFound(f'Atlas 找不到账号 ID {aid}')
-    if isinstance(exc, AtlasHTTPError) and exc.code == 'no_profile':
-        return AtlasNotFound(f'账号 ID {aid} 在 {label_of(mode)} 模式下没有档案（Atlas）')
-    return None
-
-
 class AtlasPlayers:
     def __init__(self, client, *, cache_seconds=lambda: 600, clock=time.monotonic, wall_clock=time.time):
         self.client = client
@@ -109,15 +88,10 @@ class AtlasPlayers:
         self.pending = {}
 
     def ttl(self):
-        try:
-            return max(MIN_CACHE_SECONDS, int(self.cache_seconds()))
-        except (TypeError, ValueError, OverflowError):
-            return 600
+        return max(MIN_CACHE_SECONDS, self.cache_seconds())
 
     def cached(self, mode, aid, *, include_art=True):
         """The cached summary, AtlasNotFound when "no profile" is remembered, or None (a request is needed)."""
-        if type(include_art) is not bool:
-            raise ValueError('include_art must be a boolean')
         entry = self.cache.get((mode, aid, include_art))
         if entry is None:
             return None
@@ -128,11 +102,10 @@ class AtlasPlayers:
             return AtlasNotFound(f'账号 ID {aid} 在 {label_of(mode)} 模式下没有档案（Atlas）')
         return dict(entry[1], from_cache=True, cache_age=age)
 
-    async def profile(self, mode, aid, *, refresh=False, charge=lambda: None, include_art=True):
+    async def profile(self, mode, aid, *, refresh=False, ticket=None, include_art=True):
         """One summary. `refresh` skips the local cache (Atlas may still answer from its own 60-second cache).
-        `charge` runs once before a request is needed (the user's quota); equal requests share one task."""
-        if type(include_art) is not bool:
-            raise ValueError('include_art must be a boolean')
+        `ticket` (UserQuota.ticket) is checked before a request is needed and counted once one was sent; queries
+        for the same profile at the same time share one request, counted for the first of them."""
         if not refresh:
             hit = self.cached(mode, aid, include_art=include_art)
             if isinstance(hit, AtlasNotFound):
@@ -141,96 +114,57 @@ class AtlasPlayers:
                 return hit
         key = (mode, aid, include_art)
         task = self.pending.get(key)
-        charged = False
         if task is None:
             if len(self.pending) >= MAX_PENDING:
                 raise QueryError('玩家查询请求较多，请稍后再试')
-            charge()
-            charged = True
-            task = asyncio.ensure_future(self._fetch(mode, aid, include_art=include_art,
-                                                     on_retry=lambda: keep(charge)))
+            if ticket:
+                ticket.check()
+            task = asyncio.ensure_future(self._fetch(mode, aid, include_art=include_art, ticket=ticket))
             self.pending[key] = task
             task.add_done_callback(lambda done: (self.pending.pop(key, None),
                                                  done.cancelled() or done.exception()))
-        try:
-            # Shielded: one user giving up must not cancel the request others wait for.
-            summary = dict(await asyncio.shield(task))
-        except NOT_SENT:
-            if charged:
-                refund(charge)
-            raise
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            if charged:
-                keep(charge)
-            raise
-        if charged:
-            keep(charge)
-        return summary
+        # Shielded: one user giving up must not cancel the request others wait for.
+        return dict(await asyncio.shield(task))
 
     async def profile_once(self, mode, aid, *, deadline=None, include_art=False):
-        """One cancellable background lookup, independent of chat tasks and their busy retries.
-
-        Shares the HTTP gate, budget, mapping and resulting cache, but never joins a shielded foreground task.
-        """
+        """One background lookup for the nightly sampler: no busy retry, no user quota, gives up at `deadline`."""
         return await self._fetch(mode, aid, retry=False, deadline=deadline, include_art=include_art)
 
-    async def _fetch(self, mode, aid, *, retry=True, deadline=None, include_art=True, on_retry=lambda: None):
-        if type(include_art) is not bool:
-            raise ValueError('include_art must be a boolean')
-        options = {} if deadline is None else {'deadline': deadline}
-        options['include_art'] = include_art
-        request = lambda: self.client.lookup(aid, mode, **options)
+    async def _fetch(self, mode, aid, *, retry=True, deadline=None, include_art=True, ticket=None):
         try:
-            doc = await self._busy_retry(request, on_retry=on_retry) if retry else await request()
+            doc = await self._request(lambda: self.client.lookup(aid, mode, deadline=deadline, include_art=include_art),
+                                      retry, ticket)
         except AtlasHTTPError as exc:
-            missing = http_not_found(exc, mode, aid)
-            if missing:
+            if exc.code == 'not_found':
+                raise AtlasNoAccount(f'Atlas 找不到账号 ID {aid}') from None
+            if exc.code == 'no_profile':
+                # Remembered briefly, so repeated queries for a missing profile cost one request a minute.
                 self._remember((mode, aid, include_art), None)
-                raise missing from None
+                raise AtlasNotFound(f'账号 ID {aid} 在 {label_of(mode)} 模式下没有档案（Atlas）') from None
             raise
         if not isinstance(doc, dict) or doc.get('mode') not in (None, mode):
             raise AtlasProfileError()
         summary = summarize(doc, mode)
-        # The raw document: the Atlas picture reads it, and the history stores it.
+        # The raw document: the Atlas picture and the weekly sample read it.
         summary['doc'] = doc
         summary['fetched'] = self.wall_clock()
-        summary['include_art'] = include_art
         self._remember((mode, aid, include_art), summary)
         return summary
 
-    async def search(self, nickname, mode, *, charge=lambda: None, live=False):
+    async def search(self, nickname, mode, *, ticket=None, live=False):
         """[(aid, nickname)] from Atlas' nickname search (one request; not cached)."""
-        if type(live) is not bool:
-            raise ValueError('live must be a boolean')
-        if not NICKNAME.fullmatch(nickname):
-            raise QueryError('Atlas 只能搜索 3～15 个字符的昵称（字母、数字、_ -），更长的名字请用账号 ID 或玩家页网址查询')
-        charge()
-        try:
-            doc = await self._busy_retry(lambda: self.client.search(nickname, mode, live=live),
-                                         on_retry=lambda: keep(charge))
-        except NOT_SENT:
-            refund(charge)
-            raise
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            keep(charge)
-            if isinstance(exc, AtlasHTTPError) and exc.code in ('not_found', 'no_profile'):
-                return []
-            raise
-        keep(charge)
-        return search_results(doc)
+        if ticket:
+            ticket.check()
+        return await self._search(nickname, mode, True, ticket, None, live)
 
-    async def search_once(self, nickname, mode, *, deadline=None, live=False):
-        """One background name search. The sampler, not this service, schedules any retry."""
-        if type(live) is not bool:
-            raise ValueError('live must be a boolean')
-        if not NICKNAME.fullmatch(nickname):
-            raise QueryError('Atlas 昵称格式无法识别')
+    async def search_once(self, nickname, mode, *, deadline=None):
+        """One background name search for the nightly sampler."""
+        return await self._search(nickname, mode, False, None, deadline, False)
+
+    async def _search(self, nickname, mode, retry, ticket, deadline, live):
         try:
-            doc = await self.client.search(nickname, mode, deadline=deadline, live=live)
+            doc = await self._request(lambda: self.client.search(nickname, mode, deadline=deadline, live=live),
+                                      retry, ticket)
         except AtlasHTTPError as exc:
             if exc.code in ('not_found', 'no_profile'):
                 return []
@@ -238,16 +172,26 @@ class AtlasPlayers:
         return search_results(doc)
 
     @staticmethod
-    async def _busy_retry(request, *, on_retry=lambda: None):
-        """`busy` means Atlas' eight shared lookup slots are full, not our limit: try once more after Retry-After
-        (the client's gate waits for the pause it recorded); a second `busy` is final."""
+    async def _request(request, retry, ticket):
+        """Run `request`, once more after a `busy` answer when `retry` (Atlas' eight shared lookup slots were full,
+        not our limit; the client's gate waits for the pause it recorded). Counts the user's quota as soon as a
+        request reached Atlas, whatever came back."""
+        sent = ticket.sent if ticket else lambda: None
         try:
-            return await request()
-        except AtlasHTTPError as exc:
-            if exc.code != 'busy':
-                raise
-        on_retry()  # The first attempt reached Atlas, even if local admission refuses the retry.
-        return await request()
+            try:
+                result = await request()
+            except AtlasHTTPError as exc:
+                if not retry or exc.code != 'busy':
+                    raise
+                sent()
+                result = await request()
+        except (*NOT_SENT, asyncio.CancelledError):
+            raise
+        except Exception:
+            sent()
+            raise
+        sent()
+        return result
 
     def _remember(self, key, summary):
         self.cache.pop(key, None)
@@ -262,21 +206,46 @@ class AtlasPlayers:
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
+class Ticket:
+    """One command's use of a user's quota: checked before each request it needs, counted once."""
+    def __init__(self, quota, owner, refresh):
+        self.quota, self.owner, self.refresh = quota, owner, refresh
+        self.counted = False
+
+    def check(self):
+        if not self.counted:
+            self.quota.check(self.owner, self.refresh)
+
+    def sent(self):
+        if not self.counted:
+            self.counted = True
+            self.quota.record(self.owner, self.refresh)
+
+
 class UserQuota:
     """Per-user hourly query and refresh counts with minimum intervals, in memory (keyed by the plugin's HMAC of the
-    user). Only queries that need an Atlas request are counted; cached answers are free."""
+    user). Only queries that sent an Atlas request are counted; cached answers and locally refused ones are free."""
 
     def __init__(self, limits, *, clock=time.monotonic):
         # limits() -> (queries per hour, refreshes per hour, seconds between queries, seconds between refreshes)
         self.limits = limits
         self.clock = clock
-        self.history = collections.OrderedDict()
+        # owner -> [(time, was a refresh)] of the last hour
+        self.used = collections.OrderedDict()
+
+    def ticket(self, owner, refresh):
+        return Ticket(self, owner, refresh)
+
+    def recent(self, owner):
+        now = self.clock()
+        return [entry for entry in self.used.get(owner, ()) if now-entry[0] < 3600]
 
     def check(self, owner, refresh):
         """Raise QuotaError when `owner` may not send an Atlas query (a refresh when `refresh`) now."""
         per_hour, refreshes, gap, refresh_gap = self.limits()
         now = self.clock()
-        entries = [entry for entry in self.history.get(owner, ()) if now-entry[0] < 3600]
+        entries = self.recent(owner)
+
         def minutes(seconds):
             return f'{max(1, math.ceil(seconds/60))} 分钟'
         if len(entries) >= per_hour:
@@ -286,8 +255,6 @@ class UserQuota:
             raise QuotaError(f'查询太快了，请 {math.ceil(gap-(now-entries[-1][0]))} 秒后再试')
         if refresh:
             done = [entry for entry in entries if entry[1]]
-            if refreshes <= 0:
-                raise QuotaError('管理员关闭了刷新，请去掉“刷新”查询（会显示缓存的数据）')
             if len(done) >= refreshes:
                 raise QuotaError(f'你本小时的刷新次数（{refreshes} 次）已用完，约 {minutes(3600-(now-done[-refreshes][0]))}后再试；'
                                  '去掉“刷新”可以查看缓存的数据')
@@ -295,38 +262,8 @@ class UserQuota:
                 raise QuotaError(f'刷新太频繁了，请约 {minutes(refresh_gap-(now-done[-1][0]))}后再试；去掉“刷新”可以查看缓存的数据')
 
     def record(self, owner, refresh):
-        now = self.clock()
-        entries = [entry for entry in self.history.pop(owner, ()) if now-entry[0] < 3600]
-        entry = [now, bool(refresh)]
-        entries.append(entry)
-        self.history[owner] = entries
-        while len(self.history) > QUOTA_USERS:
-            self.history.popitem(last=False)
-        return entry
-
-    def forget(self, owner, entry):
-        """Take back one recorded query (the request was refused before it was sent)."""
-        entries = self.history.get(owner, [])
-        for i, candidate in enumerate(entries):
-            if candidate is entry:
-                del entries[i]
-                break
-
-    def ticket(self, owner, refresh):
-        """A callable for AtlasPlayers' `charge`: checks and records once, the first time a request is needed.
-        `charge.refund()` gives the query back when no request was sent (the plugin's budget or the shared gate);
-        after `charge.keep()` (a request of the query reached Atlas) it no longer does."""
-        state = {'entry': None, 'kept': False}
-        def charge():
-            if state['entry'] is None:
-                self.check(owner, refresh)
-                state['entry'] = self.record(owner, refresh)
-        def give_back():
-            if state['entry'] is not None and not state['kept']:
-                self.forget(owner, state['entry'])
-                state['entry'] = None
-        def keep_it():
-            if state['entry'] is not None:
-                state['kept'] = True
-        charge.refund, charge.keep = give_back, keep_it
-        return charge
+        entries = self.recent(owner)
+        self.used.pop(owner, None)
+        self.used[owner] = [*entries, (self.clock(), bool(refresh))]
+        while len(self.used) > QUOTA_USERS:
+            self.used.popitem(last=False)

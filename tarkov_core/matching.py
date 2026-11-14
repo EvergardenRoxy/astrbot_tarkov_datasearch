@@ -6,13 +6,13 @@ import time
 from dataclasses import dataclass, replace
 
 from .atlas_client import AtlasDataError, AtlasHTTPError
-from .atlas_cooldown import AtlasCooldownError
+from .atlas_cooldown import AtlasAccessPaused, AtlasCooldownError
 from .transport import ConnectionFailure, QueryError
 
 CACHE_SECONDS = 15*60
+# A failed refresh may still show a result this old, labelled as such.
 MAX_AGE_SECONDS = 60*60
-# Other non-transient HTTP errors (404, ...) have their own short window: users cannot re-hit Atlas on
-# every query, and stale data never masks the error.
+# A request Atlas refused outright (404, ...) is not repeated for this long; old data never masks that error.
 HTTP_ERROR_SECONDS = 2*60
 HOURS = 24
 
@@ -41,77 +41,48 @@ class MatchingResult:
 
 
 def normalize(document, fetched_at):
-    def integer(value, low, high):
-        if type(value) is not int or not low <= value <= high:
-            raise ValueError()
-        return value
-
+    """Atlas' matching document as a MatchingResult; AtlasDataError when it is not shaped as the picture needs."""
     def wait(value):
         if value is not None and (type(value) not in (int, float) or value < 0 or not math.isfinite(value)):
             raise ValueError()
         return value
 
-    def text(value):
-        if not isinstance(value, str) or not value.strip() or len(value) > 128 or any(not c.isprintable() and not c.isspace() for c in value):
-            raise ValueError()
-        return value
-
     def timestamp(value):
-        if not isinstance(value, str) or len(value) > 64:
-            raise ValueError()
         date = datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
         if date.tzinfo is None:
             raise ValueError()
         return date.timestamp()
 
     try:
-        if not isinstance(document, dict) or integer(document['hours'], 1, 168) != HOURS:
-            raise ValueError()
-        server_time, updated = timestamp(document['server_time']), timestamp(document['updated'])
         history = document['history']
-        start = integer(history['start'], 0, 253402300799)
-        step = integer(history['step'], 1, 604800)
         series = history['series']
-        centers = document['datacenters']
-        if not isinstance(series, dict) or len(series) > 128 or not isinstance(centers, list) or not 1 <= len(centers) <= 128:
-            raise ValueError()
-        for name, points in series.items():
-            text(name)
-            if not isinstance(points, list) or len(points) > 1024:
+        centers = []
+        for center in document['datacenters']:
+            name, region = center['name'], center['region']
+            if not isinstance(name, str) or not isinstance(region, str) or not name.strip():
                 raise ValueError()
-            if points and start+(len(points)-1)*step > 253402300799:
-                raise ValueError()
-            for point in points:
-                wait(point)
-        result, seen, displays = [], set(), set()
-        for center in centers:
-            name, region = text(center['name']), text(center['region'])
-            display = ' '.join(name.split())
-            if name in seen or display in displays:
-                raise ValueError()
-            seen.add(name)
-            displays.add(display)
             points = series.get(name)
-            result.append(Datacenter(region, name, display, wait(center['wait']),
-                                     tuple(points) if points is not None else None))
-        return MatchingResult(HOURS, server_time, updated, fetched_at, start, step, tuple(result))
-    except (ValueError, TypeError, KeyError, OverflowError, OSError, AttributeError):
+            centers.append(Datacenter(region, name, ' '.join(name.split()), wait(center['wait']),
+                                      tuple(wait(point) for point in points) if points is not None else None))
+        if not centers or len({center.display_name for center in centers}) != len(centers):
+            raise ValueError()
+        return MatchingResult(HOURS, timestamp(document['server_time']), timestamp(document['updated']), fetched_at,
+                              int(history['start']), int(history['step']), tuple(centers))
+    except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
         raise AtlasDataError() from None
 
 
 class MatchingService:
-    def __init__(self, client, *, enabled=lambda: False, clock=time.monotonic, wall_clock=time.time):
+    def __init__(self, client, *, clock=time.monotonic, wall_clock=time.time):
         self.client = client
-        self.enabled = enabled
         self.clock, self.wall_clock = clock, wall_clock
-        self.cached = None
-        self.cached_at = None
+        self.cached = self.cached_at = None
+        # No new request before this time: a success or a failed attempt opens a 15-minute window.
         self.next_attempt = 0
         self.pending = None
         self.last_error = None
         self.http_error = None
         self.http_error_until = 0
-        self.closed = False
 
     def _cached_result(self):
         if self.cached is None:
@@ -119,75 +90,65 @@ class MatchingService:
         age = self.clock()-self.cached_at
         if not 0 <= age <= MAX_AGE_SECONDS:
             return None
-        return replace(self.cached, from_cache=True, stale=age >= CACHE_SECONDS,
-                       error=self.last_error if age >= CACHE_SECONDS else None)
+        stale = age >= CACHE_SECONDS
+        return replace(self.cached, from_cache=True, stale=stale, error=self.last_error if stale else None)
 
     async def get(self):
-        if self.closed:
-            raise RuntimeError('Matching service closed')
-        if self.enabled() is not True:
-            raise QueryError('匹配时间查询尚未开启')
+        """The shared result: fresh within 15 minutes, else refreshed; an older one (at most an hour) stands in,
+        marked stale, while a refresh is impossible or failing."""
         # Check configuration even when returning cached data.
         self.client.validated_proxy()
-        await self.client.access.check('matching')
+        if self.client.refused('matching'):
+            raise AtlasAccessPaused(self.client.refused('matching'))
         cached = self._cached_result()
         if cached is not None and not cached.stale:
             return cached
-        if self.pending is None and self.http_error is not None and self.clock() < self.http_error_until:
-            status, code = self.http_error
-            raise AtlasHTTPError(status, code)
-        if cached is not None and (self.pending is not None or self.clock() < self.next_attempt):
+        if cached is not None and self.pending is not None:
+            # Nobody waits for a refresh while an older result can be shown.
             return cached
-        if self.pending is None and self.clock() < self.next_attempt:
-            raise QueryError('匹配时间查询失败，请稍后再试')
         if self.pending is None:
+            if self.http_error is not None and self.clock() < self.http_error_until:
+                raise AtlasHTTPError(*self.http_error)
+            if self.clock() < self.next_attempt:
+                if cached is not None:
+                    return cached
+                raise QueryError('匹配时间查询失败，请稍后再试')
             self.pending = asyncio.create_task(self._refresh())
-            def done(task):
-                if self.pending is task:
-                    self.pending = None
-                if not task.cancelled():
-                    task.exception()
-            self.pending.add_done_callback(done)
+            self.pending.add_done_callback(self._finished)
         return await asyncio.shield(self.pending)
+
+    def _finished(self, task):
+        if self.pending is task:
+            self.pending = None
+        if not task.cancelled():
+            task.exception()
 
     async def _refresh(self):
         try:
             document = await self.client.matching()
             result = await asyncio.to_thread(normalize, document, self.wall_clock())
-            if self.closed or self.enabled() is not True:
-                raise asyncio.CancelledError()
-            self.cached, self.cached_at = result, self.clock()
-            self.next_attempt = self.cached_at+CACHE_SECONDS
-            self.last_error = None
-            self.http_error = None
-            return result
         except (ConnectionFailure, AtlasDataError, AtlasCooldownError, AtlasHTTPError) as exc:
-            # Configuration/programming errors and non-transient HTTP errors cannot masquerade as success.
             if isinstance(exc, AtlasHTTPError) and exc.status in (401, 403):
-                if not self.client.access.is_blocked('matching'):
-                    await self.client.access.block('matching', exc.status)
-                self.http_error = None
                 raise
-            if isinstance(exc, AtlasHTTPError) and exc.status != 429 and not 500 <= exc.status <= 599:
-                # Independent of the 15-minute window: neither shortens nor extends it.
+            if isinstance(exc, AtlasHTTPError) and exc.status != 429 and exc.status < 500:
                 self.http_error = (exc.status, exc.code)
                 self.http_error_until = self.clock()+HTTP_ERROR_SECONDS
                 raise
             self.last_error = str(exc)
-            # Admission refusal sends no HTTP request: it must not start a new 15-minute failure window.
+            # A local admission refusal sent nothing: it does not open a failure window.
             if not isinstance(exc, AtlasCooldownError):
                 self.next_attempt = self.clock()+CACHE_SECONDS
             cached = self._cached_result()
             if cached is not None:
                 return replace(cached, stale=True, error=self.last_error)
             raise QueryError('匹配时间查询失败，请稍后再试') from None
+        self.cached, self.cached_at = result, self.clock()
+        self.next_attempt = self.cached_at+CACHE_SECONDS
+        self.last_error = self.http_error = None
+        return result
 
     async def close(self):
-        self.closed = True
         if self.pending is not None:
             self.pending.cancel()
             await asyncio.gather(self.pending, return_exceptions=True)
-        self.pending = None
         self.cached = None
-        self.cached_at = None
-        self.http_error = None

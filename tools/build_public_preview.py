@@ -28,6 +28,7 @@ from tarkov_core.boss_monitor import build_table, normalize_bosses  # noqa: E402
 from tarkov_core.boss_portraits import BossPortraits  # noqa: E402
 from tarkov_core.boss_table_image import change_lines, paginate_table, render_boss_page  # noqa: E402
 from tarkov_core.public_api import ResourceKey, fetch, mode_path  # noqa: E402
+from tarkov_core.transport import HTTPClient  # noqa: E402
 from tarkov_core.server_status import normalize_status  # noqa: E402
 from tarkov_core.status_image import render_status_image  # noqa: E402
 
@@ -37,7 +38,11 @@ MODE = 'pve'
 
 
 async def document(key, proxy):
-    metadata, body = await fetch(key, proxy=proxy)
+    client = HTTPClient()
+    try:
+        metadata, body = await fetch(key, proxy=proxy, client=client)
+    finally:
+        await client.close()
     if metadata['status'] != 200:
         raise SystemExit(f'{key.path}: HTTP {metadata["status"]}')
     return json.loads(body), metadata

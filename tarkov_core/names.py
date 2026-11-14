@@ -53,6 +53,15 @@ def spelling_variants(name):
     return variants
 
 
+def every(seconds):
+    """A refresh interval in words: 每周, 每 2 周, 每天, 每 3 天, 每 5 小时."""
+    hours = max(1, round(seconds/3600))
+    for size, unit, one in ((168, '周', '每周'), (24, '天', '每天')):
+        if hours % size == 0:
+            return one if hours == size else f'每 {hours//size} {unit}'
+    return f'每 {hours} 小时'
+
+
 def unique_suffix():
     """Per-refresh file name part, so two plugin instances never write the same temporary file."""
     return f'{os.getpid()}-{secrets.token_hex(4)}'

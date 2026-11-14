@@ -32,7 +32,7 @@ BOT_LIMIT = 'tarkov.dev 和 Battlestate Games 目前都不向机器人开放玩�
 
 
 def refresh_note(url):
-    # Searching the player on the website was observed to rewrite the snapshot (handoff §16); opening the page by
+    # Searching the player on the website was observed to rewrite the snapshot; opening the page by
     # account id runs the same live lookup in the site's code.
     return f'由于 {BOT_LIMIT}，数据不会自动更新：在 tarkov.dev 用该模式搜索一次这名玩家，或打开 {url}，即可刷新档案，几分钟后再查。'
 

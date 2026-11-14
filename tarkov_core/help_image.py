@@ -1,8 +1,6 @@
-"""The help as an image: a page of the intel dossier telling how to use the plugin (maintainer: the text help is hard
-to read in phone chat apps).
-
-Drawn like image.py, with larger type than the profile card because the page is mostly read on phones. The wording
-follows the text help in main.py (help_text); both take the same settings.
+"""The help as an image: a page of the intel dossier telling how to use the plugin (the text help is hard to read
+in phone chat apps). Drawn like image.py, with larger type than the profile card because the page is mostly read on
+phones. What it says comes from help_text.help_card.
 """
 from PIL import Image, ImageDraw
 
@@ -10,34 +8,6 @@ from .image import FADED, INK, LINE, RED, W, fit, font, footer, jpeg, paper, wra
 
 TAPE, TAPE_TEXT = (44, 40, 34), (226, 214, 186)
 LABEL_X, TAPE_X = 40, 196
-
-
-def help_rows(card):
-    """(what, command, remark) of the command table."""
-    arena = '不写名字时查自己' + ('；不写模式的查询也会看竞技场' if card['arena_by_default'] else '')
-    command = card['command']
-    rows = [
-        ('查自己', f'{command} [模式]', '需要先绑定'),
-        ('查别人', f'{command} [模式] <昵称、账号ID 或网址>', ''),
-        ('竞技场', f'{command} 竞技场 <昵称、账号ID 或网址>', arena),
-        ('绑定', f'{command} 绑定 <玩家页网址或账号ID>', ''),
-        ('解绑', f'{command} 解绑', ''),
-        ('帮助', f'{command} 帮助', ''),
-    ]
-    if card.get('status_enabled'):
-        rows.append(('服务器状态', f'{command} status', '图片查询；播报需要单独开启'))
-    if card.get('boss_enabled'):
-        rows.append(('Boss 刷率', f'{command} boss [模式] [变化]', '全表分页；100% 红字加粗，播报单独开启'))
-        rows.append(('Boss 默认', f'{command} boss 默认 <模式>', '个人默认模式；支持 pvp、pve、PVP S'))
-    if card.get('matching_enabled'):
-        rows.append(('匹配时间', f'{command} 匹配', '各服务器平均匹配时间图片；数据来自 Atlas'))
-    if card.get('weekly_enabled'):
-        rows.append(('玩家周报', f'{command} 周报 [模式] [昵称或排行]', '名单内玩家近 7 天的变化；数据来自 Atlas'))
-    if card.get('qq_words'):
-        words = ('tpve [目标] · tbind <网址> · tstatus · tboss' + (' · tmatch' if card.get('matching_enabled') else '')
-                 + (' · tweekly' if card.get('weekly_enabled') else ''))
-        rows.append(('QQ 单词命令', words, '无空格，QQ 官方机器人用；参数可带空格'))
-    return rows
 
 
 MODE_CHIPS = (('pvp', 'PVP', 'pvp / 常规'), ('pve', 'PVE', 'pve'), ('season', 'PVP 赛季', '赛季 / season'),
@@ -83,10 +53,7 @@ def guide_stamp(img):
 
 
 def render_help_image(card):
-    """JPEG bytes of the help page. card: command (how a command starts, per the command style), note (the line under
-    the command table), mode (key of the default mode), label (its name), search (the tarkov.dev
-    search page in that mode), example (a player page in that mode), arena_by_default, index (how often the name
-    lists are refreshed, or None without the name lists)."""
+    """JPEG bytes of the help page for a help_text.help_card."""
     img = paper(2400)
     d = ImageDraw.Draw(img)
 
@@ -101,7 +68,7 @@ def render_help_image(card):
     d = ImageDraw.Draw(img)
 
     y = heading(d, 206, '一、常用命令')
-    for what, command, remark in help_rows(card):
+    for what, command, remark in card['rows']:
         d.text((LABEL_X, y+21), what, font=font('sc', 24, 700), fill=INK, anchor='lm')
         y = tape(img, TAPE_X, y, command)
         if remark:
@@ -123,22 +90,12 @@ def render_help_image(card):
             d.rectangle([x+chip_w-48, y-12, x+chip_w+6, y+14], fill=RED)
             d.text((x+chip_w-21, y+1), '默认', font=font('sc', 16, 800), fill=TAPE_TEXT, anchor='mm')
     y += 104
-    rule = (f"不写模式时先看 {card['label']}，没有档案就自动换成有档案的模式"
-            + ('，也会看竞技场。' if card['arena_by_default'] else '；竞技场要写明。'))
-    y = paragraph(d, y, rule)
+    y = paragraph(d, y, card['rule'])
     y += 14
     d.line([40, y, W-40, y], fill=LINE)
 
-    y = heading(d, y+24, '三、第一次查询')
-    remembered = '按 ID 或网址查到过的名字会被记住'
-    if card['index']:
-        remembered += f"，也会查昵称名单（{card['index']}更新一次）"
-    steps = [
-        ('在 tarkov.dev 选好模式，搜索这名玩家的游戏名：', card['search'].removeprefix('https://')),
-        ('把跳转后的玩家页网址发给我，例如：', f"{card['command']} {card['example']}"),
-        ('之后就能直接用名字查（'+remembered+'）。', None),
-    ]
-    for i, (text, command) in enumerate(steps, 1):
+    y = heading(d, y+24, card['steps_title'])
+    for i, (text, command) in enumerate(card['steps'], 1):
         d.ellipse([40, y, 76, y+36], outline=INK, width=2)
         d.text((58, y+18), str(i), font=font('osw', 22, 600), fill=INK, anchor='mm')
         y = paragraph(d, y+3, text, x=92)
@@ -148,10 +105,9 @@ def render_help_image(card):
     d.line([40, y, W-40, y], fill=LINE)
 
     y = heading(d, y+24, '四、注意')
-    for text in ('由于 tarkov.dev 和 Battlestate Games 都不向机器人开放档案查询，机器人无法直接触发更新。要看最新数据，请先在 tarkov.dev 上重新搜索或打开这名玩家的页面，几分钟后再查。',
-                 '昵称只含字母、数字、下划线 _ 和连字符 -；_ 和 - 容易记混，查不到时插件会提示相近的名字。'):
+    for text in card['notes']:
         d.rectangle([44, y+10, 54, y+20], fill=INK)
         y = paragraph(d, y, text, x=70)+10
     y += 10
     d.line([40, y, W-40, y], fill=INK)
-    return jpeg(img.crop((0, 0, W, footer(d, y, None, FADED, FADED, line='数据来自 tarkov.dev 公开快照（非实时）'))))
+    return jpeg(img.crop((0, 0, W, footer(d, y, None, FADED, FADED, line=card['foot']))))

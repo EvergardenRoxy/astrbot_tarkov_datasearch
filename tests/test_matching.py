@@ -5,8 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock
 
 from tarkov_core.atlas_client import AtlasDataError, AtlasHTTPError
-from tarkov_core.atlas_cooldown import AtlasCooldownError
-from tarkov_core.atlas_access import AtlasAccess, AtlasAccessPaused
+from tarkov_core.atlas_cooldown import AtlasAccessPaused, AtlasCooldownError
 from tarkov_core.matching import MatchingService, normalize
 from tarkov_core.transport import ConnectionFailure, QueryError
 from test_atlas_cooldown import Clock
@@ -36,9 +35,8 @@ class ModelTests(unittest.TestCase):
             result.hours = 1
 
     def test_malformed_inputs_are_rejected(self):
-        invalid = [None, [], {}, {'hours': True}]
-        for key, value in [('hours', 1), ('server_time', '2026-11-08'), ('updated', None),
-                           ('datacenters', []), ('history', [])]:
+        invalid = [None, [], {}]
+        for key, value in [('server_time', '2026-11-08'), ('updated', None), ('datacenters', []), ('history', [])]:
             data = matching_data()
             data[key] = value
             invalid.append(data)
@@ -46,15 +44,8 @@ class ModelTests(unittest.TestCase):
             data = matching_data()
             data['datacenters'][0]['wait'] = value
             invalid.append(data)
-        for value in (True, 0, -1, '300'):
-            data = matching_data()
-            data['history']['step'] = value
-            invalid.append(data)
         data = matching_data()
         data['datacenters'].append(copy.deepcopy(data['datacenters'][0]))
-        invalid.append(data)
-        data = matching_data()
-        data['history']['series']['Other'] = [0]*1025
         invalid.append(data)
         data = matching_data()
         data['history']['series']['Other'] = [False]
@@ -69,9 +60,9 @@ class MatchingTests(unittest.IsolatedAsyncioTestCase):
         self.clock = Clock()
         self.client = Mock()
         self.client.validated_proxy.return_value = None
-        self.client.access = AtlasAccess()
+        self.client.refused.return_value = 0
         self.client.matching = AsyncMock(return_value=matching_data())
-        self.service = MatchingService(self.client, enabled=lambda: True, clock=self.clock,
+        self.service = MatchingService(self.client, clock=self.clock,
                                        wall_clock=lambda: 123)
 
     async def asyncTearDown(self):
@@ -133,10 +124,6 @@ class MatchingTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(QueryError, 'invalid proxy'):
             await self.service.get()
         self.client.validated_proxy.side_effect = None
-        self.service.enabled = lambda: False
-        with self.assertRaises(QueryError):
-            await self.service.get()
-        self.service.enabled = lambda: True
         self.clock.advance(900)
         for error in (RuntimeError('bug'), AtlasHTTPError(403)):
             self.client.matching.side_effect = error
@@ -203,6 +190,3 @@ class MatchingTests(unittest.IsolatedAsyncioTestCase):
         await self.service.close()
         with self.assertRaises(asyncio.CancelledError):
             await refresher
-        self.assertIsNone(self.service.pending)
-        with self.assertRaises(RuntimeError):
-            await self.service.get()

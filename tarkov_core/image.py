@@ -1,4 +1,4 @@
-"""The profile card as an image: an intel-dossier page with a dog tag and exit-status bars (handoff §14.2).
+"""The profile card as an image: an intel-dossier page with a dog tag and exit-status bars.
 
 Drawn locally with Pillow (an AstrBot dependency); nothing is sent to a rendering service. Complete Chinese
 typography is prepared by the caller, Latin fonts are bundled (see THIRD_PARTY.md). Game references are drawn.

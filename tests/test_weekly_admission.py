@@ -69,9 +69,8 @@ class WeeklyAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.errors), 1)
 
     async def test_statistics_request_has_art_zero_and_pausing_does_not_consume_attempts(self):
-        from tarkov_core.atlas_access import AtlasAccessPaused
         from tarkov_core.atlas_client import AtlasHTTPError
-        self.sampler.paused = lambda: self.client.access.is_blocked('players')
+        self.sampler.paused = lambda: self.client.refused('players')
         self.response = lambda request: web.Response(status=403)
         self.assertEqual(await self.sampler.step(), 'failed')
         self.assertEqual(self.seen[0][1]['art'], '0')
@@ -82,7 +81,7 @@ class WeeklyAdmissionTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(await self.sampler.step())
         self.assertEqual(len(self.seen), 1)
         self.assertTrue(self.store.pending(self.entries, day_id(self.wall())))
-        await self.client.access.arm_recovery()
+        self.clock.advance(30*60)
         self.response = self.answer
         self.assertEqual(await self.sampler.step(), 'pulled')
         self.assertEqual(self.store.pending(self.entries, day_id(self.wall())), [])

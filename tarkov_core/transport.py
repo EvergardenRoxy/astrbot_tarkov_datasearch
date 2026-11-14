@@ -1,4 +1,4 @@
-"""HTTP access to players.tarkov.dev: one fixed host, no redirects, bounded size and time."""
+"""The plugin's HTTP reading: fixed hosts, no redirects, bounded size and time. Also players.tarkov.dev."""
 import asyncio
 import datetime
 import email.utils
@@ -6,7 +6,6 @@ import io
 import json
 import time
 import zlib
-from contextlib import nullcontext
 
 import aiohttp
 from yarl import URL
@@ -26,7 +25,7 @@ PROFILE_LIMITS = (4*1024*1024, 16*1024*1024)
 INDEX_LIMITS = (64*1024*1024, 192*1024*1024)
 
 BLOCKED = ('tarkov.dev 拒绝了这台服务器的访问（HTTP 403，Cloudflare 拦截）。'
-           '可以在插件配置中开启“访问 tarkov.dev 时使用代理”后重试')
+           '可以在插件配置中开启“访问数据接口时使用代理”后重试')
 
 
 class QueryError(Exception):
@@ -94,89 +93,75 @@ class HTTPClient:
             await self.session.close()
 
 
-async def get(path, sink, *, limits, timeout_seconds, proxy=None, etag=None, client=None):
-    """GET HOST/path into the binary file-like `sink`, gunzipping on the fly.
-
-    Returns {'status': 200 or 304, 'etag': str or None}. 304 only happens when `etag` was sent.
-    Raises NotFound for 404, QueryError for other refusals and limits, TimeoutError with the phase reached.
-    """
-    result = await http_get(HOST, path, sink, limits=limits, timeout_seconds=timeout_seconds, proxy=proxy, etag=etag, client=client)
-    # Keep the player/index transport contract; public resources also use Last-Modified.
-    return {key: result[key] for key in ('status', 'etag')}
-
-
-async def http_get(host, path, sink, *, limits, timeout_seconds, proxy=None, etag=None, last_modified=None,
-                   content_types=('application/json',), client=None):
-    """Shared bounded HTTP reader. Callers own the fixed host and validated resource path."""
-    proxy = validate_proxy(proxy) if proxy else None
+async def decoded_chunks(response, limits):
+    """The response body in pieces, gunzipped on the fly, refusing more than `limits` (compressed, decoded) bytes."""
     compressed_limit, decoded_limit = limits
+    encoding = response.headers.get('Content-Encoding', '').strip().lower()
+    if encoding not in ('', 'identity', 'gzip'):
+        raise QueryError('服务器使用了不支持的压缩格式')
+    decoder = zlib.decompressobj(16+zlib.MAX_WBITS) if encoding == 'gzip' else None
+    received = written = 0
+    try:
+        async for chunk in response.content.iter_chunked(65536):
+            received += len(chunk)
+            data = decoder.decompress(chunk, decoded_limit-written+1) if decoder else chunk
+            written += len(data)
+            if received > compressed_limit or written > decoded_limit or (decoder and decoder.unconsumed_tail):
+                raise QueryError('服务器返回的数据超过大小上限')
+            yield data
+    except zlib.error:
+        raise QueryError('服务器返回的数据无法解压，请稍后再试') from None
+    if not written or (decoder and (not decoder.eof or decoder.unused_data)):
+        raise QueryError('服务器返回的数据不完整，请稍后再试')
+
+
+async def http_get(host, path, sink, *, client, limits, timeout_seconds, proxy=None, etag=None, last_modified=None,
+                   content_types=('application/json',)):
+    """GET host+path into the binary file-like `sink`. Returns {'status': 200 or 304, 'etag', 'last_modified',
+    'cache_control'}; 304 only answers a request that sent `etag` or `last_modified`.
+    Raises NotFound for 404, HTTPError for other refusals, QueryError for unusable bodies, TimeoutError."""
+    proxy = validate_proxy(proxy) if proxy else None
     headers = {'User-Agent': USER_AGENT, 'Accept': ', '.join(content_types), 'Accept-Encoding': 'gzip'}
     if etag:
         headers['If-None-Match'] = etag
     elif last_modified:
         headers['If-Modified-Since'] = last_modified
-    stats = {'phase': '连接/等待响应头', 'received': 0, 'written': 0, 'started': time.monotonic()}
+    started = time.monotonic()
     timeout = aiohttp.ClientTimeout(total=timeout_seconds, connect=min(30, timeout_seconds))
     try:
-        # trust_env=False: only the plugin's own proxy setting applies, never the host's environment.
-        manager = nullcontext(client.get_session()) if client else aiohttp.ClientSession(
-            auto_decompress=False, trust_env=False, cookie_jar=aiohttp.DummyCookieJar())
-        async with manager as session:
-            async with session.get(host+path, allow_redirects=False, proxy=proxy, headers=headers, timeout=timeout) as response:
-                metadata = {'status': response.status, 'etag': response.headers.get('ETag'),
-                            'last_modified': response.headers.get('Last-Modified'),
-                            'cache_control': response.headers.get('Cache-Control')}
-                if response.status == 304 and (etag or last_modified):
-                    metadata['etag'] = metadata['etag'] or etag
-                    metadata['last_modified'] = metadata['last_modified'] or last_modified
-                    return metadata
-                if response.status == 404:
-                    raise NotFound()
-                if response.status == 403:
-                    raise HTTPError(BLOCKED, 403)
-                if response.status == 429:
-                    raise HTTPError('tarkov.dev 暂时限制了访问频率（HTTP 429），请过几分钟再试', 429,
-                                    retry_seconds(response.headers.get('Retry-After')))
-                if response.status != 200:
-                    raise HTTPError(f'tarkov.dev 返回 HTTP {response.status}，请稍后再试', response.status,
-                                    retry_seconds(response.headers.get('Retry-After')))
-                if response.headers.get('Content-Type', '').split(';')[0].strip().lower() not in content_types:
-                    raise QueryError('tarkov.dev 返回的不是数据文件，请稍后再试')
-                encoding = response.headers.get('Content-Encoding', '').lower()
-                if encoding not in ('', 'identity', 'gzip'):
-                    raise QueryError('tarkov.dev 使用了不支持的压缩格式')
-                decoder = zlib.decompressobj(16+zlib.MAX_WBITS) if encoding == 'gzip' else None
-                stats['phase'] = '读取响应体'
-                async for chunk in response.content.iter_chunked(65536):
-                    stats['received'] += len(chunk)
-                    if stats['received'] > compressed_limit:
-                        raise QueryError('tarkov.dev 返回的数据超过大小上限')
-                    data = decoder.decompress(chunk, decoded_limit-stats['written']+1) if decoder else chunk
-                    stats['written'] += len(data)
-                    if stats['written'] > decoded_limit or (decoder and decoder.unconsumed_tail):
-                        raise QueryError('tarkov.dev 返回的数据超过大小上限')
-                    sink.write(data)
-                if decoder and (not decoder.eof or decoder.unused_data):
-                    raise QueryError('tarkov.dev 返回的数据不完整，请稍后再试')
-                if not stats['written']:
-                    raise QueryError('tarkov.dev 返回了空数据，请稍后再试')
+        async with client.get_session().get(host+path, allow_redirects=False, proxy=proxy, headers=headers,
+                                            timeout=timeout) as response:
+            metadata = {'status': response.status, 'etag': response.headers.get('ETag') or etag,
+                        'last_modified': response.headers.get('Last-Modified') or last_modified,
+                        'cache_control': response.headers.get('Cache-Control')}
+            if response.status == 304 and (etag or last_modified):
                 return metadata
+            if response.status == 404:
+                raise NotFound()
+            if response.status == 403:
+                raise HTTPError(BLOCKED, 403)
+            if response.status != 200:
+                message = ('tarkov.dev 暂时限制了访问频率（HTTP 429），请过几分钟再试' if response.status == 429
+                           else f'tarkov.dev 返回 HTTP {response.status}，请稍后再试')
+                raise HTTPError(message, response.status, retry_seconds(response.headers.get('Retry-After')))
+            if response.headers.get('Content-Type', '').split(';')[0].strip().lower() not in content_types:
+                raise QueryError('tarkov.dev 返回的不是数据文件，请稍后再试')
+            async for data in decoded_chunks(response, limits):
+                sink.write(data)
+            return metadata
     except TimeoutError as exc:
-        elapsed = time.monotonic()-stats['started']
-        detail = f"阶段={stats['phase']}，已接收={stats['received']}字节，耗时={elapsed:.1f}秒"
+        detail = f'耗时={time.monotonic()-started:.1f}秒'
         logger.warning('Tarkov download timeout: %s', detail)
         raise TimeoutError(detail) from exc
     except aiohttp.ClientError as exc:
         # aiohttp messages can include the proxy URL (with credentials); show the type only.
         raise ConnectionFailure(f'连接 tarkov.dev 失败（{type(exc).__name__}），请稍后再试') from None
-    except zlib.error:
-        raise QueryError('tarkov.dev 返回的数据无法解压，请稍后再试') from None
 
 
-async def fetch_profile(mode_path, aid, *, timeout_seconds=30, proxy=None, client=None):
+async def fetch_profile(mode_path, aid, *, client, timeout_seconds=30, proxy=None):
     """The profile JSON of account `aid` in a mode. Raises NotFound when the mode has no profile for it."""
     buffer = io.BytesIO()
-    await get(f'/{mode_path}/{int(aid)}.json', buffer, limits=PROFILE_LIMITS, timeout_seconds=timeout_seconds, proxy=proxy, client=client)
+    await http_get(HOST, f'/{mode_path}/{int(aid)}.json', buffer, limits=PROFILE_LIMITS, timeout_seconds=timeout_seconds, proxy=proxy, client=client)
     try:
         # Off the event loop: the decoded limit allows a 16 MiB document.
         data = await asyncio.to_thread(json.loads, buffer.getvalue())
@@ -187,8 +172,8 @@ async def fetch_profile(mode_path, aid, *, timeout_seconds=30, proxy=None, clien
     return data
 
 
-async def fetch_index(mode_path, target, *, etag=None, timeout_seconds=120, proxy=None, client=None):
+async def fetch_index(mode_path, target, *, client, etag=None, timeout_seconds=120, proxy=None):
     """Download a mode's name index (JSON object account id -> nickname) to the file `target`."""
     with open(target, 'wb') as sink:
-        return await get(f'/{mode_path}/index.json', sink, limits=INDEX_LIMITS, timeout_seconds=timeout_seconds,
+        return await http_get(HOST, f'/{mode_path}/index.json', sink, limits=INDEX_LIMITS, timeout_seconds=timeout_seconds,
                          proxy=proxy, etag=etag, client=client)

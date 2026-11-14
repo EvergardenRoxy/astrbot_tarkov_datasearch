@@ -21,7 +21,7 @@
                 "type": "bool",
                 "description": "QQ 官方机器人单词命令",
                 "default": true,
-                "hint": "QQ 官方机器人的命令里不能有空格。开启后可用 tpvp、tpve、tseason、tarena（查玩家）、tbind、tunbind、thelp（绑定、解绑、帮助）、tstatus、tboss（状态、Boss），后面的参数可以带空格，例如“@机器人 tpve 昵称”。到 QQ 机器人后台把它们加进命令列表即可。"
+                "hint": "QQ 官方机器人的命令不能有空格。开启后可用 tpvp、tpve、tseason、tarena（查玩家）、tbind、tunbind、thelp（绑定、解绑、帮助）、tstatus、tboss、tmatch（状态、Boss、匹配时间）、tweekly（玩家周报），参数可带空格。请把它们加进 QQ 机器人后台的命令列表。"
             },
             "access_mode": {
                 "type": "string",
@@ -84,7 +84,7 @@
                 "type": "string",
                 "description": "玩家数据来源",
                 "default": "atlas",
-                "hint": "Atlas：按需实时查询，不用先在 tarkov.dev 搜索，每次只查一个模式；本插件总额度用完时冷却，到期自动恢复，缓存仍可读取；接口故障时可改用注明来源的 tarkov.dev 快照。tarkov.dev：只读公开快照（旧方式）。",
+                "hint": "Atlas：按需实时查询，不用先在 tarkov.dev 搜索，每次只查一个模式；本插件总额度用完时冷却，到期自动恢复，缓存仍可读取；接口故障时改用注明来源的 tarkov.dev 快照。tarkov.dev：只读公开快照（旧方式）。",
                 "options": [
                     "atlas",
                     "tarkov-dev"
@@ -115,22 +115,6 @@
                 "description": "不写模式时也查竞技场",
                 "default": false,
                 "hint": "只对 tarkov.dev 快照生效，开启后每次查询多一个请求。数据来源是 Atlas 时竞技场要写明模式。"
-            },
-            "output_mode": {
-                "type": "string",
-                "description": "输出方式",
-                "default": "image",
-                "hint": "图片在本地绘制，画不出时自动改发文字；Markdown 在 QQ 上会显示出原始符号。",
-                "options": [
-                    "image",
-                    "text",
-                    "markdown"
-                ],
-                "labels": [
-                    "图片",
-                    "文字",
-                    "Markdown 文字"
-                ]
             },
             "skill_count": {
                 "type": "int",
@@ -296,7 +280,7 @@
                 "type": "bool",
                 "description": "启用服务器匹配时间查询",
                 "default": true,
-                "hint": "命令：tarkov 匹配（QQ 单词命令 tmatch），只输出图片。所有会话共用一份结果，15 分钟内读取缓存；临时失败最多回退到 60 分钟内的结果。401/403 后暂停，管理员恢复；404 等错误后 2 分钟再试。"
+                "hint": "命令：tarkov 匹配（QQ 单词命令 tmatch），只输出图片。所有会话共用一份结果，15 分钟内读取缓存；临时失败最多回退到 60 分钟内的结果。遇到 401/403 后 30 分钟内不再请求；404 等错误后 2 分钟再试。"
             },
             "atlas_query_cooldown_seconds": {
                 "type": "int",
@@ -365,45 +349,11 @@
                 "default": false,
                 "hint": "打开并保存后，删除本地保存的全部图标和物品图片；之后用到时重新下载。"
             },
-            "atlas_history_enabled": {
-                "type": "bool",
-                "description": "保存 Atlas 查询记录",
-                "default": true,
-                "hint": "在本机保存每次成功查询的 Atlas 原始数据，为以后的定时拉取、周报和按时间比较预留。只存在插件数据目录，不上传；不保存 tarkov.dev 的快照。关闭后不再保存，并删除已有记录。"
-            },
-            "atlas_history_hours": {
-                "type": "int",
-                "description": "查询记录保留时间（小时）",
-                "default": 180,
-                "hint": "超过这个时间的记录自动删除。",
-                "slider": {
-                    "min": 1,
-                    "max": 8760,
-                    "step": 1
-                }
-            },
-            "atlas_history_max_mb": {
-                "type": "int",
-                "description": "查询记录总大小上限（MB）",
-                "default": 64,
-                "hint": "16～128 MB，超过时先删最早的记录。",
-                "slider": {
-                    "min": 16,
-                    "max": 128,
-                    "step": 1
-                }
-            },
             "font_download_url": {
                 "type": "string",
                 "description": "完整中文字体下载地址（可选）",
                 "default": "",
                 "hint": "所有图片首次生成前下载完整 Noto Sans SC 字体（约 17 MB），之后复用本地缓存。下载失败会提示，不使用裁剪字库。默认依次试 jsDelivr、GitHub；可填 https 镜像地址优先尝试，文件大小与校验值须匹配固定版本。"
-            },
-            "atlas_access_reset": {
-                "type": "bool",
-                "description": "恢复 Atlas 访问（执行一次后自动关闭）",
-                "default": false,
-                "hint": "遇到 401/403 后，请先检查访问权限。打开并保存后允许下一次正常查询探测一次，不立即联网，不重置查询额度或上游等待时间；探测失败会再次暂停。"
             }
         }
     },
@@ -415,31 +365,13 @@
                 "type": "bool",
                 "description": "玩家周报功能",
                 "default": false,
-                "hint": "开启后，每天北京时间 03:00 起逐个向 Atlas 查询下面名单里的玩家（每次只查一名，间隔 120 秒加随机 20～60 秒，09:00 前结束），并开放命令 tarkov 周报 [模式] [昵称、账号ID 或 排行]。需要“玩家数据来源”为 Atlas。"
-            },
-            "weekly_pvp_players": {
-                "type": "list",
-                "description": "PVP 周报玩家名单",
-                "default": [],
-                "hint": "每行一名玩家：账号 ID（推荐）或昵称，最多 40 名。只有名单内的玩家会被采样和出现在 PVP 周报里。昵称第一次需要向 Atlas 搜索一次，重名、改名或超过 15 个字符时请填账号 ID。"
-            },
-            "weekly_pve_players": {
-                "type": "list",
-                "description": "PVE 周报玩家名单",
-                "default": [],
-                "hint": "每行一名玩家：账号 ID（推荐）或昵称，最多 40 名。只有名单内的玩家会被采样和出现在 PVE 周报里。昵称第一次需要向 Atlas 搜索一次，重名、改名或超过 15 个字符时请填账号 ID。"
-            },
-            "weekly_season_players": {
-                "type": "list",
-                "description": "PVP 赛季 周报玩家名单",
-                "default": [],
-                "hint": "每行一名玩家：账号 ID（推荐）或昵称，最多 40 名。只有名单内的玩家会被采样和出现在 PVP 赛季 周报里。昵称第一次需要向 Atlas 搜索一次，重名、改名或超过 15 个字符时请填账号 ID。"
+                "hint": "开启后，每个聊天各自维护周报名单：AstrBot 管理员在该聊天里发送 tarkov 周报 添加 [模式] <昵称或账号ID>。插件每天北京时间 03:00 起逐个向 Atlas 查询名单里的玩家（每次只查一名，间隔 120 秒加随机 20～60 秒，09:00 前结束）。需要“玩家数据来源”为 Atlas。"
             },
             "weekly_keep_days": {
                 "type": "int",
                 "description": "周报样本保留天数",
                 "default": 30,
-                "hint": "超过这个天数的采样记录自动删除；从名单里去掉的玩家也按此到期删除。周报只用到最近 9 天。",
+                "hint": "超过这个天数的采样记录自动删除；从所有名单里去掉的玩家也按此到期删除。周报只用到最近 9 天。",
                 "slider": {
                     "min": 14,
                     "max": 180,
@@ -450,7 +382,7 @@
                 "type": "bool",
                 "description": "每周自动播报排行",
                 "default": false,
-                "hint": "到下面设定的时间，向播报目标发送每个模式一张近 7 天排行图。需要先开启“玩家周报功能”、填写名单和播报目标。"
+                "hint": "到下面设定的时间，向每个有周报名单的聊天发送它自己名单的近 7 天排行图（每个模式一张）。需要先开启“玩家周报功能”。仍受“限定聊天”限制。"
             },
             "weekly_push_weekday": {
                 "type": "string",
@@ -472,12 +404,6 @@
                 "description": "播报时间（时:分）",
                 "default": "10:00",
                 "hint": "24 小时制，北京时间，例如 10:00、21:30。采样在 03:00～09:00 进行，建议填 09:00 之后；填写有误时按周一 10:00。错过超过 6 小时不补发。"
-            },
-            "weekly_notify_targets": {
-                "type": "list",
-                "description": "周报播报目标",
-                "default": [],
-                "hint": "必须填写才会播报：完整会话标识（聊天里发 /sid 查看），最多 50 个。留空不播报，不会自动发给用过插件的群。仍受“限定聊天”限制。"
             }
         }
     }

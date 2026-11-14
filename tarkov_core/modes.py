@@ -1,6 +1,11 @@
 """Game modes, how players.tarkov.dev and the tarkov.dev website name them, and player-page links."""
 import re
 
+# ASCII digits only (\d would also accept full-width and other Unicode digits); no account id starts with 0.
+ACCOUNT_ID = re.compile(r'[1-9][0-9]{0,11}')
+# How a reply writes a mode in a command.
+MODE_WORDS = {'pvp': 'pvp', 'pve': 'pve', 'season': '赛季', 'arena': '竞技场'}
+
 # key -> (path segment on players.tarkov.dev, label shown in chat, mode segment of a tarkov.dev player page).
 # The regular PvP mode is stored under "profile" on players.tarkov.dev (TarkovMonitor GameWatcher.cs
 # ToPlayersApiString; probed: /regular/<aid>.json is 404) but is "regular" in website URLs (tarkov-dev
@@ -9,7 +14,7 @@ MODES = {
     'pvp': ('profile', 'PVP', 'regular'),
     'pve': ('pve', 'PVE', 'pve'),
     'season': ('pvp-season', 'PVP 赛季', 'pvp-season'),
-    # Tarkov Arena: a separate game with the same account ids (handoff §19.2); looked at only when asked for, or when
+    # Tarkov Arena: a separate game with the same account ids; looked at only when asked for, or when
     # the "arena_by_default" setting adds it to queries without a mode.
     'arena': ('arena', '竞技场', 'arena'),
 }

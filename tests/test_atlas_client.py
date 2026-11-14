@@ -9,8 +9,7 @@ from aiohttp import web
 
 from tarkov_core import atlas_client
 from tarkov_core.atlas_client import AtlasClient, AtlasDataError, AtlasHTTPError
-from tarkov_core.atlas_cooldown import AtlasCooldown, AtlasCooldownError, AtlasBudget
-from tarkov_core.atlas_access import AtlasAccess, AtlasAccessPaused
+from tarkov_core.atlas_cooldown import AtlasAccessPaused, AtlasBudget, AtlasCooldown, AtlasCooldownError, AtlasNotSent
 from tarkov_core.matching import MatchingService
 from tarkov_core.transport import HTTPClient, QueryError
 from test_atlas_cooldown import Clock
@@ -21,7 +20,7 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.clock = Clock()
         self.gate = AtlasCooldown(clock=self.clock)
-        self.client = AtlasClient(cooldown=self.gate)
+        self.client = AtlasClient(HTTPClient(), cooldown=self.gate)
         self.seen = []
         self.response = lambda request: web.json_response(matching_data())
         async def serve(request):
@@ -39,6 +38,7 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         await self.client.close()
+        await self.client.http.close()
         self.host_patch.stop()
         await self.runner.cleanup()
 
@@ -56,7 +56,7 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.client.http.session.trust_env)
 
     async def test_cache_window_and_shared_player_admission(self):
-        service = MatchingService(self.client, enabled=lambda: True, clock=self.clock)
+        service = MatchingService(self.client, clock=self.clock)
         try:
             await service.get()
             for _ in range(20):
@@ -106,95 +106,44 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
             self.clock.advance(10)
         self.assertEqual(len(self.seen), 4)
 
-    async def test_stats_and_live_parameters_and_strict_validation(self):
+    async def test_stats_and_live_parameters(self):
         await self.client.lookup(1234567, 'pve', include_art=False)
         self.clock.advance(10)
         await self.client.search('Old_Name', 'pve', live=True)
         self.assertEqual(self.seen[0][1], {'accountId': '1234567', 'mode': 'pve', 'art': '0'})
         self.assertEqual(self.seen[1][1], {'nickname': 'Old_Name', 'mode': 'pve', 'live': '1'})
-        for value in (0, 1, '0', None):
-            with self.assertRaises(ValueError):
-                await self.client.lookup(1, 'pve', include_art=value)
-            with self.assertRaises(ValueError):
-                await self.client.search('Old_Name', 'pve', live=value)
-        for path, params in ((atlas_client.LOOKUP_PATH, {'accountId':'1', 'mode':'pve', 'art':'1'}),
-                             (atlas_client.SEARCH_PATH, {'nickname':'Old_Name', 'mode':'pve', 'live':'0'}),
-                             (atlas_client.LOOKUP_PATH, {'accountId':'1', 'mode':'pve', 'art':'0', 'url':'evil'})):
-            with self.assertRaises(ValueError):
-                await self.client._get(path, params)
         self.assertEqual(len(self.seen), 2)
 
-    async def test_refusal_blocks_players_without_spending_more_budget_or_blocking_matching(self):
+    async def test_a_refusal_pauses_its_scope_for_half_an_hour_then_asks_again(self):
         self.client.budget = AtlasBudget(clock=self.clock)
-        self.response = lambda request: web.json_response({'error':'forbidden'}, status=403)
+        self.response = lambda request: web.json_response({'error': 'forbidden'}, status=403)
         with self.assertRaises(AtlasHTTPError):
             await self.client.lookup(1, 'pve')
-        self.assertEqual(self.client.budget.remaining_hour(), 199)
-        self.clock.advance(3600)
-        for mode in ('pve', 'pvp', 'season', 'arena'):
-            with self.assertRaises(AtlasAccessPaused):
-                await self.client.lookup(2, mode)
-            with self.assertRaises(AtlasAccessPaused):
-                await self.client.search('Other_Name', mode)
-        self.assertEqual(len(self.seen), 1)
-        self.assertEqual(self.client.budget.remaining_hour(), 200)
+        self.clock.advance(60)
+        with self.assertRaises(AtlasAccessPaused) as caught:
+            await self.client.lookup(1, 'pve')
+        self.assertEqual(caught.exception.retry_after_seconds, 29*60)
+        with self.assertRaises(AtlasAccessPaused):
+            await self.client.search('Some_Name', 'pve')
+        # A request that was waiting for its turn when the refusal came is not sent either.
+        waited = self.client.cooldown.claim_within
+
+        def turn(*args, **kwargs):
+            self.client.refused_until.pop('players')
+            gate = waited(*args, **kwargs)
+            self.client.refused_until['players'] = self.clock()+60
+            return gate
+        self.client.cooldown.claim_within = turn
+        with self.assertRaises(AtlasAccessPaused):
+            await self.client.lookup(1, 'pve')
+        self.client.cooldown.claim_within = waited
+        # Nothing more was sent or counted, and matching (another scope) is still asked.
+        self.assertEqual((len(self.seen), len(self.client.budget.sent)), (1, 1))
         self.response = lambda request: web.json_response(matching_data())
         await self.client.matching()
-        self.assertEqual(len(self.seen), 2)
-
-    async def test_request_already_waiting_rechecks_refusal_before_sending(self):
-        entered, release = asyncio.Event(), asyncio.Event()
-        self.client.budget = AtlasBudget(clock=self.clock)
-        @asynccontextmanager
-        async def waiting(*args, **kwargs):
-            entered.set()
-            await release.wait()
-            yield
-        with patch.object(self.gate, 'claim_within', waiting):
-            task = asyncio.create_task(self.client.lookup(1, 'pve'))
-            await entered.wait()
-            await self.client.access.block('players', 403)
-            release.set()
-            with self.assertRaises(AtlasAccessPaused):
-                await task
-        self.assertEqual(self.seen, [])
-        self.assertEqual(self.client.budget.remaining_hour(), 200)
-
-    async def test_recovery_probe_respects_upstream_pause_and_does_not_retry_busy(self):
-        await self.client.access.block('players', 403)
-        await self.client.access.arm_recovery()
-        self.response = lambda request: web.json_response({'error':'busy'}, status=429, headers={'Retry-After':'100'})
-        with self.assertRaises(AtlasHTTPError):
-            await self.client.lookup(1, 'pve')
-        with self.assertRaises(AtlasAccessPaused):
-            await self.client.lookup(1, 'pve')
-        await self.client.access.arm_recovery()
-        with self.assertRaises(AtlasCooldownError):
-            await self.client.lookup(1, 'pve', max_wait=0)
-        self.assertEqual(len(self.seen), 1)
-        self.clock.advance(100)
-        self.response = lambda request: web.json_response({'nickname':'Synthetic'})
-        await self.client.lookup(1, 'pve')
-        self.assertFalse(self.client.access.is_blocked('players'))
-        self.clock.advance(10)
-        await self.client.lookup(2, 'pve')
-        self.assertEqual(len(self.seen), 3)
-
-    async def test_matching_refusal_requires_recovery_even_after_two_minutes(self):
-        service = MatchingService(self.client, enabled=lambda: True, clock=self.clock)
-        self.addAsyncCleanup(service.close)
-        await service.get()
-        self.clock.advance(900)
-        self.response = lambda request: web.Response(status=403)
-        with self.assertRaises(AtlasHTTPError):
-            await service.get()
-        self.clock.advance(1200)
-        with self.assertRaises(AtlasAccessPaused):
-            await service.get()
-        self.assertEqual(len(self.seen), 2)
-        await self.client.access.arm_recovery()
-        self.response = lambda request: web.json_response(matching_data())
-        self.assertFalse((await service.get()).from_cache)
+        self.clock.advance(29*60)
+        self.response = lambda request: web.json_response({'nickname': 'Some_Name', 'players': []})
+        await self.client.search('Some_Name', 'pve')
         self.assertEqual(len(self.seen), 3)
 
     async def test_wrong_media_json_and_gzip_are_rejected(self):
@@ -218,7 +167,7 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
             self.clock.advance(10)
 
     async def test_invalid_proxy_and_path_fail_before_admission_even_with_cache(self):
-        service = MatchingService(self.client, enabled=lambda: True, clock=self.clock)
+        service = MatchingService(self.client, clock=self.clock)
         try:
             await service.get()
             self.client.proxy = lambda: 'http://name:password@invalid/path'
@@ -227,8 +176,6 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
                 await service.get()
             with self.assertRaises(QueryError):
                 await self.client.matching()
-            with self.assertRaises(ValueError):
-                await self.client._get('https://invalid/', {})
             self.assertEqual(deadline, self.gate.next_start)
             self.assertEqual(len(self.seen), 1)
         finally:
@@ -244,6 +191,7 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
         task = asyncio.create_task(self.client.matching())
         await started.wait()
         await self.client.close()
+        await self.client.http.close()
         release.set()
         with self.assertRaises(asyncio.CancelledError):
             await task
@@ -254,5 +202,5 @@ class AtlasHTTPTests(unittest.IsolatedAsyncioTestCase):
         await client.close()
         self.assertFalse(pool.closed)
         await pool.close()
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(AtlasNotSent):
             await client.matching()

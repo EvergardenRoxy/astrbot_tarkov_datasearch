@@ -97,7 +97,7 @@ class SamplerTests(unittest.IsolatedAsyncioTestCase):
                          [('fetch', 'pve', 11), ('resolve', 'pve', 'Named'), ('fetch', 'pve', 22)])
         self.assertEqual(self.saved, [(11, 'pve'), (22, 'pve')])
         # An id entry learns its nickname from the sample; a resolved name is not searched again.
-        self.assertEqual(self.store.roster('pve', ['11', 'named']), [('11', 11, 'Name11'), ('named', 22, 'Name22')])
+        self.assertEqual((self.store.resolved('pve', '11'), self.store.resolved('pve', 'named')), ((11, 'Name11'), (22, 'Name22')))
         self.now += DAY
         self.calls.clear()
         self.assertEqual([await self.sampler.step() for _ in range(3)], ['pulled', 'pulled', None])
@@ -231,11 +231,14 @@ class BroadcastTests(unittest.IsolatedAsyncioTestCase):
         self.targets, self.modes = ['bot:GroupMessage:g1', 'bot:GroupMessage:g2'], ['pvp', 'pve']
         self.pictures = {'pvp': None, 'pve': b'pve-picture'}
         self.results, self.sent, self.prepared, self.errors = {}, [], [], []
-        self.broadcast = WeeklyBroadcast(self.store, lambda: (0, 10, 0), lambda: list(self.targets), lambda: list(self.modes),
-                                         self.prepare, self.send, lambda: True, self.errors.append, clock=lambda: self.now)
+        self.broadcast = WeeklyBroadcast(self.store, lambda: (0, 10, 0), self.chats, self.prepare, self.send,
+                                         lambda: True, self.errors.append, clock=lambda: self.now)
 
-    async def prepare(self, mode):
-        self.prepared.append(mode)
+    async def chats(self):
+        return {target: list(self.modes) for target in self.targets}
+
+    async def prepare(self, chat, mode):
+        self.prepared.append((chat, mode))
         if isinstance(self.pictures[mode], BaseException):
             raise self.pictures[mode]
         return self.pictures[mode]
@@ -252,15 +255,16 @@ class BroadcastTests(unittest.IsolatedAsyncioTestCase):
     async def test_one_ranking_per_mode_and_target_once(self):
         wait = await self.broadcast.tick()
         self.assertEqual(self.sent, [('bot:GroupMessage:g1', b'pve-picture'), ('bot:GroupMessage:g2', b'pve-picture')])
-        # A mode nobody has a report for is skipped; each picture is drawn once for all targets.
-        self.assertEqual(self.prepared, ['pvp', 'pve'])
+        # Every chat gets the ranking of its own roster; a mode nobody has a report for is skipped.
+        drawn = [(chat, mode) for chat in self.targets for mode in self.modes]
+        self.assertEqual(self.prepared, drawn)
         self.assertEqual(self.store.push_state('2026-11-09 10:00', 'bot:GroupMessage:g1', 'pvp'), ('empty', 1))
         self.assertEqual(wait, IDLE_SECONDS)
         # Looking again, or restarting within the hours after the slot, sends nothing twice.
         self.now += 1800
         await self.broadcast.tick()
         self.assertEqual(len(self.sent), 2)
-        self.assertEqual(self.prepared, ['pvp', 'pve'])
+        self.assertEqual(self.prepared, drawn)
 
     async def test_before_the_slot_and_long_after_it(self):
         self.now -= 1
