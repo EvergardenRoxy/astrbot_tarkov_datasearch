@@ -8,7 +8,7 @@ from pathlib import Path
 
 from tarkov_core import VERSION
 from tarkov_core.modes import GAME_MODES
-from tarkov_core.settings import GROUPS
+from tarkov_core.settings import GROUPS, INTS, ON_BY_DEFAULT
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -40,16 +40,20 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn(LICENSE, (ROOT/'README.md').read_text(encoding='utf-8'))
 
     def test_schema_defaults_match_code_fallbacks(self):
-        # main.py reads each key with a fallback; a fresh install uses the schema default. Keep them equal.
+        # A fresh install uses the schema default; the code falls back to settings.INTS and ON_BY_DEFAULT. Keep them equal.
         schema = flat_schema()
-        main = (ROOT/'main.py').read_text(encoding='utf-8')
+        readers = [ROOT/'main.py', *(path for path in (ROOT/'tarkov_core').glob('*.py') if path.name != 'settings.py')]
+        code = ''.join(path.read_text(encoding='utf-8') for path in readers)
         for key, spec in schema.items():
             with self.subTest(key=key):
-                self.assertIn(f"'{key}'", main)
-                fallback = re.search(rf"'{key}', ([^,)]+)", main)
-                if fallback and spec['type'] in ('int', 'string', 'bool'):
-                    self.assertEqual(fallback.group(1).strip(), repr(spec['default']))
-        # Arena is not a default mode; the separate "arena_by_default" switch adds it (maintainer).
+                # Every setting offered is read somewhere.
+                self.assertIn(f"'{key}'", code)
+                if spec['type'] == 'int':
+                    self.assertEqual(INTS[key], (spec['default'], spec['slider']['min'], spec['slider']['max']))
+                if spec['type'] == 'bool':
+                    self.assertEqual(spec['default'], key in ON_BY_DEFAULT)
+        self.assertEqual(set(INTS), {key for key, spec in schema.items() if spec['type'] == 'int'})
+        # Arena is not a default mode; the separate "arena_by_default" switch adds it.
         self.assertEqual(set(schema['default_mode']['options']), set(GAME_MODES))
         # Every setting belongs to exactly one group, and every grouped key exists in the schema.
         self.assertEqual(set(schema), {key for keys in GROUPS.values() for key in keys})
