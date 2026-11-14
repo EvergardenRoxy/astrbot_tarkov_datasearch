@@ -97,7 +97,7 @@ def arena_profile(**changes):
     return data
 
 
-# Atlas documents (shapes from the 2026-11-08 probes, docs/atlas-probe-record.md §7; every value invented and round).
+# Atlas documents (shapes from the 2026-11-08 probes; every value invented and round).
 ATLAS_PROFILE = {
     'nickname': 'Test_Player', 'side': 'Usec', 'experience': 12000000, 'prestigeLevel': 0,
     'slots': [{'slot': 'FaceCover', 'tpl': 't', 'en': {'name': 'n', 'short': 's'}, 'ch': {'name': 'n', 'short': 's'},

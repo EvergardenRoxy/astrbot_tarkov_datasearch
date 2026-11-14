@@ -2,7 +2,7 @@
 
 An Arena profile on players.tarkov.dev (`arena/<aid>.json`) has the same account id and nickname as the main game but
 no PMC/Scav statistics and no skills: `stat.arenaOverAllCounters` maps a mode key to `{"Counters": {name: int}}`
-(handoff §19.2). Keys starting with "Unranked" are unranked play, the others ranked; "Overall" sums a section.
+Keys starting with "Unranked" are unranked play, the others ranked; "Overall" sums a section.
 Mode names stay in English, as in the game (maintainer); the level is not shown (maintainer: the website derives it
 from the main game's level table).
 """

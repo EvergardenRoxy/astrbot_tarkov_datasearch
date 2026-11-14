@@ -1,7 +1,7 @@
 """Bindings (chat user -> game account) and the shared nickname -> account id record, in one SQLite file.
 
 players.tarkov.dev only has a profile after someone looked the player up on the tarkov.dev website, and its daily
-name index lags behind (handoff §16), so the plugin learns names from its users instead: every binding and every
+name index lags behind, so the plugin learns names from its users instead: every binding and every
 successful query by account id or player-page link records the nickname the profile shows.
 """
 from contextlib import closing

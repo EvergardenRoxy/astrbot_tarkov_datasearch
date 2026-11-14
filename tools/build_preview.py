@@ -1,4 +1,4 @@
-"""Rebuild docs/preview.jpg, arena_preview.jpg and help_preview.jpg, and print the README text example, from invented profiles.
+"""Rebuild docs/preview.jpg, arena_preview.jpg and help_preview.jpg from invented profiles.
 
     python tools/build_preview.py
 
@@ -8,6 +8,7 @@ id or numbers may appear in the documentation.
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT/'tests'), str(ROOT)]
@@ -27,8 +28,8 @@ from tarkov_core.arena_image import render_arena_image  # noqa: E402
 from tarkov_core.card import build_card  # noqa: E402
 from tarkov_core.help_image import render_help_image  # noqa: E402
 from tarkov_core.image import render_image  # noqa: E402
-from tarkov_core.modes import page_url, search_url  # noqa: E402
-from tarkov_core.output import render_text  # noqa: E402
+from tarkov_core.help_text import help_card  # noqa: E402
+from tarkov_core.modes import page_url  # noqa: E402
 from tarkov_core.profile import summarize  # noqa: E402
 
 SKILLS = {'Endurance': 5100, 'Strength': 5100, 'Metabolism': 5100, 'Attention': 5100, 'Charisma': 4000,
@@ -50,8 +51,14 @@ if __name__ == '__main__':
     arena = summarize_arena(arena_profile())
     arena_card = build_arena_card(arena, now=arena['updated']+3600, refresh_url=page_url('arena', arena['aid']))
     (ROOT/'docs'/'arena_preview.jpg').write_bytes(render_arena_image(arena_card))
-    style = COMMAND_STYLES['mention']
-    help_card = {'command': style['command'], 'note': style['note'], 'mode': 'pve', 'label': 'PVE', 'search': search_url('pve'), 'example': page_url('pve', 1234567),
-                 'arena_by_default': False, 'index': None}
-    (ROOT/'docs'/'help_preview.jpg').write_bytes(render_help_image(help_card))
-    print(render_text(card))
+    # The help of a default installation: the Atlas source, matching on, QQ single-word commands on.
+    app = SimpleNamespace(style=lambda: COMMAND_STYLES['mention'], default_mode=lambda: 'pve',
+                          player_source=lambda: 'atlas', config=SimpleNamespace(flag=lambda key: False))
+    snapshot = SimpleNamespace(index_enabled=lambda: True, names=SimpleNamespace(refresh_seconds=168*3600))
+    players = SimpleNamespace(
+        refresh_rule=lambda: '跳过缓存重新查询；每人每小时 3 次，两次至少间隔 5 分钟',
+        source_rule=lambda: ('数据来自 Atlas（https://eftforge.com/atlas），按需实时查询，不用先在 tarkov.dev 搜索；查过的玩家缓存 '
+                             '10 分钟，每人每小时可联网查询 10 次、刷新 3 次。Atlas 总额度用完时暂停联网查询，到期自动恢复；'
+                             '缓存仍可查看。Atlas 请求故障时可改用 tarkov.dev 快照，回复里会注明。'))
+    card = help_card(app, {'matching', 'qq_words'}, snapshot, players)
+    (ROOT/'docs'/'help_preview.jpg').write_bytes(render_help_image(card))

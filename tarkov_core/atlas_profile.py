@@ -1,6 +1,6 @@
 """Turn Atlas player documents into the summaries the existing cards show.
 
-Shapes from the 2026-11-08 probes (docs/atlas-probe-record.md §7): raid counters are `[[key parts], value]` pairs with
+Shapes from the 2026-11-08 probes: raid counters are `[[key parts], value]` pairs with
 the same keys as tarkov.dev's snapshots; `stats.*.time` is the account-wide play time; skills carry `progress` (level
 x 100) and `lastAccess`; the Arena document has `arenaStats.modes` = {mode key: {counter: int}} (tarkov.dev's
 `arenaOverAllCounters` without the `Counters` level). `looked_up` (ISO 8601, UTC) is when Atlas asked the game

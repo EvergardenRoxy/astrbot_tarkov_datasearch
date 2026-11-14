@@ -9,7 +9,7 @@ MODES = {
     'pvp': ('profile', 'PVP', 'regular'),
     'pve': ('pve', 'PVE', 'pve'),
     'season': ('pvp-season', 'PVP 赛季', 'pvp-season'),
-    # Tarkov Arena: a separate game with the same account ids (handoff §19.2); looked at only when asked for, or when
+    # Tarkov Arena: a separate game with the same account ids; looked at only when asked for, or when
     # the "arena_by_default" setting adds it to queries without a mode.
     'arena': ('arena', '竞技场', 'arena'),
 }

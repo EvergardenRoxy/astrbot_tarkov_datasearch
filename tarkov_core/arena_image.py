@@ -1,4 +1,4 @@
-"""The Arena card as an image: the Arena Masters' fighter registry (maintainer's choice of three, handoff §19.5-19.6).
+"""The Arena card as an image: the Arena Masters' fighter registry (maintainer's choice of three).
 
 The setting: Arena fights are organised by the Arena Masters, led by the Host (the trader Ref in the main game); ARP
 is the Arena reputation rating, GP coins the Arena currency. Drawn with Pillow and the bundled fonts like image.py;

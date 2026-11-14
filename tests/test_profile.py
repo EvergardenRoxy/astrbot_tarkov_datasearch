@@ -97,7 +97,7 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(summarize(profile(info_nickname='\u200b\n'))['nickname'], '未知')
 
     def test_odd_shapes_anywhere_never_raise(self):
-        # Review F-03 and handoff §7: only a missing info.nickname may raise. Replace every node of the fixture,
+        # Only a missing info.nickname may raise. Replace every node of the fixture,
         # one at a time, with each odd value and render the result.
         odd = [None, [], {}, 'x', 10**400, -10**400, -1, 1.5, True, float('nan'), [[1]], {'a': {}}]
         def paths(node, prefix=()):

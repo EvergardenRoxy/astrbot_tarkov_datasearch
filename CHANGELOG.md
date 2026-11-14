@@ -9,6 +9,32 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## 0.7.0 - 2026-11-14
+
+> 整体重构：删去不再使用的功能和代码，行为对齐实际需求。**绑定关系（`accounts.sqlite3`、`binding.key`）原样保留**，周报样本、推送基线等数据也继续使用。本版本只通过了单元测试，尚未在真实 AstrBot、聊天平台和 Atlas 上实测。
+
+### 变更
+
+- **玩家周报按聊天隔离**：每个聊天有自己的名单、排行和每周播报。名单改在聊天里维护——AstrBot 管理员发送 `tarkov 周报 添加|移除 [模式] <昵称或账号ID>`，任何人可用 `tarkov 周报 名单 [模式]` 查看；播报发给每个有名单的聊天。配置页的三份全局名单和“周报播报目标”已移除。升级后首次启动会把旧名单交给原来的每个播报目标聊天（只做一次）；如果 AstrBot 加载配置时已丢弃旧配置项，请在聊天里重新添加。详见 [玩家周报](docs/weekly-report.md)。
+- **Atlas 返回 401/403**：改为 30 分钟后自动恢复（玩家查询和匹配时间分别计时），不再需要管理员手动“恢复访问”。
+- 服务器状态、Boss 刷率、匹配时间取不到数据时回复一行文字，不再生成错误图片（Boss 多模式查询里单个模式失败仍显示为其中一页）。
+- 没有使用权限时回复一行文字。
+
+### 移除
+
+- **“文字”和“Markdown 文字”输出方式**及“输出方式”设置：所有查询结果都是图片，提示和错误是文字。
+- **Atlas 查询记录**（`atlas-history.sqlite3`）及其三项设置；升级后旧文件会被删除。
+- “恢复 Atlas 访问”设置和 `atlas-access.json`。
+- 开发用的 `tools/verify_qq_routes.py`，以及仓库内的交接记录、待办页和历史归档文档。
+
+### 修复
+
+- 周报名单里尚未解析的昵称，现在会借用户自己的一次查询记住对应账号，这次查询的结果也记为样本。
+- 周报排行里样本不满 7 天的玩家，名字后标出“（N 天）”，不再和满 7 天的玩家无差别并列。
+- 按昵称查询遇到改名时，核验使用实时搜索和新取得的档案，不再被缓存里的旧结果误导。
+- Atlas 故障改用 tarkov.dev 快照绑定时，快照里的昵称与所写昵称不一致会拒绝绑定并提示改用账号 ID。
+- 选择 Atlas 数据来源时，帮助图片里的用法说明与实际行为一致。
+
 ## 0.6.1 - 2026-11-10
 
 ### 修复
@@ -21,7 +47,7 @@
 
 ## 0.6.0 - 2026-11-10
 
-> 新增玩家周报，并包含 0.5.1 之后的检查与修正。**周报的夜间采样、聊天命令和每周播报尚未在真实 Atlas 与聊天平台上实测。** 依据与验证见 [历史交接](docs/archive/engineering-history.md) 的“Weekly report”和“Post-0.5.1 review fixes”两节。
+> 新增玩家周报，并包含 0.5.1 之后的检查与修正。**周报的夜间采样、聊天命令和每周播报尚未在真实 Atlas 与聊天平台上实测。** 
 
 ### 新增
 
@@ -30,7 +56,7 @@
   - 采样规则（上游放宽使用限制后，由维护者指定）：每天北京时间 03:00 开始、09:00 前结束；一次只查一名玩家；相邻两次请求间隔 120 秒加随机 20～60 秒；错过的当天不补拉。这是插件唯一会在后台访问 Atlas 的地方。用户自己查询名单内玩家时，结果也顺带记为一个样本。
   - 可选的每周自动播报：在设置里填星期和时:分（北京时间），到时间向**明确填写**的会话各发每个模式一张排行图；目标留空不播报。
   - 数据存在单独的 `weekly.sqlite3`，只保存压缩后的数字，默认保留 30 天后自动删除；不保存聊天用户的 ID。
-  - 周报是两次采样之间累计数的差，不是逐局记录；竞技场周报尚未实现（当前规划见 [待办](checklist.md#arena-weekly)）。
+  - 周报是两次采样之间累计数的差，不是逐局记录；竞技场周报尚未实现。
 
 ### 修复
 
@@ -56,7 +82,7 @@
 
 ## 0.5.1 - 2026-11-08
 
-> **尚未在 QQ 等聊天平台实测。** 依据与验证见 [历史交接](docs/archive/engineering-history.md) 的“Mobile-readable”和“0.5.1 review”两节。
+> **尚未在 QQ 等聊天平台实测。** 依据与验证见 [历史交接](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/470df0f/docs/archive/engineering-history.md) 的“Mobile-readable”和“0.5.1 review”两节。
 
 - **PVP／PVE／赛季手机读图调整**：统计区改为大字号横向 PMC／SCAV 表格和撤离状态条；技能保留双列，放大文字、等级和进度格，其他区域保留原布局。幸存率统一按“（撤离＋转移）÷总战局数”计算，头部、概览、表格和快照文字／Markdown 一致。竞技场保持原样。
 - **口径与用词统一**：统计表的全部击杀比值写回“K/D（全部击杀）”；头部和概览的玩家击杀数改称“击杀 PMC”，与表格同名列一致（头部与概览的“K/D”仍按击杀 PMC 计算）。PVP／PVE／赛季图片、快照图片、文字和 Markdown 的“存活率”“最长连续存活”统一为“幸存率”“最长连续幸存”；“擅离率”的百分号前不再留空格。
@@ -73,7 +99,7 @@
 
 ## 0.5.0 - 2026-11-08
 
-> **尚未在 QQ 等聊天平台实测。** 依据与验证见 [历史交接](docs/archive/engineering-history.md) 的 Atlas 小节。
+> **尚未在 QQ 等聊天平台实测。** 依据与验证见 [历史交接](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/470df0f/docs/archive/engineering-history.md) 的 Atlas 小节。
 
 - **清理旧字库制作流程**：所有图片统一使用完整 Noto Sans SC 字体；移除裁剪字体、字符清单、成就字符收集和字库制作脚本，以及缺字替换与源码字符覆盖校验。首次出图等待已校验的字体下载，之后复用本地文件；下载失败明确提示，快照及帮助可继续回复文字。开发测试改为预先缓存完整字体，无需制作字库。
 
@@ -147,7 +173,7 @@
 
 ## 0.4.6 - 2026-10-24
 
-> 0.4.5 发布后维护者提出的修改：QQ 官方机器人命令不能有空格、推送目标留空的含义、检查间隔、设置页整理。**尚未在 QQ 等聊天平台实测。** 依据与验证见 [历史交接](docs/archive/engineering-history.md) §18。
+> 0.4.5 发布后维护者提出的修改：QQ 官方机器人命令不能有空格、推送目标留空的含义、检查间隔、设置页整理。**尚未在 QQ 等聊天平台实测。** 依据与验证见 [历史交接](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/470df0f/docs/archive/engineering-history.md) §18。
 
 ### 新增
 
@@ -169,7 +195,7 @@
 
 ## 0.4.5 - 2026-10-24
 
-> 新增服务器状态、Boss 刷率两项可选功能和 QQ 官方机器人命令入口，由维护者提出需求。**尚未在 QQ 等聊天平台实测图片发送和主动推送。** 依据与验证见 [历史交接](docs/archive/engineering-history.md)。
+> 新增服务器状态、Boss 刷率两项可选功能和 QQ 官方机器人命令入口，由维护者提出需求。**尚未在 QQ 等聊天平台实测图片发送和主动推送。** 依据与验证见 [历史交接](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/470df0f/docs/archive/engineering-history.md)。
 
 ### 新增
 
@@ -206,7 +232,7 @@
 
 ## 0.4.4 - 2026-10-14
 
-> 维护者要求“从设置页切换两种不同的帮助和全部的操作提示”。尚未在聊天平台实测。依据与验证见 [历史交接](docs/archive/engineering-history.md) §24。
+> 维护者要求“从设置页切换两种不同的帮助和全部的操作提示”。尚未在聊天平台实测。依据与验证见 [历史交接](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/470df0f/docs/archive/engineering-history.md) §24。
 
 ### 新增
 
@@ -225,7 +251,7 @@
 
 ## 0.4.3 - 2026-10-14
 
-> 维护者反馈“帮助在手机应用中可读性极差”和“未经验证的 QQ 机器人只能用 @机器人 + 指令调用”后的修改。尚未在聊天平台实测。依据与验证见 [历史交接](docs/archive/engineering-history.md) §22、§23。
+> 维护者反馈“帮助在手机应用中可读性极差”和“未经验证的 QQ 机器人只能用 @机器人 + 指令调用”后的修改。尚未在聊天平台实测。依据与验证见 [历史交接](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/470df0f/docs/archive/engineering-history.md) §22、§23。
 
 ### 变更
 
@@ -242,7 +268,7 @@
 
 ## 0.4.2 - 2026-10-14
 
-> 维护者检查参考图片后提出的修改。尚未在聊天平台实测。依据与验证见 [历史交接](docs/archive/engineering-history.md) §21。
+> 维护者检查参考图片后提出的修改。尚未在聊天平台实测。依据与验证见 [历史交接](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/470df0f/docs/archive/engineering-history.md) §21。
 
 ### 新增
 
@@ -263,7 +289,7 @@
 
 ## 0.4.1 - 2026-10-14
 
-> 尚未在聊天平台实测。依据与验证见 [历史交接](docs/archive/engineering-history.md) §20。
+> 尚未在聊天平台实测。依据与验证见 [历史交接](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/470df0f/docs/archive/engineering-history.md) §20。
 
 ### 新增
 
@@ -279,7 +305,7 @@
 
 ## 0.4.0 - 2026-10-14
 
-> 维护者小范围封闭测试后的修改：图片页脚、塔科夫竞技场查询。尚未在聊天平台实测。依据与验证见 [历史交接](docs/archive/engineering-history.md) §19。
+> 维护者小范围封闭测试后的修改：图片页脚、塔科夫竞技场查询。尚未在聊天平台实测。依据与验证见 [历史交接](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/470df0f/docs/archive/engineering-history.md) §19。
 
 ### 新增
 
@@ -298,7 +324,7 @@
 
 ## 0.3.0 - 2026-10-13
 
-> 依据维护者确认的方案：插件回归“绑定身份 + 查询”。尚未在聊天平台实测。原因、依据与验证见 [历史交接](docs/archive/engineering-history.md) §16。
+> 依据维护者确认的方案：插件回归“绑定身份 + 查询”。尚未在聊天平台实测。原因、依据与验证见 [历史交接](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/470df0f/docs/archive/engineering-history.md) §16。
 
 ### 为什么改
 
@@ -341,7 +367,7 @@
 
 ## 0.2.0 - 2026-10-13
 
-> 依据维护者确认的方案（方案 C、默认图片、三种输出方式、合成版样式），尚未在聊天平台实测。设计、依据与验证见 [历史交接](docs/archive/engineering-history.md) §14–§15。
+> 依据维护者确认的方案（方案 C、默认图片、三种输出方式、合成版样式），尚未在聊天平台实测。设计、依据与验证见 [历史交接](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/470df0f/docs/archive/engineering-history.md) §14–§15。
 
 ### 新增
 
@@ -373,7 +399,7 @@
 
 ## 0.1.0 - 2026-10-13
 
-> 首个版本，依据维护者确认的方案实现（开发分支 `claude/amazing-clarke-eu3xue`），尚未在聊天平台实测。数据源调研、设计、假设与验证见 [历史交接](docs/archive/engineering-history.md)。
+> 首个版本，依据维护者确认的方案实现（开发分支 `claude/amazing-clarke-eu3xue`），尚未在聊天平台实测。数据源调研、设计、假设与验证见 [历史交接](https://github.com/EvergardenRoxy/astrbot_tarkov_datasearch/blob/470df0f/docs/archive/engineering-history.md)。
 
 ### 新增
 
