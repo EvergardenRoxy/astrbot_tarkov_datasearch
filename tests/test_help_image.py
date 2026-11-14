@@ -6,13 +6,20 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
+from types import SimpleNamespace
+
 from tarkov_core import COMMAND_STYLES, help_image, image
-from tarkov_core.modes import page_url, search_url
+from tarkov_core.help_text import help_card, help_text
 
 
-def card(mode='pve', label='PVE', arena=False, index=None, style='mention'):
-    return {'command': COMMAND_STYLES[style]['command'], 'note': COMMAND_STYLES[style]['note'], 'mode': mode, 'label': label, 'search': search_url(mode), 'example': page_url(mode, 1234567),
-            'arena_by_default': arena, 'index': index}
+def card(mode='pve', label='PVE', arena=False, index=None, style='mention', source='tarkov-dev', features=()):
+    """The real help card (help_text.help_card) of a plugin with these settings."""
+    app = SimpleNamespace(style=lambda: COMMAND_STYLES[style], default_mode=lambda: mode, player_source=lambda: source,
+                          config=SimpleNamespace(flag=lambda key: arena))
+    snapshot = SimpleNamespace(index_enabled=lambda: index is not None,
+                               names=SimpleNamespace(refresh_seconds={None: 0, '每 3 天': 3*86400}[index]))
+    players = SimpleNamespace(refresh_rule=lambda: '刷新规则', source_rule=lambda: '数据来自 Atlas 的规则')
+    return help_card(app, set(features), snapshot, players)
 
 
 def drawn_texts(help_card):
@@ -67,6 +74,28 @@ class HelpImageTests(unittest.TestCase):
                 chip = next(i for i, (key, *_) in enumerate(help_image.MODE_CHIPS) if key == mode)
                 at = texts.index('默认')
                 self.assertEqual(texts[at-2], help_image.MODE_CHIPS[chip][1])
+
+    def test_the_atlas_source_and_the_features_switched_on(self):
+        atlas = card(source='atlas', index='每 3 天', features=('status', 'boss', 'matching', 'weekly', 'qq_words'))
+        _, texts = drawn_texts(atlas)
+        for command in ('@机器人 tarkov 绑定 <昵称、账号ID 或网址>', '@机器人 tarkov [模式] <昵称、账号ID 或网址> 刷新',
+                        '@机器人 tarkov status', '@机器人 tarkov boss [模式] [变化]', '@机器人 tarkov 匹配',
+                        '@机器人 tarkov 周报 [模式] [昵称或排行]', '@机器人 tarkov 周报 添加|移除|名单 [模式] [昵称或账号ID]'):
+            self.assertIn(command, texts)
+        joined = '
+'.join(texts)
+        self.assertIn('每次只查一个模式', joined)
+        self.assertIn('tmatch · tweekly', joined)
+        self.assertNotIn('先在 tarkov.dev 选好模式', joined)
+        self.assertIn('数据来自 Atlas（实时查询）；故障时改用 tarkov.dev 快照', texts)
+        # Features switched off are not offered.
+        self.assertNotIn('status', '
+'.join(drawn_texts(card(source='atlas'))[1]))
+        # The text sent when the picture cannot be drawn says the same.
+        text = help_text(atlas)
+        for row in atlas['rows']:
+            self.assertIn(row[1], text)
+        self.assertIn(atlas['rule'], text)
 
     def test_command_style(self):
         # Maintainer: the help shows "@机器人 tarkov" (QQ official bots) or "/tarkov" (platforms woken by "/").

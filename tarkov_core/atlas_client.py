@@ -61,10 +61,15 @@ def retry_after(value):
         return 60
 
 
+def not_json(constant):
+    """NaN and Infinity are not JSON: a document holding them is refused rather than drawn."""
+    raise ValueError(constant)
+
+
 async def read_json(response, limits):
     try:
         body = b''.join([chunk async for chunk in decoded_chunks(response, limits)])
-        return await asyncio.to_thread(json.loads, body)
+        return await asyncio.to_thread(lambda: json.loads(body, parse_constant=not_json))
     except (QueryError, ValueError, RecursionError):
         raise AtlasDataError() from None
 
